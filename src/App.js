@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyANHZKNAfYFlEFAQ0lwG50PMOv2OBrEXEY",
@@ -15,10 +16,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 const UNIVERSITIES = [
   { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" },
   { id: 2, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
+  { id: 3, name: "Institute of Finance Management", short: "IFM", location: "Dar es Salaam" },
+  { id: 4, name: "Tanzania Institute of Accountancy", short: "TIA", location: "Dar es Salaam" },
+  { id: 5, name: "National Institute of Transport", short: "NIT", location: "Dar es Salaam" },
+  { id: 6, name: "Dar es Salaam Institute of Technology", short: "DIT", location: "Dar es Salaam" },
 ];
 
 const CATEGORIES = [
@@ -37,6 +43,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("signup");
   const [userName, setUserName] = useState("");
+  const [userAvatar, setUserAvatar] = useState(null);
   const [selectedUni, setSelectedUni] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,8 +56,11 @@ function App() {
   const [searchQ, setSearchQ] = useState("");
   const [listings, setListings] = useState([]);
   const [cart, setCart] = useState([]);
-  const [createData, setCreateData] = useState({ cat: "", title: "", desc: "", price: "", cond: "" });
+  const [createData, setCreateData] = useState({ cat: "", title: "", desc: "", price: "", cond: "", photoFile: null, photoPreview: null });
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -61,6 +71,7 @@ function App() {
       } else {
         setUser(null);
         setUserName("");
+        setUserAvatar(null);
       }
       setLoading(false);
     });
@@ -92,6 +103,7 @@ function App() {
         email: email,
         universityId: selectedUni.id,
         universityName: selectedUni.short,
+        avatarUrl: null,
         createdAt: serverTimestamp()
       });
       setUserName(signupName.trim());
@@ -140,6 +152,7 @@ function App() {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         setUserName(userData.name || "");
+        setUserAvatar(userData.avatarUrl || null);
         setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
       }
     } catch (err) {
@@ -163,10 +176,8 @@ function App() {
         createdAt: doc.data().createdAt?.toDate() 
       }));
       setListings(listingsData);
-      console.log("Loaded listings:", listingsData.length);
     } catch (err) {
       console.error("Error loading listings:", err);
-      // If index error, try without orderBy
       try {
         const q2 = query(
           collection(db, "listings"),
@@ -180,11 +191,36 @@ function App() {
           createdAt: doc.data().createdAt?.toDate() 
         }));
         setListings(listingsData2);
-        console.log("Loaded listings (no order):", listingsData2.length);
       } catch (err2) {
         console.error("Error loading listings (fallback):", err2);
       }
     }
+  };
+
+  const handlePhotoSelect = (e, type) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+      setError("Please select an image file");
+      return;
+    }
+
+    const maxSize = type === 'listing' ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError(`Image too large. Max ${type === 'listing' ? '5MB' : '2MB'}`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (type === 'listing') {
+        setCreateData({...createData, photoFile: file, photoPreview: event.target.result});
+      } else if (type === 'profile') {
+        setEditProfileData({...editProfileData, avatarFile: file, avatarPreview: event.target.result});
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleCreateListing = async () => {
@@ -194,10 +230,19 @@ function App() {
     }
     try {
       setError("");
-      setLoading(true);
+      setUploading(true);
+      
+      let photoUrl = null;
+      if (createData.photoFile) {
+        const storageRef = ref(storage, `listings/${user.uid}_${Date.now()}.jpg`);
+        const snapshot = await uploadBytes(storageRef, createData.photoFile);
+        photoUrl = await getDownloadURL(snapshot.ref);
+      }
+
       await addDoc(collection(db, "listings"), {
         userId: user.uid,
         userName: userName,
+        userAvatar: userAvatar,
         universityId: selectedUni.id,
         universityName: selectedUni.short,
         category: createData.cat,
@@ -205,14 +250,16 @@ function App() {
         description: createData.desc.trim(),
         price: parseInt(createData.price),
         condition: createData.cond,
+        photoUrl: photoUrl,
         sold: false,
         views: 0,
         createdAt: serverTimestamp(),
         expiresAt: new Date(Date.now() + 48 * 3600000)
       });
+      
       setShowCreateSuccess(true);
       setSuccess("Listing created successfully!");
-      setCreateData({ cat: "", title: "", desc: "", price: "", cond: "" });
+      setCreateData({ cat: "", title: "", desc: "", price: "", cond: "", photoFile: null, photoPreview: null });
       await loadListings();
       setTimeout(() => { 
         setShowCreateSuccess(false); 
@@ -222,7 +269,41 @@ function App() {
       console.error("Error creating listing:", err);
       setError("Failed to create listing: " + err.message);
     } finally {
-      setLoading(false);
+      setUploading(false);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!user) return;
+    
+    try {
+      setUploading(true);
+      let avatarUrl = userAvatar;
+      
+      if (editProfileData.avatarFile) {
+        const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
+        const snapshot = await uploadBytes(storageRef, editProfileData.avatarFile);
+        avatarUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      const updateData = { avatarUrl };
+      if (editProfileData.name.trim()) {
+        updateData.name = editProfileData.name.trim();
+      }
+
+      await updateDoc(doc(db, "users", user.uid), updateData);
+      
+      if (updateData.name) setUserName(updateData.name);
+      setUserAvatar(avatarUrl);
+      setShowEditProfile(false);
+      setEditProfileData({ name: "", avatarFile: null, avatarPreview: null });
+      setSuccess("Profile updated!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      setError("Failed to update profile");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -257,7 +338,6 @@ function App() {
 
   const myListings = listings.filter(l => l.userId === user?.uid);
 
-  // AUTH SCREEN
   if (!user && !loading) {
     return (
       <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',background:'#f4f6f8',fontFamily:'system-ui'}}>
@@ -289,7 +369,6 @@ function App() {
 
   if (loading) return <div style={{textAlign:'center',padding:'40px',fontFamily:'system-ui'}}>⏳ Loading...</div>;
 
-  // MAIN APP
   return (
     <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
       <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
@@ -300,7 +379,6 @@ function App() {
       {error&&<div style={{margin:'16px',background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',fontSize:'13px'}}>{error}</div>}
       {success&&<div style={{margin:'16px',background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',fontSize:'13px'}}>{success}</div>}
       
-      {/* HOME PAGE */}
       {page==="home"&&(
         <div style={{padding:'16px'}}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px'}}>
@@ -316,13 +394,14 @@ function App() {
               filteredListings.map((item,idx)=>(
                 <div key={item.id} style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
-                    <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                    <div style={{width:'36px',height:'36px',borderRadius:'50%',background:item.userAvatar?`url(${item.userAvatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span style={{fontSize:'13px',fontWeight:'600'}}>{item.userName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
+                  {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                     <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
@@ -339,7 +418,6 @@ function App() {
         </div>
       )}
       
-      {/* CREATE LISTING PAGE */}
       {page==="create"&&(
         <div style={{padding:'16px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
@@ -348,19 +426,34 @@ function App() {
               <div style={{textAlign:'center',padding:'40px'}}><div style={{fontSize:'48px',marginBottom:'12px'}}>✅</div><div style={{fontSize:'16px',fontWeight:'600'}}>Listing created!</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Redirecting to home...</div></div>
             ):(
               <>
+                <input type="file" id="listing-photo" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'listing')} />
+                <label htmlFor="listing-photo" style={{display:'block',marginBottom:'14px',cursor:'pointer'}}>
+                  {createData.photoPreview ? (
+                    <div style={{position:'relative'}}>
+                      <img src={createData.photoPreview} alt="Preview" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px'}} />
+                      <div style={{position:'absolute',top:'8px',right:'8px',background:'rgba(0,0,0,0.6)',color:'#fff',padding:'6px 12px',borderRadius:'8px',fontSize:'12px',fontWeight:'600'}}>Change Photo</div>
+                    </div>
+                  ) : (
+                    <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'32px',textAlign:'center',background:'#f9fafb'}}>
+                      <div style={{fontSize:'32px',marginBottom:'8px'}}>📷</div>
+                      <div style={{fontSize:'14px',fontWeight:'600',marginBottom:'4px'}}>Add Photo</div>
+                      <div style={{fontSize:'12px',color:'#8a9bb0'}}>Click to upload (max 5MB)</div>
+                    </div>
+                  )}
+                </label>
+                
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
-                <button onClick={handleCreateListing} disabled={loading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"💾 Create Listing"}</button>
+                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
               </>
             )}
           </div>
         </div>
       )}
       
-      {/* MESSAGES PAGE */}
       {page==="messages"&&(
         <div style={{padding:'16px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
@@ -371,7 +464,6 @@ function App() {
         </div>
       )}
       
-      {/* SAVED PAGE */}
       {page==="saved"&&(
         <div style={{padding:'16px'}}>
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
@@ -381,6 +473,7 @@ function App() {
             ):(
               cart.map((item,idx)=>(
                 <div key={item.id} style={{background:'#fff',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
+                  {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px'}}>{item.description}</div>}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
@@ -394,17 +487,22 @@ function App() {
         </div>
       )}
       
-      {/* PROFILE PAGE */}
       {page==="profile"&&(
         <div style={{padding:'16px'}}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'14px',alignItems:'center'}}>
-            <div style={{width:'60px',height:'60px',borderRadius:'50%',background:'#2dd4bf',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>{userName.split(" ").map(n=>n[0]).join("")}</div>
-            <div style={{flex:1}}><div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div><div style={{fontSize:'11px',color:'#2dd4bf',marginTop:'4px'}}>📍 {selectedUni?.name}</div></div>
+            <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>{!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}</div>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
+              <div style={{fontSize:'11px',color:'#2dd4bf',marginTop:'4px'}}>📍 {selectedUni?.name}</div>
+              <button onClick={()=>{setEditProfileData({name:userName,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✏️ Edit Profile</button>
+            </div>
           </div>
+          
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
             <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings ({myListings.length})</button>
             <button onClick={()=>setProfileTab("saved")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>Saved ({cart.length})</button>
           </div>
+          
           {profileTab==="listings"&&(
             <div style={{display:'flex',flexDirection:'column'}}>
               {myListings.length===0?(
@@ -412,6 +510,7 @@ function App() {
               ):(
                 myListings.map((item,idx)=>(
                   <div key={item.id} style={{background:'#fff',borderBottom:idx===myListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===myListings.length-1?'0 0 12px 12px':'0'}}>
+                    {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                     <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                     {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
@@ -424,6 +523,7 @@ function App() {
               )}
             </div>
           )}
+          
           {profileTab==="saved"&&(
             <div style={{display:'flex',flexDirection:'column'}}>
               {cart.length===0?(
@@ -431,6 +531,7 @@ function App() {
               ):(
                 cart.map((item,idx)=>(
                   <div key={item.id} style={{background:'#fff',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
+                    {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                     <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                     {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px'}}>{item.description}</div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
@@ -442,11 +543,35 @@ function App() {
               )}
             </div>
           )}
+          
           <button onClick={handleLogout} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'16px'}}>🚪 Logout</button>
         </div>
       )}
       
-      {/* BOTTOM NAV */}
+      {showEditProfile && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowEditProfile(false)}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
+            <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Edit Profile</h3>
+            
+            <input type="file" id="avatar-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'profile')} />
+            <label htmlFor="avatar-upload" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
+              <div style={{width:'80px',height:'80px',margin:'0 auto',borderRadius:'50%',background:editProfileData.avatarPreview?`url(${editProfileData.avatarPreview})`:'#f4f6f8',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
+                {!editProfileData.avatarPreview && <span style={{fontSize:'32px'}}>📷</span>}
+                <div style={{position:'absolute',bottom:'0',background:'rgba(45,212,191,0.9)',color:'#0f1b2d',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
+              </div>
+            </label>
+            
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Full Name</label>
+              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}} />
+            </div>
+            
+            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
+            <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      
       <div style={{position:'fixed',bottom:0,left:0,right:0,height:'68px',background:'#fff',borderTop:'1px solid #e2e6ea',display:page==="create"?'none':'flex',alignItems:'center',justifyContent:'space-around',zIndex:100}}>
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
         <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span></button>
