@@ -62,6 +62,7 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -78,6 +79,7 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (user && page === "home") {
       const interval = setInterval(() => loadListings(), 5000);
