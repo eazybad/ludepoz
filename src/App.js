@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc } from 'firebase/firestore';
@@ -62,7 +62,58 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loadListings = useCallback(async () => {
+    if (!selectedUni) return;
+    try {
+      const q = query(
+        collection(db, "listings"),
+        where("sold", "==", false),
+        where("universityId", "==", selectedUni.id),
+        orderBy("createdAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const listingsData = querySnapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(), 
+        createdAt: doc.data().createdAt?.toDate() 
+      }));
+      setListings(listingsData);
+    } catch (err) {
+      console.error("Error loading listings:", err);
+      try {
+        const q2 = query(
+          collection(db, "listings"),
+          where("sold", "==", false),
+          where("universityId", "==", selectedUni.id)
+        );
+        const querySnapshot2 = await getDocs(q2);
+        const listingsData2 = querySnapshot2.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data(), 
+          createdAt: doc.data().createdAt?.toDate() 
+        }));
+        setListings(listingsData2);
+      } catch (err2) {
+        console.error("Error loading listings (fallback):", err2);
+      }
+    }
+  }, [selectedUni]);
+
+  const loadUserProfile = useCallback(async (userId) => {
+    try {
+      const userDocRef = doc(db, "users", userId);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserName(userData.name || "");
+        setUserAvatar(userData.avatarUrl || null);
+        setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
+      }
+    } catch (err) {
+      console.error("Error loading profile:", err);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -77,15 +128,14 @@ function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [loadUserProfile, loadListings]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (user && page === "home") {
       const interval = setInterval(() => loadListings(), 5000);
       return () => clearInterval(interval);
     }
-  }, [user, page]);
+  }, [user, page, loadListings]);
 
   const handleSignup = async () => {
     if (!signupName.trim() || !email.trim() || !password.trim() || !selectedUni) {
@@ -144,58 +194,6 @@ function App() {
       setCart([]);
     } catch (err) {
       console.error("Logout error:", err);
-    }
-  };
-
-  const loadUserProfile = async (userId) => {
-    try {
-      const userDocRef = doc(db, "users", userId);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        setUserName(userData.name || "");
-        setUserAvatar(userData.avatarUrl || null);
-        setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
-      }
-    } catch (err) {
-      console.error("Error loading profile:", err);
-    }
-  };
-
-  const loadListings = async () => {
-    if (!selectedUni) return;
-    try {
-      const q = query(
-        collection(db, "listings"),
-        where("sold", "==", false),
-        where("universityId", "==", selectedUni.id),
-        orderBy("createdAt", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const listingsData = querySnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data(), 
-        createdAt: doc.data().createdAt?.toDate() 
-      }));
-      setListings(listingsData);
-    } catch (err) {
-      console.error("Error loading listings:", err);
-      try {
-        const q2 = query(
-          collection(db, "listings"),
-          where("sold", "==", false),
-          where("universityId", "==", selectedUni.id)
-        );
-        const querySnapshot2 = await getDocs(q2);
-        const listingsData2 = querySnapshot2.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data(), 
-          createdAt: doc.data().createdAt?.toDate() 
-        }));
-        setListings(listingsData2);
-      } catch (err2) {
-        console.error("Error loading listings (fallback):", err2);
-      }
     }
   };
 
