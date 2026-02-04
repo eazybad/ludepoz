@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment } from 'firebase/firestore';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendEmailVerification } from 'firebase/auth';
+import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -48,6 +48,8 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
+  const [regNumber, setRegNumber] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [page, setPage] = useState("home");
@@ -61,13 +63,96 @@ function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
+  const [showVerificationBanner, setShowVerificationBanner] = useState(false);
+  const [showSafetyMessage, setShowSafetyMessage] = useState(true);
+  const [showChatTip, setShowChatTip] = useState(true);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reportReason, setReportReason] = useState("");
   
-  // Messaging state
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const isExpired = (listing) => {
+    if (!listing.expiresAt) return false;
+    const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
+    return expiryDate < new Date();
+  };
+
+  const getTimeUntilExpiry = (listing) => {
+    if (!listing.expiresAt) return "";
+    const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
+    const now = new Date();
+    const diff = expiryDate - now;
+    
+    if (diff < 0) {
+      const daysPast = Math.floor(Math.abs(diff) / (1000 * 60 * 60 * 24));
+      return `Expired ${daysPast > 0 ? daysPast + ' days' : 'today'}`;
+    }
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    if (hours < 24) return `Expires in ${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `Expires in ${days}d`;
+  };
+
+  const renewListing = async (listingId) => {
+    try {
+      const newExpiry = new Date(Date.now() + 48 * 3600000);
+      await updateDoc(doc(db, "listings", listingId), {
+        expiresAt: newExpiry,
+        renewedAt: serverTimestamp()
+      });
+      await loadListings();
+      setSuccess("Listing renewed for 48 hours!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error renewing listing:", err);
+      setError("Failed to renew listing");
+    }
+  };
+
+  const deleteListing = async (listingId) => {
+    if (!window.confirm("Delete this listing permanently?")) return;
+    try {
+      await deleteDoc(doc(db, "listings", listingId));
+      await loadListings();
+      setSuccess("Listing deleted!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error deleting listing:", err);
+      setError("Failed to delete listing");
+    }
+  };
+
+  const submitReport = async () => {
+    if (!reportReason.trim() || !reportTarget) return;
+    
+    try {
+      await addDoc(collection(db, "reports"), {
+        reporterId: user.uid,
+        reporterName: userName,
+        targetType: reportTarget.type,
+        targetId: reportTarget.id,
+        targetName: reportTarget.name,
+        reason: reportReason.trim(),
+        createdAt: serverTimestamp(),
+        status: "pending"
+      });
+      
+      setSuccess("Report submitted. We'll review it shortly.");
+      setShowReportModal(false);
+      setReportTarget(null);
+      setReportReason("");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error submitting report:", err);
+      setError("Failed to submit report");
+    }
+  };
 
   const loadListings = useCallback(async () => {
     if (!selectedUni) return;
@@ -115,6 +200,10 @@ function App() {
         setUserName(userData.name || "");
         setUserAvatar(userData.avatarUrl || null);
         setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
+        
+        if (auth.currentUser && !auth.currentUser.emailVerified) {
+          setShowVerificationBanner(true);
+        }
       }
     } catch (err) {
       console.error("Error loading profile:", err);
@@ -305,7 +394,11 @@ function App() {
 
   const handleSignup = async () => {
     if (!signupName.trim() || !email.trim() || !password.trim() || !selectedUni) {
-      setError("Please fill in all fields");
+      setError("Please fill in all required fields");
+      return;
+    }
+    if (!email.endsWith('@gmail.com')) {
+      setError("Please use a Gmail address (@gmail.com)");
       return;
     }
     if (password.length < 6) {
@@ -316,16 +409,23 @@ function App() {
       setError("");
       setLoading(true);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      await sendEmailVerification(userCredential.user);
+      
       await setDoc(doc(db, "users", userCredential.user.uid), {
         name: signupName.trim(),
         email: email,
+        registrationNumber: regNumber.trim() || null,
         universityId: selectedUni.id,
         universityName: selectedUni.short,
         avatarUrl: null,
+        emailVerified: false,
         createdAt: serverTimestamp()
       });
+      
       setUserName(signupName.trim());
-      setSuccess("Account created successfully!");
+      setSuccess("Account created! Check your email to verify.");
+      setShowVerificationBanner(true);
       setPage("home");
     } catch (err) {
       setError(err.code === 'auth/email-already-in-use' ? "Email already in use" : err.message);
@@ -508,6 +608,7 @@ function App() {
   };
 
   const filteredListings = listings.filter(item => {
+    if (isExpired(item)) return false;
     if (activeCat !== "all" && item.category !== activeCat) return false;
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase();
@@ -516,7 +617,8 @@ function App() {
     return true;
   });
 
-  const myListings = listings.filter(l => l.userId === user?.uid);
+  const myActiveListings = listings.filter(l => l.userId === user?.uid && !isExpired(l));
+  const myExpiredListings = listings.filter(l => l.userId === user?.uid && isExpired(l));
 
   if (!user && !loading) {
     return (
@@ -527,17 +629,18 @@ function App() {
           {success && <div style={{background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{success}</div>}
           {authMode==="signup"?(
             <>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Full Name</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="your.email@student.udsm.ac.tz" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type="password" placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
+              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Full Name</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Registration Number (Optional)</label><input type="text" placeholder="e.g. 33421/T.2023" value={regNumber} onChange={e=>setRegNumber(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'14px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
               <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University</label><select onChange={e=>setSelectedUni(UNIVERSITIES.find(u=>u.id===parseInt(e.target.value)))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
               <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Creating...":"Create Account"}</button>
               <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
             </>
           ):(
             <>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="your.email@student.udsm.ac.tz" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type="password" placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
+              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'14px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
               <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Logging in...":"Log In"}</button>
               <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
             </>
@@ -551,6 +654,13 @@ function App() {
 
   return (
     <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
+      {showVerificationBanner && user && !user.emailVerified && (
+        <div style={{background:'#fef3c7',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
+          <span>📧 Please verify your email to unlock all features</span>
+          <button onClick={()=>setShowVerificationBanner(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer'}}>×</button>
+        </div>
+      )}
+      
       <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
         {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="chat")&&<button onClick={()=>setPage(page==="chat"?"messages":"home")} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>}
         <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
@@ -592,8 +702,9 @@ function App() {
                     <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                     <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
                       {item.userId!==user.uid&&<button onClick={(e)=>{e.stopPropagation();startConversation(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>}
-                      <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖 {cart.some(c=>c.id===item.id)&&"Saved"}</button>
+                      <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
+                      <button onClick={(e)=>{e.stopPropagation();setReportTarget({type:'listing',id:item.id,name:item.title});setShowReportModal(true);}} style={{fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>⚠️</button>
                     </div>
                   </div>
                   {item.userId===user.uid&&!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
@@ -609,7 +720,7 @@ function App() {
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateSuccess?"Success!":"New Listing"}</h2>
             {showCreateSuccess?(
-              <div style={{textAlign:'center',padding:'40px'}}><div style={{fontSize:'48px',marginBottom:'12px'}}>✅</div><div style={{fontSize:'16px',fontWeight:'600'}}>Listing created!</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Redirecting to home...</div></div>
+              <div style={{textAlign:'center',padding:'40px'}}><div style={{fontSize:'48px',marginBottom:'12px'}}>✅</div><div style={{fontSize:'16px',fontWeight:'600'}}>Listing created!</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Active for 48 hours</div></div>
             ):(
               <>
                 <input type="file" id="listing-photo" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'listing')} />
@@ -633,7 +744,7 @@ function App() {
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
-                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
+                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
               </>
             )}
           </div>
@@ -642,6 +753,12 @@ function App() {
       
       {page==="messages"&&(
         <div style={{padding:'16px'}}>
+          {showSafetyMessage && (
+            <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
+              <span>⚠️ <strong>Safety First:</strong> Meet in public campus places. Never send money before inspecting items.</span>
+              <button onClick={()=>setShowSafetyMessage(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer',flexShrink:0}}>×</button>
+            </div>
+          )}
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Messages {unreadCount>0&&`(${unreadCount})`}</h2>
           {conversations.length===0?(
             <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
@@ -678,6 +795,12 @@ function App() {
 
       {page==="chat"&&activeConversation&&(
         <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 136px)'}}>
+          {showChatTip && (
+            <div style={{background:'#e0f2fe',padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'12px',lineHeight:'1.4'}}>
+              <span>💬 <strong>Quick Reply Tip:</strong> Ghosting damages your reputation. Respond promptly to build trust!</span>
+              <button onClick={()=>setShowChatTip(false)} style={{background:'none',border:'none',fontSize:'16px',cursor:'pointer',flexShrink:0}}>×</button>
+            </div>
+          )}
           <div style={{padding:'12px 16px',background:'#fff',borderBottom:'1px solid #e2e6ea'}}>
             <div style={{fontSize:'12px',color:'#2dd4bf',fontWeight:'600',marginBottom:'2px'}}>{activeConversation.listingTitle}</div>
             <div style={{fontSize:'11px',color:'#8a9bb0'}}>{activeConversation.listingPrice?.toLocaleString()} TSh</div>
@@ -738,29 +861,54 @@ function App() {
           </div>
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
-            <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings ({myListings.length})</button>
+            <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings</button>
             <button onClick={()=>setProfileTab("saved")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>Saved ({cart.length})</button>
           </div>
           
           {profileTab==="listings"&&(
-            <div style={{display:'flex',flexDirection:'column'}}>
-              {myListings.length===0?(
-                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>
-              ):(
-                myListings.map((item,idx)=>(
-                  <div key={item.id} style={{background:'#fff',borderBottom:idx===myListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===myListings.length-1?'0 0 12px 12px':'0'}}>
-                    {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
-                    <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
-                    {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                      <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                      <span style={{fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
+            <>
+              {myActiveListings.length>0&&<div style={{marginBottom:'16px'}}>
+                <h3 style={{fontSize:'16px',fontWeight:'700',color:'#10b981',marginBottom:'12px'}}>Active Listings ({myActiveListings.length})</h3>
+                <div style={{display:'flex',flexDirection:'column'}}>
+                  {myActiveListings.map((item,idx)=>(
+                    <div key={item.id} style={{background:'#fff',borderBottom:idx===myActiveListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===myActiveListings.length-1?'0 0 12px 12px':'0'}}>
+                      {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
+                      {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
+                      <div style={{fontSize:'12px',color:'#10b981',marginBottom:'8px',fontWeight:'600'}}>⏰ {getTimeUntilExpiry(item)}</div>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                        <span style={{fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
+                      </div>
+                      {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
                     </div>
-                    {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
-                  </div>
-                ))
-              )}
-            </div>
+                  ))}
+                </div>
+              </div>}
+              
+              {myExpiredListings.length>0&&<div>
+                <h3 style={{fontSize:'16px',fontWeight:'700',color:'#ef4444',marginBottom:'12px'}}>Expired Listings ({myExpiredListings.length})</h3>
+                <div style={{display:'flex',flexDirection:'column'}}>
+                  {myExpiredListings.map((item,idx)=>(
+                    <div key={item.id} style={{background:'#fff',borderBottom:idx===myExpiredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',opacity:0.7,borderRadius:idx===0?'12px 12px 0 0':idx===myExpiredListings.length-1?'0 0 12px 12px':'0'}}>
+                      {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
+                      {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
+                      <div style={{fontSize:'12px',color:'#ef4444',marginBottom:'8px',fontWeight:'600'}}>🔴 {getTimeUntilExpiry(item)}</div>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                        <div style={{display:'flex',gap:'8px'}}>
+                          <button onClick={()=>renewListing(item.id)} style={{padding:'6px 14px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🔄 Renew</button>
+                          <button onClick={()=>deleteListing(item.id)} style={{padding:'6px 14px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>}
+              
+              {myActiveListings.length===0 && myExpiredListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
+            </>
           )}
           
           {profileTab==="saved"&&(
@@ -807,6 +955,27 @@ function App() {
             
             <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
             <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      
+      {showReportModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowReportModal(false)}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
+            <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Report {reportTarget?.type==='listing'?'Listing':'User'}</h3>
+            <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Ludepoz safe. What's wrong with this {reportTarget?.type}?</p>
+            
+            <div style={{marginBottom:'16px'}}>
+              {['Scam/Fraud','Inappropriate Content','Spam','Harassment','Misleading Info','Other'].map(reason=>(
+                <label key={reason} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',cursor:'pointer'}}>
+                  <input type="radio" name="report-reason" value={reason} checked={reportReason===reason} onChange={e=>setReportReason(e.target.value)} />
+                  <span style={{fontSize:'14px'}}>{reason}</span>
+                </label>
+              ))}
+            </div>
+            
+            <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
+            <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
