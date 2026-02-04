@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -61,6 +61,13 @@ function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
+  
+  // Messaging state
+  const [conversations, setConversations] = useState([]);
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [messageText, setMessageText] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const loadListings = useCallback(async () => {
     if (!selectedUni) return;
@@ -114,12 +121,139 @@ function App() {
     }
   }, []);
 
+  const loadConversations = useCallback(async () => {
+    if (!user) return;
+    try {
+      const q1 = query(
+        collection(db, "conversations"),
+        where("buyerId", "==", user.uid),
+        orderBy("lastMessageAt", "desc")
+      );
+      const q2 = query(
+        collection(db, "conversations"),
+        where("sellerId", "==", user.uid),
+        orderBy("lastMessageAt", "desc")
+      );
+      
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+      const convos1 = snap1.docs.map(d => ({ id: d.id, ...d.data() }));
+      const convos2 = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      const allConvos = [...convos1, ...convos2];
+      const uniqueConvos = Array.from(new Map(allConvos.map(c => [c.id, c])).values());
+      uniqueConvos.sort((a, b) => (b.lastMessageAt?.seconds || 0) - (a.lastMessageAt?.seconds || 0));
+      
+      setConversations(uniqueConvos);
+      
+      const unread = uniqueConvos.reduce((sum, conv) => {
+        const myUnread = user.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+        return sum + (myUnread || 0);
+      }, 0);
+      setUnreadCount(unread);
+    } catch (err) {
+      console.error("Error loading conversations:", err);
+    }
+  }, [user]);
+
+  const startConversation = async (listing) => {
+    if (!user || user.uid === listing.userId) {
+      if (user.uid === listing.userId) setError("You can't message your own listing!");
+      return;
+    }
+    
+    try {
+      const q = query(
+        collection(db, "conversations"),
+        where("listingId", "==", listing.id),
+        where("buyerId", "==", user.uid)
+      );
+      
+      const existing = await getDocs(q);
+      
+      if (!existing.empty) {
+        const conv = { id: existing.docs[0].id, ...existing.docs[0].data() };
+        setActiveConversation(conv);
+        setPage("chat");
+        await markAsRead(conv.id);
+      } else {
+        const newConv = await addDoc(collection(db, "conversations"), {
+          listingId: listing.id,
+          listingTitle: listing.title,
+          listingPrice: listing.price,
+          listingPhoto: listing.photoUrl || null,
+          buyerId: user.uid,
+          buyerName: userName,
+          buyerAvatar: userAvatar,
+          sellerId: listing.userId,
+          sellerName: listing.userName,
+          sellerAvatar: listing.userAvatar,
+          lastMessage: "",
+          lastMessageAt: serverTimestamp(),
+          buyerUnread: 0,
+          sellerUnread: 0,
+          createdAt: serverTimestamp()
+        });
+        
+        const convDoc = await getDoc(newConv);
+        setActiveConversation({ id: convDoc.id, ...convDoc.data() });
+        setPage("chat");
+      }
+    } catch (err) {
+      console.error("Error starting conversation:", err);
+      setError("Failed to start conversation");
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!messageText.trim() || !activeConversation) return;
+    
+    try {
+      await addDoc(collection(db, "conversations", activeConversation.id, "messages"), {
+        senderId: user.uid,
+        senderName: userName,
+        text: messageText.trim(),
+        createdAt: serverTimestamp()
+      });
+      
+      const isFromBuyer = user.uid === activeConversation.buyerId;
+      await updateDoc(doc(db, "conversations", activeConversation.id), {
+        lastMessage: messageText.trim(),
+        lastMessageAt: serverTimestamp(),
+        [isFromBuyer ? "sellerUnread" : "buyerUnread"]: increment(1)
+      });
+      
+      setMessageText("");
+    } catch (err) {
+      console.error("Error sending message:", err);
+      setError("Failed to send message");
+    }
+  };
+
+  const markAsRead = async (conversationId) => {
+    if (!user) return;
+    try {
+      const convRef = doc(db, "conversations", conversationId);
+      const convDoc = await getDoc(convRef);
+      if (convDoc.exists()) {
+        const conv = convDoc.data();
+        const isFromBuyer = user.uid === conv.buyerId;
+        const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
+        if ((conv[unreadField] || 0) > 0) {
+          await updateDoc(convRef, { [unreadField]: 0 });
+        }
+      }
+    } catch (err) {
+      console.error("Error marking as read:", err);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
         await loadUserProfile(currentUser.uid);
         await loadListings();
+        await loadConversations();
       } else {
         setUser(null);
         setUserName("");
@@ -128,7 +262,7 @@ function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [loadUserProfile, loadListings]);
+  }, [loadUserProfile, loadListings, loadConversations]);
 
   useEffect(() => {
     if (user && page === "home") {
@@ -136,6 +270,38 @@ function App() {
       return () => clearInterval(interval);
     }
   }, [user, page, loadListings]);
+
+  useEffect(() => {
+    if (user && page === "messages") {
+      const interval = setInterval(() => loadConversations(), 3000);
+      return () => clearInterval(interval);
+    }
+  }, [user, page, loadConversations]);
+
+  useEffect(() => {
+    if (!activeConversation) return;
+    
+    const q = query(
+      collection(db, "conversations", activeConversation.id, "messages"),
+      orderBy("createdAt", "asc")
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate()
+      }));
+      setMessages(msgs);
+      
+      setTimeout(() => {
+        const container = document.getElementById('messages-container');
+        if (container) container.scrollTop = container.scrollHeight;
+      }, 100);
+    });
+    
+    return () => unsubscribe();
+  }, [activeConversation]);
 
   const handleSignup = async () => {
     if (!signupName.trim() || !email.trim() || !password.trim() || !selectedUni) {
@@ -192,6 +358,9 @@ function App() {
       setPage("home");
       setListings([]);
       setCart([]);
+      setConversations([]);
+      setMessages([]);
+      setActiveConversation(null);
     } catch (err) {
       console.error("Logout error:", err);
     }
@@ -278,8 +447,9 @@ function App() {
     
     try {
       setUploading(true);
-      let avatarUrl = userAvatar;
+      setError("");
       
+      let avatarUrl = userAvatar;
       if (editProfileData.avatarFile) {
         const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
         const snapshot = await uploadBytes(storageRef, editProfileData.avatarFile);
@@ -319,6 +489,16 @@ function App() {
     } catch (err) {
       console.error("Error marking as sold:", err);
       setError("Failed to mark as sold");
+    }
+  };
+
+  const incrementViews = async (listingId) => {
+    try {
+      await updateDoc(doc(db, "listings", listingId), {
+        views: increment(1)
+      });
+    } catch (err) {
+      console.error("Error incrementing views:", err);
     }
   };
 
@@ -372,8 +552,14 @@ function App() {
   return (
     <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
       <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
-        {(page==="create"||page==="profile"||page==="messages"||page==="saved")&&<button onClick={()=>setPage("home")} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>}
-        <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Lud<em style={{color:'#2dd4bf'}}>e</em>poz</div>
+        {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="chat")&&<button onClick={()=>setPage(page==="chat"?"messages":"home")} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>}
+        <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
+          {page==="chat" && activeConversation ? (
+            activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
+          ) : (
+            <>Lud<em style={{color:'#2dd4bf'}}>e</em>poz</>
+          )}
+        </div>
         {page==="home"&&<div style={{flex:1,display:'flex',alignItems:'center',background:'#f4f6f8',borderRadius:'20px',padding:'8px 14px'}}><input type="text" placeholder={`Search ${selectedUni?.short||""}...`} value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/><span style={{fontSize:'18px',cursor:'pointer',marginLeft:'8px'}}>🔍</span></div>}
       </div>
       {error&&<div style={{margin:'16px',background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',fontSize:'13px'}}>{error}</div>}
@@ -392,7 +578,7 @@ function App() {
               <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div><div style={{fontSize:'16px',fontWeight:'600'}}>No listings yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to post in {selectedUni?.short}!</div></div>
             ):(
               filteredListings.map((item,idx)=>(
-                <div key={item.id} style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
+                <div key={item.id} onClick={()=>incrementViews(item.id)} style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div style={{width:'36px',height:'36px',borderRadius:'50%',background:item.userAvatar?`url(${item.userAvatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span style={{fontSize:'13px',fontWeight:'600'}}>{item.userName}</span>
@@ -405,12 +591,12 @@ function App() {
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                     <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-                      <button style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>💬</button>
-                      <button onClick={()=>toggleSave(item)} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖 {cart.some(c=>c.id===item.id)&&"Saved"}</button>
+                      {item.userId!==user.uid&&<button onClick={(e)=>{e.stopPropagation();startConversation(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>}
+                      <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖 {cart.some(c=>c.id===item.id)&&"Saved"}</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
                     </div>
                   </div>
-                  {item.userId===user.uid&&!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
+                  {item.userId===user.uid&&!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
                 </div>
               ))
             )}
@@ -456,10 +642,63 @@ function App() {
       
       {page==="messages"&&(
         <div style={{padding:'16px'}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
-            <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
-            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'8px'}}>Messages</h2>
-            <p style={{fontSize:'14px',color:'#8a9bb0'}}>Chat feature coming soon!</p>
+          <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Messages {unreadCount>0&&`(${unreadCount})`}</h2>
+          {conversations.length===0?(
+            <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
+              <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
+              <h3 style={{fontSize:'18px',fontWeight:'700',marginBottom:'8px'}}>No messages yet</h3>
+              <p style={{fontSize:'14px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
+            </div>
+          ):(
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              {conversations.map(conv=>{
+                const otherPerson = user.uid===conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
+                const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+                return (
+                  <div key={conv.id} onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}} style={{background:'#fff',padding:'16px',borderRadius:'12px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                    <div style={{display:'flex',gap:'12px'}}>
+                      <div style={{width:'48px',height:'48px',borderRadius:'50%',background:otherPerson.avatar?`url(${otherPerson.avatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:'700',fontSize:'16px',flexShrink:0}}>{!otherPerson.avatar&&otherPerson.name.split(" ").map(n=>n[0]).join("")}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                          <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
+                          {conv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(conv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
+                        </div>
+                        <div style={{fontSize:'12px',color:'#2dd4bf',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+                        <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
+                      </div>
+                      {unread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#ef4444',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {page==="chat"&&activeConversation&&(
+        <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 136px)'}}>
+          <div style={{padding:'12px 16px',background:'#fff',borderBottom:'1px solid #e2e6ea'}}>
+            <div style={{fontSize:'12px',color:'#2dd4bf',fontWeight:'600',marginBottom:'2px'}}>{activeConversation.listingTitle}</div>
+            <div style={{fontSize:'11px',color:'#8a9bb0'}}>{activeConversation.listingPrice?.toLocaleString()} TSh</div>
+          </div>
+          <div id="messages-container" style={{flex:1,overflowY:'auto',padding:'16px',background:'#f4f6f8'}}>
+            {messages.map(msg=>{
+              const isMine=msg.senderId===user.uid;
+              return (
+                <div key={msg.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:'12px'}}>
+                  <div style={{maxWidth:'75%',background:isMine?'#2dd4bf':'#fff',color:isMine?'#0f1b2d':'#1f2937',padding:'10px 14px',borderRadius:'16px',fontSize:'14px',lineHeight:'1.4',boxShadow:'0 1px 2px rgba(0,0,0,0.05)'}}>
+                    {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
+                    <div>{msg.text}</div>
+                    <div style={{fontSize:'10px',marginTop:'4px',opacity:0.7,textAlign:'right'}}>{msg.createdAt?new Date(msg.createdAt).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'}):''}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{padding:'12px 16px',background:'#fff',borderTop:'1px solid #e2e6ea',display:'flex',gap:'8px'}}>
+            <input type="text" value={messageText} onChange={e=>setMessageText(e.target.value)} onKeyPress={e=>e.key==='Enter'&&sendMessage()} placeholder="Type a message..." style={{flex:1,padding:'10px 14px',border:'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'14px',outline:'none'}} />
+            <button onClick={sendMessage} disabled={!messageText.trim()} style={{width:'44px',height:'44px',borderRadius:'50%',background:'#2dd4bf',color:'#0f1b2d',border:'none',fontSize:'20px',cursor:messageText.trim()?'pointer':'not-allowed',opacity:messageText.trim()?1:0.5,display:'flex',alignItems:'center',justifyContent:'center'}}>📤</button>
           </div>
         </div>
       )}
@@ -572,9 +811,9 @@ function App() {
         </div>
       )}
       
-      <div style={{position:'fixed',bottom:0,left:0,right:0,height:'68px',background:'#fff',borderTop:'1px solid #e2e6ea',display:page==="create"?'none':'flex',alignItems:'center',justifyContent:'space-around',zIndex:100}}>
+      <div style={{position:'fixed',bottom:0,left:0,right:0,height:'68px',background:'#fff',borderTop:'1px solid #e2e6ea',display:page==="create"||page==="chat"?'none':'flex',alignItems:'center',justifyContent:'space-around',zIndex:100}}>
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span></button>
+        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'14px',textAlign:'center'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("create")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
         <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span>{cart.length>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'14px',textAlign:'center'}}>{cart.length}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
