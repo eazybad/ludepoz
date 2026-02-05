@@ -408,23 +408,23 @@ function App() {
 
 useEffect(() => {
   if (!activeConversation) return;
-  
+
   const q = query(
     collection(db, "conversations", activeConversation.id, "messages"),
     orderBy("createdAt", "asc")
   );
-  
+
   const unsubscribe = onSnapshot(q, (snapshot) => {
-    setMessages(snapshot.docs);
+    const msgs = snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }));
+    setMessages(msgs);
   });
-  
-  setTimeout(() => {
-    const container = document.getElementById('messages-container');
-    if (container) container.scrollTop = container.scrollHeight;
-  }, 100);
-  
+
   return () => unsubscribe();
 }, [activeConversation]);
+
 
   const handleSignup = async () => {
     if (!signupName.trim() || !email.trim() || !password.trim() || !selectedUni) {
@@ -701,7 +701,7 @@ useEffect(() => {
   const isSaved = cart.some(c => c.id === item.id);
   
   if (isSaved) {
-    setCart(cart.filter(c => c.id !== item.id));
+   setCart(cart.filter(c => c.id !== item.id));
     try {
       await updateDoc(doc(db, "listings", item.id), {
         saves: increment(-1)
@@ -718,6 +718,7 @@ useEffect(() => {
     } catch (err) {
       console.error("Error updating saves:", err);
     }
+    await loadListings();
   }
 };
 
