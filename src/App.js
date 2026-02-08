@@ -991,7 +991,7 @@ return (
           </button>
           <button 
             onClick={() => {
-              const text = `Join Ludepoz - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
+              const text = `Join Kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://Kampasika.netlify.app`;
               window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
             }}
             style={{
