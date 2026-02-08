@@ -23,10 +23,6 @@ const storage = getStorage(app);
 const UNIVERSITIES = [
   { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" },
   { id: 2, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
-  { id: 3, name: "Institute of Finance Management", short: "IFM", location: "Dar es Salaam" },
-  { id: 4, name: "Tanzania Institute of Accountancy", short: "TIA", location: "Dar es Salaam" },
-  { id: 5, name: "National Institute of Transport", short: "NIT", location: "Dar es Salaam" },
-  { id: 6, name: "Dar es Salaam Institute of Technology", short: "DIT", location: "Dar es Salaam" },
 ];
 
 const CATEGORIES = [
@@ -92,12 +88,26 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isVerified, setIsVerified] = useState(false);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [studentIdFile, setStudentIdFile] = useState(null);
+  const [studentIdPreview, setStudentIdPreview] = useState(null); 
 
   const isExpired = (listing) => {
     if (!listing.expiresAt) return false;
     const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
     return expiryDate < new Date();
   };
+  
+  const canPerformAction = () => {
+  if (!user) return false;
+  if (!isVerified) {
+    setError("Please verify your account to perform this action");
+    setShowVerifyModal(true);
+    return false;
+  }
+  return true;
+};
 
   const getTimeUntilExpiry = (listing) => {
     if (!listing.expiresAt) return "";
@@ -231,23 +241,24 @@ function App() {
 }, [selectedUni, showAllUniversities]); // ⭐ ADD showAllUniversities to dependencies!
 
   const loadUserProfile = useCallback(async (userId) => {
-    try {
-      const userDocRef = doc(db, "users", userId);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        setUserName(userData.name || "");
-        setUserAvatar(userData.avatarUrl || null);
-        setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
-        
-        if (auth.currentUser && !auth.currentUser.emailVerified) {
-          setShowVerificationBanner(true);
-        }
+  try {
+    const userDocRef = doc(db, "users", userId);
+    const userDoc = await getDoc(userDocRef);
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      setUserName(userData.name || "");
+      setUserAvatar(userData.avatarUrl || null);
+      setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || UNIVERSITIES[0]);
+      setIsVerified(userData.verified || false); // ⭐ ADD THIS
+      
+      if (auth.currentUser && !auth.currentUser.emailVerified) {
+        setShowVerificationBanner(true);
       }
-    } catch (err) {
-      console.error("Error loading profile:", err);
     }
-  }, []);
+  } catch (err) {
+    console.error("Error loading profile:", err);
+  }
+}, []);
 
   const loadConversations = useCallback(async () => {
     if (!user) return;
@@ -284,6 +295,8 @@ function App() {
   }, [user]);
 
   const startConversation = async (listing) => {
+    if (!canPerformAction()) return;
+
     if (!user || user.uid === listing.userId) {
       if (user.uid === listing.userId) setError("You can't message your own listing!");
       return;
@@ -566,6 +579,8 @@ useEffect(() => {
 };
 
   const handleCreateListing = async () => {
+    if (!canPerformAction()) return;
+
   if (!createData.cat || !createData.title.trim() || !createData.price || !user) {
     setError("Please fill in all required fields");
     return;
@@ -630,51 +645,80 @@ useEffect(() => {
   }
 };
 
-  const handleUpdateProfile = async () => {
-    if (!user) return;
+ const handleUpdateProfile = async () => {
+  if (!user) return;
+  
+  try {
+    setUploading(true);
+    setError("");
     
-    try {
-      setUploading(true);
-      setError("");
-      
-      let avatarUrl = userAvatar;
-      if (editProfileData.avatarFile) {
-        const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
-        const snapshot = await uploadBytes(storageRef, editProfileData.avatarFile);
-        avatarUrl = await getDownloadURL(snapshot.ref);
-      }
-
-      const updateData = { avatarUrl };
-      if (editProfileData.name.trim()) {
-        updateData.name = editProfileData.name.trim();
-      }
-      
-      <img
-  src={avatarUrl}
-  alt="Profile"
-  style={{
-    width: 120,
-    height: 120,
-    objectFit: "cover",
-    borderRadius: "50%"
-  }}
-/>
- 
-      await updateDoc(doc(db, "users", user.uid), updateData);
-      
-      if (updateData.name) setUserName(updateData.name);
-      setUserAvatar(avatarUrl);
-      setShowEditProfile(false);
-      setEditProfileData({ name: "", avatarFile: null, avatarPreview: null });
-      setSuccess("Profile updated!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (err) {
-      console.error("Error updating profile:", err);
-      setError("Failed to update profile");
-    } finally {
-      setUploading(false);
+    let avatarUrl = userAvatar;
+    if (editProfileData.avatarFile) {
+      const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
+      const snapshot = await uploadBytes(storageRef, editProfileData.avatarFile);
+      avatarUrl = await getDownloadURL(snapshot.ref);
     }
-  };
+
+    const updateData = {};
+    if (avatarUrl) updateData.avatarUrl = avatarUrl;
+    if (editProfileData.name.trim()) updateData.name = editProfileData.name.trim();
+
+    await updateDoc(doc(db, "users", user.uid), updateData);
+    
+    if (updateData.name) setUserName(updateData.name);
+    if (avatarUrl) setUserAvatar(avatarUrl);
+    
+    setShowEditProfile(false);
+    setEditProfileData({ name: "", avatarFile: null, avatarPreview: null });
+    setSuccess("Profile updated!");
+    setTimeout(() => setSuccess(""), 3000);
+  } catch (err) {
+    console.error("Error updating profile:", err);
+    setError("Failed to update profile: " + err.message);
+  } finally {
+    setUploading(false);
+  }
+};
+
+  const submitVerification = async () => {
+  if (!studentIdFile || !user) {
+    setError("Please upload your student ID");
+    return;
+  }
+  
+  try {
+    setUploading(true);
+    setError("");
+    
+    // Upload student ID
+    const storageRef = ref(storage, `verification/${user.uid}/${Date.now()}.jpg`);
+    const snapshot = await uploadBytes(storageRef, studentIdFile);
+    const idUrl = await getDownloadURL(snapshot.ref);
+    
+    // Create verification request
+    await addDoc(collection(db, "verificationRequests"), {
+      userId: user.uid,
+      userName: userName,
+      email: user.email,
+      universityId: selectedUni.id,
+      universityName: selectedUni.short,
+      studentIdUrl: idUrl,
+      status: "pending",
+      createdAt: serverTimestamp()
+    });
+    
+    setShowVerifyModal(false);
+    setStudentIdFile(null);
+    setStudentIdPreview(null);
+    setSuccess("Verification request submitted! We'll review it within 24 hours.");
+    setTimeout(() => setSuccess(""), 5000);
+  } catch (err) {
+    console.error("Error submitting verification:", err);
+    setError("Failed to submit verification");
+  } finally {
+    setUploading(false);
+  }
+}; 
 
   const markAsSold = async (listingId) => {
     try {
@@ -709,6 +753,8 @@ useEffect(() => {
 };
 
   const toggleSave = async (item) => {
+    if (!canPerformAction()) return;
+
   const isSaved = cart.some(c => c.id === item.id);
   
   if (isSaved) {
@@ -764,7 +810,7 @@ const loadSellerStats = useCallback(async (userId) => {
     return (
       <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',background:'#f4f6f8',fontFamily:'system-ui'}}>
         <div style={{width:'100%',maxWidth:'400px',background:'#fff',borderRadius:'18px',padding:'28px 20px',boxShadow:'0 4px 20px rgba(0,0,0,0.08)'}}>
-          <h1 style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',textAlign:'center',marginBottom:'24px'}}>Lud<em style={{color:'#2dd4bf'}}>e</em>poz</h1>
+          <h1 style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',textAlign:'center',marginBottom:'24px'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</h1>
           {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
           {success && <div style={{background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{success}</div>}
           {authMode==="signup"?(
@@ -863,7 +909,7 @@ return (
         activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
       ) : (
         <>
-          Lud<em style={{color:'#2dd4bf'}}>e</em>poz
+          Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
         </>
       )}
     </div>
@@ -894,6 +940,89 @@ return (
         
         {page==="home"&&(
         <div style={{padding:'16px'}}>
+          {!isVerified && (
+      <div style={{
+        background:'linear-gradient(135deg, #fbbf24, #f59e0b)',
+        borderRadius:'16px',
+        padding:'20px',
+        marginBottom:'16px',
+        boxShadow:'0 4px 12px rgba(245,158,11,0.2)'
+      }}>
+        <div style={{
+          fontSize:'20px',
+          fontWeight:'700',
+          color:'#fff',
+          marginBottom:'8px',
+          display:'flex',
+          alignItems:'center',
+          gap:'8px'
+        }}>
+          <span>⚠️</span>
+          <span>Verify Your Account</span>
+        </div>
+        <p style={{
+          color:'rgba(255,255,255,0.95)',
+          fontSize:'14px',
+          lineHeight:'1.5',
+          marginBottom:'12px'
+        }}>
+          Get verified to post listings, message sellers, and save items. Help grow our community!
+        </p>
+        <div style={{
+          display:'flex',
+          gap:'8px',
+          marginBottom:'12px'
+        }}>
+          <button 
+            onClick={() => setShowVerifyModal(true)}
+            style={{
+              background:'#fff',
+              color:'#f59e0b',
+              padding:'10px 20px',
+              borderRadius:'10px',
+              border:'none',
+              fontSize:'14px',
+              fontWeight:'600',
+              cursor:'pointer',
+              flex:1
+            }}
+          >
+            ✓ Verify Now
+          </button>
+          <button 
+            onClick={() => {
+              const text = `Join Ludepoz - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+            }}
+            style={{
+              background:'#25D366',
+              color:'#fff',
+              padding:'10px 20px',
+              borderRadius:'10px',
+              border:'none',
+              fontSize:'14px',
+              fontWeight:'600',
+              cursor:'pointer',
+              flex:1,
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              gap:'6px'
+            }}
+          >
+            <span>📱</span>
+            <span>Invite Friends</span>
+          </button>
+        </div>
+        <div style={{
+          fontSize:'12px',
+          color:'rgba(255,255,255,0.8)',
+          textAlign:'center'
+        }}>
+          💡 More students = more items to trade!
+        </div>
+      </div>
+    )}
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px'}}>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next room</em><br/>— all on campus.</h1>
             <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy notes, sell electronics, find a roommate, or lease a room.</p>
@@ -1270,8 +1399,15 @@ return (
               {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
               <div>{msg.text}</div>
               <div style={{fontSize:'10px',marginTop:'4px',opacity:0.7,textAlign:'right'}}>
-                {msg.createdAt?new Date(msg.createdAt).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'}):''}
-              </div>
+  {msg.createdAt ? (() => {
+    try {
+      const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
+      return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
+    } catch(e) {
+      return '';
+    }
+  })() : ''}
+</div>
             </div>
           </div>
         );
@@ -1358,7 +1494,16 @@ return (
       {page==="profile"&&(
         <div style={{padding:'16px'}}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'14px',alignItems:'center'}}>
-            <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>{!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}</div>
+           <div style={{position:'relative',width:'60px',height:'60px'}}>
+  <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
+    {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
+  </div>
+  {isVerified && (
+    <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'24px',height:'24px',borderRadius:'50%',background:'#2dd4bf',border:'3px solid #fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px'}}>
+      ✓
+    </div>
+  )}
+</div>
             <div style={{flex:1}}>
               <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
               <div style={{fontSize:'11px',color:'#2dd4bf',marginTop:'4px'}}>📍 {selectedUni?.name}</div>
@@ -1923,12 +2068,156 @@ return (
 
   </div>
 )}
+       
+      {/* Verification Modal */}
+{showVerifyModal && (
+  <div style={{
+    position:'fixed',
+    inset:0,
+    background:'rgba(0,0,0,0.5)',
+    zIndex:200,
+    display:'flex',
+    alignItems:'center',
+    justifyContent:'center',
+    padding:'20px'
+  }} onClick={()=>setShowVerifyModal(false)}>
+    <div style={{
+      background:'#fff',
+      borderRadius:'16px',
+      padding:'24px',
+      width:'100%',
+      maxWidth:'400px'
+    }} onClick={(e)=>e.stopPropagation()}>
+      <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Verify Your Account</h3>
+      
+      <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px',lineHeight:'1.6'}}>
+        Upload a photo of your student ID to get verified. This helps us keep Kampasika safe and trusted.
+      </p>
+      
+      <input 
+        type="file" 
+        id="student-id-upload" 
+        accept="image/*" 
+        style={{display:'none'}} 
+        onChange={(e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          if (!file.type.startsWith('image/')) {
+            setError("Please select an image file");
+            return;
+          }
+          if (file.size > 5 * 1024 * 1024) {
+            setError("Image too large. Max 5MB");
+            return;
+          }
+          setStudentIdFile(file);
+          const reader = new FileReader();
+          reader.onload = (event) => setStudentIdPreview(event.target.result);
+          reader.readAsDataURL(file);
+        }} 
+      />
+      
+      <label htmlFor="student-id-upload" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
+        {studentIdPreview ? (
+          <div style={{position:'relative'}}>
+            <img 
+              src={studentIdPreview} 
+              alt="Student ID" 
+              style={{
+                width:'100%',
+                height:'200px',
+                objectFit:'cover',
+                borderRadius:'12px',
+                border:'2px solid #e2e6ea'
+              }} 
+            />
+            <div style={{
+              position:'absolute',
+              top:'8px',
+              right:'8px',
+              background:'rgba(0,0,0,0.6)',
+              color:'#fff',
+              padding:'6px 12px',
+              borderRadius:'8px',
+              fontSize:'12px',
+              fontWeight:'600'
+            }}>
+              Change Photo
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            border:'2px dashed #e2e6ea',
+            borderRadius:'12px',
+            padding:'32px',
+            textAlign:'center',
+            background:'#f9fafb'
+          }}>
+            <div style={{fontSize:'48px',marginBottom:'12px'}}>🎓</div>
+            <div style={{fontSize:'14px',fontWeight:'600',marginBottom:'4px'}}>Upload Student ID</div>
+            <div style={{fontSize:'12px',color:'#8a9bb0'}}>Click to select photo (max 5MB)</div>
+          </div>
+        )}
+      </label>
+      
+      <div style={{
+        background:'#eff6ff',
+        padding:'12px',
+        borderRadius:'10px',
+        marginBottom:'16px'
+      }}>
+        <div style={{fontSize:'13px',color:'#1e40af',lineHeight:'1.5'}}>
+          <strong>✓ What we need:</strong>
+          <br/>• Clear photo of your student ID
+          <br/>• Visible university name
+          <br/>• Readable student name/number
+        </div>
+      </div>
+      
+      <button 
+        onClick={submitVerification} 
+        disabled={!studentIdFile || uploading} 
+        style={{
+          width:'100%',
+          padding:'12px',
+          background:studentIdFile&&!uploading?'#2dd4bf':'#e2e6ea',
+          color:studentIdFile&&!uploading?'#0f1b2d':'#8a9bb0',
+          border:'none',
+          borderRadius:'10px',
+          fontSize:'14px',
+          fontWeight:'600',
+          cursor:studentIdFile&&!uploading?'pointer':'not-allowed',
+          marginBottom:'8px'
+        }}
+      >
+        {uploading ? 'Submitting...' : 'Submit for Verification'}
+      </button>
+      
+      <button 
+        onClick={()=>{setShowVerifyModal(false);setStudentIdFile(null);setStudentIdPreview(null);}} 
+        style={{
+          width:'100%',
+          padding:'12px',
+          background:'transparent',
+          color:'#8a9bb0',
+          border:'none',
+          borderRadius:'10px',
+          fontSize:'14px',
+          fontWeight:'600',
+          cursor:'pointer'
+        }}
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
 
       {showReportModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowReportModal(false)}>
           <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
             <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Report {reportTarget?.type==='listing'?'Listing':'User'}</h3>
-            <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Ludepoz safe. What's wrong with this {reportTarget?.type}?</p>
+            <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Kampasika safe. What's wrong with this {reportTarget?.type}?</p>
             
             <div style={{marginBottom:'16px'}}>
               {['Scam/Fraud','Inappropriate Content','Spam','Harassment','Misleading Info','Other'].map(reason=>(
