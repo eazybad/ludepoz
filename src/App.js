@@ -695,6 +695,8 @@ useEffect(() => {
     const snapshot = await uploadBytes(storageRef, studentIdFile);
     const idUrl = await getDownloadURL(snapshot.ref);
     
+    console.log("Upload successful!", snapshot);
+
     // Create verification request
     await addDoc(collection(db, "verificationRequests"), {
       userId: user.uid,
@@ -710,7 +712,7 @@ useEffect(() => {
     setShowVerifyModal(false);
     setStudentIdFile(null);
     setStudentIdPreview(null);
-    setSuccess("Verification request submitted! We'll review it within 24 hours.");
+    setSuccess("Verification request submitted! We'll review it within one hour.");
     setTimeout(() => setSuccess(""), 5000);
   } catch (err) {
     console.error("Error submitting verification:", err);
@@ -815,18 +817,18 @@ const loadSellerStats = useCallback(async (userId) => {
           {success && <div style={{background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{success}</div>}
           {authMode==="signup"?(
             <>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
-              <div style={{marginBottom:'14px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University</label><select onChange={e=>setSelectedUni(UNIVERSITIES.find(u=>u.id===parseInt(e.target.value)))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-              <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Creating...":"Create Account"}</button>
+              <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
+              <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University</label><select onChange={e=>setSelectedUni(UNIVERSITIES.find(u=>u.id===parseInt(e.target.value)))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Creating...":"Create Account"}</button>
               <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
             </>
           ):(
             <>
-              <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
-              <div style={{marginBottom:'14px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-              <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Logging in...":"Log In"}</button>
+              <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
+              <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Logging in...":"Log In"}</button>
               <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
             </>
           )}
@@ -844,6 +846,73 @@ const loadSellerStats = useCallback(async (userId) => {
 }
 
 return (
+      <>
+        {/* ⭐ ADD THIS STYLE TAG HERE */}
+        <style>{`
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      html {
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+      }
+      
+      body {
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 !important;
+        padding: 0 !important;
+        touch-action: pan-y;
+      }
+      
+      #root {
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+        touch-action: pan-y;
+      }
+      
+      body {
+        overscroll-behavior-y: contain;
+      }
+      
+      ::-webkit-scrollbar {
+        display: none;
+      }
+      
+      * {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      html {
+        -webkit-text-size-adjust: 100%;
+        -moz-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+      
+      .scrollable {
+        -webkit-overflow-scrolling: touch;
+        overflow-y: auto;
+      }
+    `}</style>
+    {/* ⭐ END OF STYLE TAG */}
+        
 
     <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
        {error && (
@@ -923,14 +992,14 @@ return (
         alignItems:'center',
         background:'#f4f6f8',
         borderRadius:'20px',
-        padding:'8px 14px'
+        padding:'8px 16px'
       }}>
         <input
           type="text"
           placeholder={`Search ${selectedUni?.short||""}...`}
           value={searchQ}
           onChange={e=>setSearchQ(e.target.value)}
-          style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}
+          style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'16px'}}
         />
         <span style={{fontSize:'18px',cursor:'pointer',marginLeft:'8px'}}>🔍</span>
       </div>
@@ -962,7 +1031,7 @@ return (
         </div>
         <p style={{
           color:'rgba(255,255,255,0.95)',
-          fontSize:'14px',
+          fontSize:'16px',
           lineHeight:'1.5',
           marginBottom:'12px'
         }}>
@@ -981,7 +1050,7 @@ return (
               padding:'10px 20px',
               borderRadius:'10px',
               border:'none',
-              fontSize:'14px',
+              fontSize:'16px',
               fontWeight:'600',
               cursor:'pointer',
               flex:1
@@ -1000,7 +1069,7 @@ return (
               padding:'10px 20px',
               borderRadius:'10px',
               border:'none',
-              fontSize:'14px',
+              fontSize:'16px',
               fontWeight:'600',
               cursor:'pointer',
               flex:1,
@@ -1026,7 +1095,7 @@ return (
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px'}}>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next room</em><br/>— all on campus.</h1>
             <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy notes, sell electronics, find a roommate, or lease a room.</p>
-            <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>setPage("create")} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button><button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'14px',fontWeight:'500',cursor:'pointer'}}>Profile</button></div>
+            <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>setPage("create")} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button><button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button></div>
           </div>
           <div style={{display:'flex',gap:'8px',marginBottom:'16px',background:'#fff',padding:'8px',borderRadius:'12px'}}>
   <button onClick={()=>setShowAllUniversities(false)} style={{flex:1,padding:'10px',background:!showAllUniversities?'#0f1b2d':'#f4f6f8',color:!showAllUniversities?'#fff':'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
@@ -1036,7 +1105,7 @@ return (
     🌍 All Unis
   </button>
 </div>
-<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
+<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
         {(() => {
   const filteredListings = listings.filter(item => {
     
@@ -1100,7 +1169,7 @@ return (
   style={{display:'none'}} 
   onChange={(e)=>handlePhotoSelect(e,'listing')} 
 />
-<label htmlFor="listing-photo" style={{display:'block',marginBottom:'14px',cursor:'pointer'}}>
+<label htmlFor="listing-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
   {createData.photoPreviews && createData.photoPreviews.length > 0 ? (
     <div style={{position:'relative'}}>
       <div style={{
@@ -1219,12 +1288,12 @@ return (
   )}
 </label>
                 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}/></div>
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
-                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
+                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
               </>
             )}
           </div>
@@ -1244,7 +1313,7 @@ return (
             <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
               <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
               <h3 style={{fontSize:'18px',fontWeight:'700',marginBottom:'8px'}}>No messages yet</h3>
-              <p style={{fontSize:'14px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
+              <p style={{fontSize:'16px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
             </div>
           ):(
             <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -1285,7 +1354,7 @@ return (
     {showChatTip && (
       <div style={{
         background:'#e0f2fe',
-        padding:'10px 14px',
+        padding:'10px 16px',
         display:'flex',
         justifyContent:'space-between',
         alignItems:'start',
@@ -1344,7 +1413,7 @@ return (
               justifyContent:'center',
               color:'#fff',
               fontWeight:'700',
-              fontSize:'14px'
+              fontSize:'16px'
             }}>
               {!otherUser.avatar && otherUser.name.split(" ").map(n=>n[0]).join("")}
             </div>
@@ -1390,9 +1459,9 @@ return (
               maxWidth:'75%',
               background:isMine?'#2dd4bf':'#fff',
               color:isMine?'#0f1b2d':'#1f2937',
-              padding:'10px 14px',
+              padding:'10px 16px',
               borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',
-              fontSize:'14px',
+              fontSize:'16px',
               lineHeight:'1.4',
               boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
             }}>
@@ -1438,7 +1507,7 @@ return (
           padding:'12px 16px',
           border:'1.5px solid #e2e6ea',
           borderRadius:'24px',
-          fontSize:'14px',
+          fontSize:'16px',
           outline:'none',
           boxSizing:'border-box'
         }} 
@@ -1493,7 +1562,7 @@ return (
       
       {page==="profile"&&(
         <div style={{padding:'16px'}}>
-          <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'14px',alignItems:'center'}}>
+          <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'16px',alignItems:'center'}}>
            <div style={{position:'relative',width:'60px',height:'60px'}}>
   <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
     {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
@@ -1549,8 +1618,8 @@ return (
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                         <div style={{display:'flex',gap:'8px'}}>
-                          <button onClick={()=>renewListing(item.id)} style={{padding:'6px 14px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🔄 Renew</button>
-                          <button onClick={()=>deleteListing(item.id)} style={{padding:'6px 14px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
+                          <button onClick={()=>renewListing(item.id)} style={{padding:'6px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🔄 Renew</button>
+                          <button onClick={()=>deleteListing(item.id)} style={{padding:'6px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
                         </div>
                       </div>
                     </div>
@@ -1558,7 +1627,7 @@ return (
                 </div>
               </div>}
               
-              {myActiveListings.length===0 && myExpiredListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
+              {myActiveListings.length===0 && myExpiredListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
             </>
           )}
           
@@ -1582,7 +1651,7 @@ return (
             </div>
           )}
           
-          <button onClick={handleLogout} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'16px'}}>🚪 Logout</button>
+          <button onClick={handleLogout} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'16px'}}>🚪 Logout</button>
         </div>
       )}
       
@@ -1599,13 +1668,13 @@ return (
               </div>
             </label>
             
-            <div style={{marginBottom:'14px'}}>
+            <div style={{marginBottom:'16px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>username</label>
-              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none'}} />
+              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}} />
             </div>
             
-            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
-            <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
+            <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
@@ -1852,7 +1921,7 @@ return (
             marginBottom:'16px'
           }}>
             <h4 style={{
-              fontSize:'14px',
+              fontSize:'16px',
               fontWeight:'600',
               marginBottom:'8px',
               color:'#6b7280'
@@ -1879,7 +1948,7 @@ return (
             marginBottom:'16px'
           }}>
             <h4 style={{
-              fontSize:'14px',
+              fontSize:'16px',
               fontWeight:'600',
               marginBottom:'12px',
               color:'#6b7280'
@@ -1928,7 +1997,7 @@ return (
               <div style={{
                 display:'flex',
                 gap:'16px',
-                fontSize:'14px',
+                fontSize:'16px',
                 color:'#6b7280'
               }}>
                 <span>📦 {sellerStats.active} active</span>
@@ -1948,7 +2017,7 @@ return (
           <div style={{
             display:'flex',
             justifyContent:'space-around',
-            fontSize:'14px',
+            fontSize:'16px',
             color:'#6b7280'
           }}>
             <div style={{textAlign:'center'}}>
@@ -1998,7 +2067,7 @@ return (
             }}
             style={{
               flex:2,
-              padding:'14px',
+              padding:'16px',
               background:'#2dd4bf',
               color:'#0f1b2d',
               border:'none',
@@ -2014,7 +2083,7 @@ return (
             onClick={() => toggleSave(viewingListing)}
             style={{
               flex:1,
-              padding:'14px',
+              padding:'16px',
               background:cart.some(c => c.id === viewingListing.id)?'#f59e0b':'#f4f6f8',
               color:cart.some(c => c.id === viewingListing.id)?'#fff':'#0f1b2d',
               border:'none',
@@ -2037,7 +2106,7 @@ return (
               setShowReportModal(true);
             }}
             style={{
-              padding:'14px 16px',
+              padding:'16px 16px',
               background:'#fee2e2',
               color:'#991b1b',
               border:'none',
@@ -2059,7 +2128,7 @@ return (
           background:'#f4f6f8',
           borderRadius:'10px',
           color:'#6b7280',
-          fontSize:'14px'
+          fontSize:'16px'
         }}>
           This is your listing
         </div>
@@ -2090,7 +2159,7 @@ return (
     }} onClick={(e)=>e.stopPropagation()}>
       <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Verify Your Account</h3>
       
-      <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px',lineHeight:'1.6'}}>
+      <p style={{fontSize:'16px',color:'#6b7280',marginBottom:'16px',lineHeight:'1.6'}}>
         Upload a photo of your student ID to get verified. This helps us keep Kampasika safe and trusted.
       </p>
       
@@ -2154,7 +2223,7 @@ return (
             background:'#f9fafb'
           }}>
             <div style={{fontSize:'48px',marginBottom:'12px'}}>🎓</div>
-            <div style={{fontSize:'14px',fontWeight:'600',marginBottom:'4px'}}>Upload Student ID</div>
+            <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>Upload Student ID</div>
             <div style={{fontSize:'12px',color:'#8a9bb0'}}>Click to select photo (max 5MB)</div>
           </div>
         )}
@@ -2184,7 +2253,7 @@ return (
           color:studentIdFile&&!uploading?'#0f1b2d':'#8a9bb0',
           border:'none',
           borderRadius:'10px',
-          fontSize:'14px',
+          fontSize:'16px',
           fontWeight:'600',
           cursor:studentIdFile&&!uploading?'pointer':'not-allowed',
           marginBottom:'8px'
@@ -2202,7 +2271,7 @@ return (
           color:'#8a9bb0',
           border:'none',
           borderRadius:'10px',
-          fontSize:'14px',
+          fontSize:'16px',
           fontWeight:'600',
           cursor:'pointer'
         }}
@@ -2217,32 +2286,33 @@ return (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowReportModal(false)}>
           <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
             <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Report {reportTarget?.type==='listing'?'Listing':'User'}</h3>
-            <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Kampasika safe. What's wrong with this {reportTarget?.type}?</p>
+            <p style={{fontSize:'16px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Kampasika safe. What's wrong with this {reportTarget?.type}?</p>
             
             <div style={{marginBottom:'16px'}}>
               {['Scam/Fraud','Inappropriate Content','Spam','Harassment','Misleading Info','Other'].map(reason=>(
                 <label key={reason} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',cursor:'pointer'}}>
                   <input type="radio" name="report-reason" value={reason} checked={reportReason===reason} onChange={e=>setReportReason(e.target.value)} />
-                  <span style={{fontSize:'14px'}}>{reason}</span>
+                  <span style={{fontSize:'16px'}}>{reason}</span>
                 </label>
               ))}
             </div>
             
-            <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
-            <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
+            <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
       
       <div style={{position:'fixed',bottom:0,left:0,right:0,height:'68px',background:'#fff',borderTop:'1px solid #e2e6ea',display:page==="create"||page==="chat"?'none':'flex',alignItems:'center',justifyContent:'space-around',zIndex:100}}>
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'14px',textAlign:'center'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("create")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
-        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span>{cart.length>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'14px',textAlign:'center'}}>{cart.length}</span>}</button>
+        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span>{cart.length>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{cart.length}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
       
     </div>
   </div>
+  </>
 );
 }
 
