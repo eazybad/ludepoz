@@ -811,7 +811,23 @@ const loadSellerStats = useCallback(async (userId) => {
   if (!user && !loading) {
     return (
       <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',background:'#f4f6f8',fontFamily:'system-ui'}}>
-        <div style={{width:'100%',maxWidth:'400px',background:'#fff',borderRadius:'18px',padding:'28px 20px',boxShadow:'0 4px 20px rgba(0,0,0,0.08)'}}>
+        <div style={{
+  position:'fixed',
+  top:0,
+  left:0,
+  right:0,
+  width:'100%',
+  maxWidth:'100vw',
+  background:'#fff',
+  padding:'12px 16px',
+  display:'flex',
+  alignItems:'center',
+  gap:'10px',
+  borderBottom:'1px solid #e2e6ea',
+  zIndex:1000,
+  boxSizing:'border-box',
+  height:'60px'
+}}>
           <h1 style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',textAlign:'center',marginBottom:'24px'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</h1>
           {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
           {success && <div style={{background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{success}</div>}
@@ -847,7 +863,94 @@ const loadSellerStats = useCallback(async (userId) => {
 
 return (
       
-    <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
+ <>
+    {/* ⭐ ADD THIS STYLE TAG HERE */}
+    <style>{`
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      html {
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+      }
+      
+      body {
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 !important;
+        padding: 0 !important;
+        touch-action: pan-y;
+      }
+      
+      #root {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        overflow: hidden;
+        touch-action: pan-y;
+      }
+      
+      body {
+        overscroll-behavior-y: contain;
+      }
+      
+      ::-webkit-scrollbar {
+        display: none;
+      }
+      
+      * {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      html {
+        -webkit-text-size-adjust: 100%;
+        -moz-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+      
+      .scrollable {
+        -webkit-overflow-scrolling: touch;
+        overflow-y: auto;
+      }
+    `}</style>
+    {/* ⭐ END OF STYLE TAG */}
+
+    <div style={{
+  fontFamily:'system-ui',
+  background:'#f4f6f8',
+  width:'100%',
+  height:'100vh',
+  maxWidth:'100vw',
+  maxHeight:'100vh',
+  position:'fixed',
+  top:0,
+  left:0,
+  overflowY:'auto',
+  overflowX:'hidden',
+  WebkitOverflowScrolling:'touch',
+  paddingTop:'60px',
+  paddingBottom:'88px',
+  boxSizing:'border-box',
+  margin:0,
+  padding:0
+}}>
        {error && (
   <div
     style={{
@@ -948,7 +1051,9 @@ return (
         borderRadius:'16px',
         padding:'20px',
         marginBottom:'16px',
-        boxShadow:'0 4px 12px rgba(245,158,11,0.2)'
+        margin:'0 16px 16px 16px',
+        boxSizing:'border-box',
+        width:'calc(100% - 32px)',
       }}>
         <div style={{
           fontSize:'20px',
@@ -1025,12 +1130,12 @@ return (
         </div>
       </div>
     )}
-          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px'}}>
-            <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next room</em><br/>— all on campus.</h1>
+          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
+            <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
             <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy notes, sell electronics, find a roommate, or lease a room.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>setPage("create")} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button><button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button></div>
           </div>
-          <div style={{display:'flex',gap:'8px',marginBottom:'16px',background:'#fff',padding:'8px',borderRadius:'12px'}}>
+          <div style={{display:'flex',gap:'8px',marginBottom:'16px',background:'#fff',padding:'8px',borderRadius:'12px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
   <button onClick={()=>setShowAllUniversities(false)} style={{flex:1,padding:'10px',background:!showAllUniversities?'#0f1b2d':'#f4f6f8',color:!showAllUniversities?'#fff':'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
     📍 {selectedUni?.short}
   </button>
@@ -1038,7 +1143,7 @@ return (
     🌍 All Unis
   </button>
 </div>
-<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
+<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
         {(() => {
   const filteredListings = listings.filter(item => {
     
@@ -1051,7 +1156,7 @@ return (
     return true;
   });
   return (
-<div style={{display:'flex',flexDirection:'column'}}>
+<div style={{display:'flex',flexDirection:'column',margin:'0 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             {filteredListings.length===0?(
               <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div><div style={{fontSize:'16px',fontWeight:'600'}}>No listings yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to post in {selectedUni?.short}!</div></div>
             ):(
@@ -2236,7 +2341,23 @@ return (
         </div>
       )}
       
-      <div style={{position:'fixed',bottom:0,left:0,right:0,height:'68px',background:'#fff',borderTop:'1px solid #e2e6ea',display:page==="create"||page==="chat"?'none':'flex',alignItems:'center',justifyContent:'space-around',zIndex:100}}>
+      <div style={{
+  position:'fixed',
+  bottom:0,
+  left:0,
+  right:0,
+  width:'100%',
+  maxWidth:'100vw',
+  height:'68px',
+  background:'#fff',
+  borderTop:'1px solid #e2e6ea',
+  display:page==="create"||page==="chat"?'none':'flex',
+  alignItems:'center',
+  justifyContent:'space-around',
+  zIndex:1000,
+  boxSizing:'border-box',
+  padding:'8px 0'
+}}>
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
         <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("create")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
@@ -2245,7 +2366,7 @@ return (
       
     </div>
   </div>
-  
+  </>
 );
 }
 
