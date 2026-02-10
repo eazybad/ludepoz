@@ -846,74 +846,7 @@ const loadSellerStats = useCallback(async (userId) => {
 }
 
 return (
-      <>
-        {/* ⭐ ADD THIS STYLE TAG HERE */}
-        <style>{`
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
       
-      html {
-        width: 100%;
-        height: 100%;
-        position: fixed;
-        overflow: hidden;
-      }
-      
-      body {
-        width: 100%;
-        height: 100%;
-        position: fixed;
-        overflow: hidden;
-        overscroll-behavior: none;
-        -webkit-overflow-scrolling: touch;
-        margin: 0 !important;
-        padding: 0 !important;
-        touch-action: pan-y;
-      }
-      
-      #root {
-        width: 100%;
-        height: 100%;
-        position: fixed;
-        overflow: hidden;
-        touch-action: pan-y;
-      }
-      
-      body {
-        overscroll-behavior-y: contain;
-      }
-      
-      ::-webkit-scrollbar {
-        display: none;
-      }
-      
-      * {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      
-      html {
-        -webkit-text-size-adjust: 100%;
-        -moz-text-size-adjust: 100%;
-        -ms-text-size-adjust: 100%;
-        text-size-adjust: 100%;
-      }
-      
-      input, textarea, select {
-        font-size: 16px !important;
-      }
-      
-      .scrollable {
-        -webkit-overflow-scrolling: touch;
-        overflow-y: auto;
-      }
-    `}</style>
-    {/* ⭐ END OF STYLE TAG */}
-        
-
     <div style={{fontFamily:'system-ui',background:'#f4f6f8',minHeight:'100vh',paddingBottom:'80px'}}>
        {error && (
   <div
@@ -2312,7 +2245,7 @@ return (
       
     </div>
   </div>
-  </>
+  
 );
 }
 
