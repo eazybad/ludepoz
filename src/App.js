@@ -46,6 +46,7 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
+  const [regNumber, setRegNumber] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -462,6 +463,7 @@ useEffect(() => {
       await setDoc(doc(db, "users", userCredential.user.uid), {
         name: signupName.trim(),
         email: email,
+        registrationNumber: regNumber.trim(),
         universityId: selectedUni.id,
         universityName: selectedUni.short,
         avatarUrl: null,
@@ -861,6 +863,7 @@ const loadSellerStats = useCallback(async (userId) => {
             <>
               <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
               <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Registration Number</label><input type="text" placeholder="e.g. 33421/T.2022" value={regNumber} onChange={e=>setRegNumber(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
               <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
               <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University</label><select onChange={e=>setSelectedUni(UNIVERSITIES.find(u=>u.id===parseInt(e.target.value)))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
               <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer',marginTop:'8px'}}>{loading?"Creating...":"Create Account"}</button>
@@ -1000,7 +1003,7 @@ return (
       
       {showVerificationBanner && user && !user.emailVerified && (
         <div style={{background:'#fef3c7',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
-          <span>📧 Please verify your email to unlock all features</span>
+          <span>📧 Please verify your email to unlock all features(check spam folder)</span>
           <button onClick={()=>setShowVerificationBanner(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer'}}>×</button>
         </div>
       )}
@@ -1073,16 +1076,23 @@ return (
 )}
         
         {page==="home"&&(
-        <div style={{padding:'16px'}}>
+        <div style={{
+    width:'100%',
+    height:'100%',
+    overflowY:'auto',
+    overflowX:'hidden',
+    WebkitOverflowScrolling:'touch',
+    boxSizing:'border-box'
+  }}>
           {!isVerified && (
       <div style={{
         background:'linear-gradient(135deg, #fbbf24, #f59e0b)',
         borderRadius:'16px',
         padding:'20px',
         marginBottom:'16px',
-        margin:'0 16px 16px 16px',
+        margin:'0',
         boxSizing:'border-box',
-        width:'calc(100% - 32px)',
+        width:'100%',
       }}>
         <div style={{
           fontSize:'20px',
@@ -1368,7 +1378,14 @@ return (
       )}
       
       {page==="messages"&&(
-        <div style={{padding:'16px'}}>
+        <div style={{
+    width:'100%',
+    height:'100%',
+    overflowY:'auto',
+    overflowX:'hidden',
+    WebkitOverflowScrolling:'touch',
+    boxSizing:'border-box'
+  }}>
           {showSafetyMessage && (
             <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
               <span>⚠️ <strong>Safety First:</strong> Meet in public campus places. Never send money before inspecting items.</span>
@@ -1605,7 +1622,14 @@ return (
 )}
       
       {page==="saved"&&(
-        <div style={{padding:'16px'}}>
+        <div style={{
+    width:'100%',
+    height:'100%',
+    overflowY:'auto',
+    overflowX:'hidden',
+    WebkitOverflowScrolling:'touch',
+    boxSizing:'border-box'
+  }}>
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
           <div style={{display:'flex',flexDirection:'column'}}>
             {cart.length===0?(
@@ -1628,7 +1652,14 @@ return (
       )}
       
       {page==="profile"&&(
-        <div style={{padding:'16px'}}>
+       <div style={{
+    width:'100%',
+    height:'100%',
+    overflowY:'auto',
+    overflowX:'hidden',
+    WebkitOverflowScrolling:'touch',
+    boxSizing:'border-box'
+  }}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'16px',alignItems:'center'}}>
            <div style={{position:'relative',width:'60px',height:'60px'}}>
   <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
