@@ -810,26 +810,52 @@ const loadSellerStats = useCallback(async (userId) => {
 
   if (!user && !loading) {
     return (
-      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',background:'#f4f6f8',fontFamily:'system-ui'}}>
-        <div style={{
-  position:'fixed',
-  top:0,
-  left:0,
-  right:0,
-  width:'100%',
-  maxWidth:'100vw',
-  background:'#fff',
-  padding:'12px 16px',
-  display:'flex',
-  alignItems:'center',
-  gap:'10px',
-  borderBottom:'1px solid #e2e6ea',
-  zIndex:1000,
-  boxSizing:'border-box',
-  height:'60px'
-}}>
-          <h1 style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',textAlign:'center',marginBottom:'24px'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</h1>
-          {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
+  <div style={{
+    minHeight:'100vh',
+    background:'#f4f6f8',
+    fontFamily:'system-ui'
+  }}>
+
+    {/* HEADER */}
+    <div style={{
+      position:'fixed',
+      top:0,
+      left:0,
+      right:0,
+      height:'60px',
+      background:'#fff',
+      display:'flex',
+      alignItems:'center',
+      padding:'0 16px',
+      borderBottom:'1px solid #e2e6ea',
+      zIndex:1000
+    }}>
+      <h1 style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700'}}>
+        Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
+      </h1>
+    </div>
+
+    {/* FORM SECTION */}
+    <div style={{
+      minHeight:'100vh',
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'center',
+      paddingTop:'80px'   // important so it doesn't hide behind header
+    }}>
+      <div style={{
+        width:'100%',
+        maxWidth:'400px',
+        background:'#fff',
+        padding:'24px',
+        borderRadius:'12px',
+        boxShadow:'0 5px 20px rgba(0,0,0,0.05)',
+        display:'flex',
+        flexDirection:'column',
+        gap:'12px'
+      }}>
+        {/* Put all signup/login inputs here */}
+        {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
           {success && <div style={{background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{success}</div>}
           {authMode==="signup"?(
             <>
@@ -848,9 +874,12 @@ const loadSellerStats = useCallback(async (userId) => {
               <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
             </>
           )}
-        </div>
       </div>
-    );
+    </div>
+
+  </div>
+);
+
   }
 
   if (loading) {
