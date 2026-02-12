@@ -67,7 +67,6 @@ function App() {
   photoFiles: [],      // Changed from photoFile to photoFiles (array)
   photoPreviews: []    // Changed from photoPreview to photoPreviews (array)
 });
-  const [fullScreenImage, setFullScreenImage] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -284,9 +283,8 @@ function App() {
   }
 }, []);
 
-const requestNotificationPermission = async (currentUser) => {
+ const requestNotificationPermission = async () => {
   try {
-    if (!currentUser) return;
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
       const token = await getToken(messaging, {
@@ -294,7 +292,8 @@ const requestNotificationPermission = async (currentUser) => {
       });
       console.log("FCM Token:", token);
 
-      await updateDoc(doc(db, "users", currentUser.uid), {
+      // Save token to Firestore
+      await updateDoc(doc(db, "users", user.uid), {
         fcmToken: token
       });
 
@@ -462,7 +461,7 @@ const requestNotificationPermission = async (currentUser) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        await requestNotificationPermission(currentUser);
+        await requestNotificationPermission();
         await loadUserProfile(currentUser.uid);
         await loadListings();
         await loadConversations();
@@ -481,7 +480,7 @@ const requestNotificationPermission = async (currentUser) => {
 useEffect(() => {
   if (!user || tokenRequested) return;
 
-  requestNotificationPermission(user);
+  requestNotificationPermission();
   setTokenRequested(true);
 
 }, [user, tokenRequested]);
@@ -1087,7 +1086,7 @@ return (
     `}</style>
     {/* ⭐ END OF STYLE TAG */}
 
-   <div style={{
+    <div style={{
   fontFamily:'system-ui',
   background:'#f4f6f8',
   width:'100%',
@@ -1097,12 +1096,14 @@ return (
   position:'fixed',
   top:0,
   left:0,
+  overflowY:'auto',
   overflowX:'hidden',
-  overflowY:'hidden',
+  WebkitOverflowScrolling:'touch',
+  paddingTop:'60px',
+  paddingBottom:'88px',
   boxSizing:'border-box',
   margin:0,
-  display:'flex',
-  flexDirection:'column'
+  padding:0
 }}>
        {error && (
   <div
@@ -1197,16 +1198,29 @@ return (
 )}
         
         {page==="home"&&(
-       <div style={{
+        <div style={{
     width:'100%',
-    flex:1,
+    height:'100%',
     overflowY:'auto',
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
-    boxSizing:'border-box',
-    paddingBottom:'88px'
+    boxSizing:'border-box'
   }}>
-
+{user && isVerified && (
+  <div style={{
+    margin:'16px',
+    padding:'12px',
+    background:'#d1fae5',
+    borderRadius:'10px',
+    display:'flex',
+    alignItems:'center',
+    gap:'8px',
+    fontSize:'13px'
+  }}>
+    <span>🔔</span>
+    <span>Notifications enabled - you'll get alerts for new messages!</span>
+  </div>
+)}
          {!isVerified && (
   <div style={{
     background: verificationStatus === "pending" 
@@ -1552,12 +1566,11 @@ return (
       {page==="messages"&&(
         <div style={{
     width:'100%',
-    flex:1,
+    height:'100%',
     overflowY:'auto',
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
-    boxSizing:'border-box',
-    paddingBottom:'88px'
+    boxSizing:'border-box'
   }}>
           {showSafetyMessage && (
             <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
@@ -1826,14 +1839,13 @@ return (
       )}
       
       {page==="profile"&&(
-      <div style={{
+       <div style={{
     width:'100%',
-    flex:1,
+    height:'100%',
     overflowY:'auto',
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
-    boxSizing:'border-box',
-    padding:'0 16px 88px 16px'
+    boxSizing:'border-box'
   }}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'16px',alignItems:'center'}}>
            <div style={{position:'relative',width:'60px',height:'60px',boxSizing:'border-box'}}>
@@ -2005,17 +2017,15 @@ return (
 {viewingListing.photos && viewingListing.photos.length > 0 ? (
   <div style={{position:'relative'}}>
     {/* Main Photo */}
-   <img 
-  src={viewingListing.photos[photoIndex || 0]} 
-  alt={viewingListing.title} 
-  onClick={() => setFullScreenImage(viewingListing.photos[photoIndex || 0])}
-  style={{
-    width:'100%',
-    height:'400px',
-    objectFit:'cover',
-    cursor:'pointer'
-  }} 
-/>
+    <img 
+      src={viewingListing.photos[photoIndex || 0]} 
+      alt={viewingListing.title} 
+      style={{
+        width:'100%',
+        height:'400px',
+        objectFit:'cover'
+      }} 
+    />
     
     {/* Photo Counter */}
     {viewingListing.photos.length > 1 && (
@@ -2112,69 +2122,16 @@ return (
     )}
   </div>
 ) : viewingListing.photoUrl ? (
- <img 
-  src={viewingListing.photoUrl} 
-  alt={viewingListing.title} 
-  onClick={() => setFullScreenImage(viewingListing.photoUrl)}
-  style={{
-    width:'100%',
-    height:'400px',
-    objectFit:'cover',
-    cursor:'pointer'
-  }} 
-/>
-) : null}
-
-   {fullScreenImage && (
-  <div 
-    onClick={() => setFullScreenImage(null)}
+  <img 
+    src={viewingListing.photoUrl} 
+    alt={viewingListing.title} 
     style={{
-      position:'fixed',
-      inset:0,
-      background:'rgba(0,0,0,0.95)',
-      zIndex:9999,
-      display:'flex',
-      alignItems:'center',
-      justifyContent:'center',
-      cursor:'zoom-out'
-    }}
-  >
-    <button 
-      onClick={() => setFullScreenImage(null)}
-      style={{
-        position:'absolute',
-        top:'16px',
-        right:'16px',
-        width:'40px',
-        height:'40px',
-        borderRadius:'50%',
-        background:'rgba(255,255,255,0.15)',
-        color:'#fff',
-        border:'none',
-        fontSize:'24px',
-        cursor:'pointer',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        zIndex:10000
-      }}
-    >
-      ×
-    </button>
-    <img 
-      src={fullScreenImage} 
-      alt="Full view" 
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        maxWidth:'95vw',
-        maxHeight:'90vh',
-        objectFit:'contain',
-        borderRadius:'4px',
-        cursor:'default'
-      }} 
-    />
-  </div>
-)}  
+      width:'100%',
+      height:'400px',
+      objectFit:'cover'
+    }} 
+  />
+) : null}
 
       {/* Main Content */}
       <div style={{padding:'20px'}}>
@@ -2665,7 +2622,7 @@ return (
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
         <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("create")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
-        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span></button>
+        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span>{cart.length>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{cart.length}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
       
     </div>
