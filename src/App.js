@@ -68,6 +68,8 @@ function App() {
   photoPreviews: []    // Changed from photoPreview to photoPreviews (array)
 });
   const [fullScreenImage, setFullScreenImage] = useState(null);
+  const [fullScreenPhotos, setFullScreenPhotos] = useState(null); // array of all photos
+  const [fullScreenIndex, setFullScreenIndex] = useState(0);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -415,27 +417,29 @@ const requestNotificationPermission = async (currentUser) => {
     }
   };
 
-  const sendMessage = async () => {
+ const sendMessage = async () => {
     if (!messageText.trim() || !activeConversation) return;
+    
+    const text = messageText.trim();
+    setMessageText(""); // Clear immediately (optimistic)
     
     try {
       await addDoc(collection(db, "conversations", activeConversation.id, "messages"), {
         senderId: user.uid,
         senderName: userName,
-        text: messageText.trim(),
+        text: text,
         createdAt: serverTimestamp()
       });
       
       const isFromBuyer = user.uid === activeConversation.buyerId;
       await updateDoc(doc(db, "conversations", activeConversation.id), {
-        lastMessage: messageText.trim(),
+        lastMessage: text,
         lastMessageAt: serverTimestamp(),
         [isFromBuyer ? "sellerUnread" : "buyerUnread"]: increment(1)
       });
-      
-      setMessageText("");
     } catch (err) {
       console.error("Error sending message:", err);
+      setMessageText(text); // Restore text if failed
       setError("Failed to send message");
     }
   };
@@ -489,7 +493,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (user && page === "home") {
-      const interval = setInterval(() => loadListings(), 5000);
+      const interval = setInterval(() => loadListings(), 15000);
       return () => clearInterval(interval);
     }
   }, [user, page, loadListings]);
@@ -509,7 +513,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (user && page === "messages") {
-      const interval = setInterval(() => loadConversations(), 3000);
+      const interval = setInterval(() => loadConversations(), 10000);
       return () => clearInterval(interval);
     }
   }, [user, page, loadConversations]);
@@ -533,6 +537,12 @@ useEffect(() => {
   return () => unsubscribe();
 }, [activeConversation]);
 
+useEffect(() => {
+  const container = document.getElementById('messages-container');
+  if (container) {
+    container.scrollTop = container.scrollHeight;
+  }
+}, [messages]);
 
   const handleSignup = async () => {
     if (!signupName.trim() || !email.trim() || !password.trim() || !selectedUni) {
@@ -1381,8 +1391,28 @@ return (
                   </div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
-                  {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                {item.photos && item.photos.length > 0 && (
+  <div style={{marginBottom:'10px'}}>
+    <img
+      src={item.photos[0]}
+      alt={item.title}
+      onClick={(e) => {
+        e.stopPropagation();
+        setFullScreenImage(item.photos[0]);
+        setFullScreenPhotos(item.photos);
+        setFullScreenIndex(0);
+      }}
+      style={{
+        width:'100%',
+        height:'280px',
+        objectFit:'cover',
+        borderRadius:'10px',
+        cursor:'pointer'
+      }}
+    />
+  </div>
+)} 
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                     <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
                       {item.userId!==user.uid&&<button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId!==user.uid){loadSellerStats(item.userId);}}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#0f1b2d',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📋 Details</button>}
@@ -1403,7 +1433,15 @@ return (
       )}
       
       {page==="create"&&(
-        <div style={{padding:'16px'}}>
+        <div style={{
+    width:'100%',
+    flex:1,
+    overflowY:'auto',
+    overflowX:'hidden',
+    WebkitOverflowScrolling:'touch',
+    boxSizing:'border-box',
+    paddingBottom:'88px'
+  }}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateSuccess?"Success!":"New Listing"}</h2>
             {showCreateSuccess?(
@@ -1421,104 +1459,157 @@ return (
 <label htmlFor="listing-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
   {createData.photoPreviews && createData.photoPreviews.length > 0 ? (
     <div style={{position:'relative'}}>
-      <div style={{
-        display:'grid',
-        gridTemplateColumns:createData.photoPreviews.length===1?'1fr':'repeat(2, 1fr)',
-        gap:'8px'
-      }}>
-        {createData.photoPreviews.map((preview, idx) => (
-          <div key={idx} style={{position:'relative'}}>
-            <img 
-              src={preview} 
-              alt={`Preview ${idx+1}`} 
-              style={{
-                width:'100%',
-                height:'120px',
-                objectFit:'cover',
-                borderRadius:'12px',
-                border:'2px solid #e2e6ea'
-              }} 
-            />
-            {/* Photo number badge */}
+      {/* Main large preview — like WhatsApp/Instagram story */}
+      <div style={{position:'relative',marginBottom:'8px'}}>
+        <img 
+          src={createData.photoPreviews[0]} 
+          alt="Main preview" 
+          style={{
+            width:'100%',
+            height:'300px',
+            objectFit:'cover',
+            borderRadius:'12px'
+          }} 
+        />
+        <div style={{
+          position:'absolute',
+          top:'10px',
+          right:'10px',
+          display:'flex',
+          gap:'6px'
+        }}>
+          <div style={{
+            background:'rgba(0,0,0,0.6)',
+            color:'#fff',
+            padding:'4px 10px',
+            borderRadius:'12px',
+            fontSize:'12px',
+            fontWeight:'600'
+          }}>
+            {createData.photoPreviews.length} / 5
+          </div>
+        </div>
+        {/* Delete main photo */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const newFiles = [...createData.photoFiles];
+            const newPreviews = [...createData.photoPreviews];
+            newFiles.splice(0, 1);
+            newPreviews.splice(0, 1);
+            setCreateData({...createData, photoFiles: newFiles, photoPreviews: newPreviews});
+          }}
+          style={{
+            position:'absolute',
+            top:'10px',
+            left:'10px',
+            width:'30px',
+            height:'30px',
+            borderRadius:'50%',
+            background:'rgba(239,68,68,0.85)',
+            color:'#fff',
+            border:'none',
+            cursor:'pointer',
+            fontSize:'18px',
+            fontWeight:'700',
+            display:'flex',
+            alignItems:'center',
+            justifyContent:'center'
+          }}
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Thumbnail strip below — like Instagram multi-select */}
+      {createData.photoPreviews.length > 1 && (
+        <div style={{
+          display:'flex',
+          gap:'6px',
+          overflowX:'auto',
+          paddingBottom:'4px'
+        }}>
+          {createData.photoPreviews.slice(1).map((preview, idx) => (
+            <div key={idx+1} style={{position:'relative',flexShrink:0}}>
+              <img 
+                src={preview} 
+                alt={`Preview ${idx+2}`} 
+                style={{
+                  width:'72px',
+                  height:'72px',
+                  objectFit:'cover',
+                  borderRadius:'10px'
+                }} 
+              />
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const newFiles = [...createData.photoFiles];
+                  const newPreviews = [...createData.photoPreviews];
+                  newFiles.splice(idx+1, 1);
+                  newPreviews.splice(idx+1, 1);
+                  setCreateData({...createData, photoFiles: newFiles, photoPreviews: newPreviews});
+                }}
+                style={{
+                  position:'absolute',
+                  top:'-4px',
+                  right:'-4px',
+                  width:'20px',
+                  height:'20px',
+                  borderRadius:'50%',
+                  background:'#ef4444',
+                  color:'#fff',
+                  border:'2px solid #fff',
+                  cursor:'pointer',
+                  fontSize:'12px',
+                  fontWeight:'700',
+                  display:'flex',
+                  alignItems:'center',
+                  justifyContent:'center',
+                  padding:0
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {/* Add more mini button */}
+          {createData.photoPreviews.length < 5 && (
             <div style={{
-              position:'absolute',
-              top:'8px',
-              left:'8px',
-              width:'24px',
-              height:'24px',
-              borderRadius:'50%',
-              background:'rgba(0,0,0,0.7)',
-              color:'#fff',
-              fontSize:'12px',
-              fontWeight:'700',
+              width:'72px',
+              height:'72px',
+              border:'2px dashed #2dd4bf',
+              borderRadius:'10px',
               display:'flex',
               alignItems:'center',
-              justifyContent:'center'
+              justifyContent:'center',
+              background:'#f0fdfa',
+              flexShrink:0
             }}>
-              {idx + 1}
+              <span style={{fontSize:'24px',color:'#2dd4bf'}}>+</span>
             </div>
-            {/* Delete button */}
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const newFiles = [...createData.photoFiles];
-                const newPreviews = [...createData.photoPreviews];
-                newFiles.splice(idx, 1);
-                newPreviews.splice(idx, 1);
-                setCreateData({...createData, photoFiles: newFiles, photoPreviews: newPreviews});
-              }}
-              style={{
-                position:'absolute',
-                top:'8px',
-                right:'8px',
-                width:'28px',
-                height:'28px',
-                borderRadius:'50%',
-                background:'rgba(239,68,68,0.9)',
-                color:'#fff',
-                border:'none',
-                cursor:'pointer',
-                fontSize:'18px',
-                fontWeight:'700',
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center'
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        {/* Add more button */}
-        {createData.photoPreviews.length < 5 && (
-          <div style={{
-            height:'120px',
-            border:'2px dashed #2dd4bf',
-            borderRadius:'12px',
-            display:'flex',
-            flexDirection:'column',
-            alignItems:'center',
-            justifyContent:'center',
-            background:'#f0fdfa',
-            cursor:'pointer',
-            transition:'all 0.2s'
-          }}>
-            <div style={{fontSize:'32px',color:'#2dd4bf',marginBottom:'4px'}}>+</div>
-            <div style={{fontSize:'11px',color:'#2dd4bf',fontWeight:'600'}}>Add Photo</div>
-          </div>
-        )}
-      </div>
-      <div style={{
-        marginTop:'8px',
-        textAlign:'center',
-        fontSize:'13px',
-        color:'#2dd4bf',
-        fontWeight:'600'
-      }}>
-        {createData.photoPreviews.length} of 5 photos
-        {createData.photoPreviews.length < 5 && ' • Click + to add more'}
-      </div>
+          )}
+        </div>
+      )}
+
+      {/* Add more when only 1 photo */}
+      {createData.photoPreviews.length === 1 && createData.photoPreviews.length < 5 && (
+        <div style={{
+          height:'48px',
+          border:'2px dashed #2dd4bf',
+          borderRadius:'10px',
+          display:'flex',
+          alignItems:'center',
+          justifyContent:'center',
+          background:'#f0fdfa',
+          gap:'6px'
+        }}>
+          <span style={{fontSize:'18px',color:'#2dd4bf'}}>+</span>
+          <span style={{fontSize:'13px',color:'#2dd4bf',fontWeight:'600'}}>Add more photos</span>
+        </div>
+      )}
     </div>
   ) : (
     <div style={{
@@ -1601,10 +1692,12 @@ return (
 
      {page==="chat"&&activeConversation&&(
   <div style={{
+    position:'fixed',
+    inset:0,
     display:'flex',
     flexDirection:'column',
-    height:'100vh',
-    background:'#f4f6f8'
+    background:'#f4f6f8',
+    zIndex:100
   }}>
     
     {/* Chat Tip (dismissible) */}
@@ -1616,21 +1709,23 @@ return (
         justifyContent:'space-between',
         alignItems:'start',
         fontSize:'12px',
-        lineHeight:'1.4'
+        lineHeight:'1.4',
+        flexShrink:0
       }}>
         <span>💬 <strong>Quick Reply Tip:</strong> Ghosting damages your reputation. Respond promptly to build trust!</span>
         <button onClick={()=>setShowChatTip(false)} style={{background:'none',border:'none',fontSize:'16px',cursor:'pointer',flexShrink:0}}>×</button>
       </div>
     )}
 
-    {/* Chat Header - User Info */}
+    {/* Chat Header - FIXED, never moves */}
     <div style={{
       background:'#fff',
       padding:'12px 16px',
       borderBottom:'1px solid #e2e6ea',
       display:'flex',
       alignItems:'center',
-      gap:'12px'
+      gap:'12px',
+      flexShrink:0
     }}>
       <button 
         onClick={()=>setPage("messages")} 
@@ -1644,13 +1739,13 @@ return (
           justifyContent:'center',
           cursor:'pointer',
           fontSize:'18px',
-          border:'none'
+          border:'none',
+          flexShrink:0
         }}
       >
         ←
       </button>
       
-      {/* Other User Avatar & Name */}
       {(() => {
         const otherUser = user.uid === activeConversation.buyerId ? 
           {name: activeConversation.sellerName, avatar: activeConversation.sellerAvatar} : 
@@ -1671,23 +1766,30 @@ return (
               color:'#fff',
               fontWeight:'700',
               boxSizing:'border-box',
-              fontSize:'16px'
+              fontSize:'16px',
+              flexShrink:0
             }}>
               {!otherUser.avatar && otherUser.name.split(" ").map(n=>n[0]).join("")}
             </div>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{
                 fontSize:'15px',
                 fontWeight:'600',
-                color:'#0f1b2d'
+                color:'#0f1b2d',
+                overflow:'hidden',
+                textOverflow:'ellipsis',
+                whiteSpace:'nowrap'
               }}>
                 {otherUser.name}
               </div>
               <div style={{
                 fontSize:'11px',
-                color:'#6b7280'
+                color:'#6b7280',
+                overflow:'hidden',
+                textOverflow:'ellipsis',
+                whiteSpace:'nowrap'
               }}>
-                {activeConversation.listingTitle.substring(0, 30)}...
+                {activeConversation.listingTitle}
               </div>
             </div>
           </>
@@ -1695,64 +1797,74 @@ return (
       })()}
     </div>
 
-    {/* Messages Container */}
+    {/* Messages Container - scrollable middle area */}
     <div 
       id="messages-container" 
       style={{
         flex:1,
         overflowY:'auto',
+        overflowX:'hidden',
         padding:'16px',
-        paddingBottom:'80px' // Space for input bar
+        display:'flex',
+        flexDirection:'column'
       }}
     >
+      {messages.length === 0 && (
+        <div style={{
+          textAlign:'center',
+          padding:'40px 16px',
+          color:'#8a9bb0'
+        }}>
+          <div style={{fontSize:'32px',marginBottom:'8px'}}>💬</div>
+          <div style={{fontSize:'14px'}}>Send a message to start the conversation</div>
+        </div>
+      )}
       {messages.map(msg=>{
         const isMine=msg.senderId===user.uid;
         return (
           <div key={msg.id} style={{
             display:'flex',
             justifyContent:isMine?'flex-end':'flex-start',
-            marginBottom:'12px'
+            marginBottom:'8px'
           }}>
             <div style={{
               maxWidth:'75%',
               background:isMine?'#2dd4bf':'#fff',
               color:isMine?'#0f1b2d':'#1f2937',
-              padding:'10px 16px',
+              padding:'10px 14px',
               borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',
-              fontSize:'16px',
+              fontSize:'15px',
               lineHeight:'1.4',
               boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
             }}>
               {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
-              <div>{msg.text}</div>
-              <div style={{fontSize:'10px',marginTop:'4px',opacity:0.7,textAlign:'right'}}>
-  {msg.createdAt ? (() => {
-    try {
-      const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
-      return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
-    } catch(e) {
-      return '';
-    }
-  })() : ''}
-</div>
+              <div style={{wordBreak:'break-word'}}>{msg.text}</div>
+              <div style={{fontSize:'10px',marginTop:'4px',opacity:0.6,textAlign:'right'}}>
+                {msg.createdAt ? (() => {
+                  try {
+                    const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
+                    return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
+                  } catch(e) {
+                    return '';
+                  }
+                })() : ''}
+              </div>
             </div>
           </div>
         );
       })}
     </div>
 
-    {/* Message Input - Fixed at Bottom (WhatsApp Style) */}
+    {/* Message Input - part of flex layout, NOT fixed */}
     <div style={{
-      position:'fixed',
-      bottom:0,
-      left:0,
-      right:0,
       background:'#fff',
       borderTop:'1px solid #e2e6ea',
-      padding:'12px 16px',
+      padding:'8px 12px',
+      paddingBottom:'max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
-      alignItems:'center'
+      alignItems:'center',
+      flexShrink:0
     }}>
       <input 
         type="text" 
@@ -1762,7 +1874,7 @@ return (
         placeholder="Type a message..." 
         style={{
           flex:1,
-          padding:'12px 16px',
+          padding:'10px 16px',
           border:'1.5px solid #e2e6ea',
           borderRadius:'24px',
           fontSize:'16px',
@@ -1774,8 +1886,8 @@ return (
         onClick={sendMessage} 
         disabled={!messageText.trim()} 
         style={{
-          width:'44px',
-          height:'44px',
+          width:'42px',
+          height:'42px',
           borderRadius:'50%',
           background:messageText.trim()?'#2dd4bf':'#e2e6ea',
           color:messageText.trim()?'#0f1b2d':'#8a9bb0',
@@ -1798,11 +1910,12 @@ return (
       {page==="saved"&&(
         <div style={{
     width:'100%',
-    height:'100%',
+    flex:1,
     overflowY:'auto',
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
-    boxSizing:'border-box'
+    boxSizing:'border-box',
+    paddingBottom:'88px',
   }}>
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
           <div style={{display:'flex',flexDirection:'column'}}>
@@ -1873,7 +1986,10 @@ return (
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                         <span style={{fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
                       </div>
-                      {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>}
+                     <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+              {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
+            <button onClick={()=>deleteListing(item.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
+             </div>
                     </div>
                   ))}
                 </div>
@@ -2124,23 +2240,23 @@ return (
   }} 
 />
 ) : null}
-
-   {fullScreenImage && (
+{fullScreenImage && (
   <div 
-    onClick={() => setFullScreenImage(null)}
+    onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
     style={{
       position:'fixed',
       inset:0,
       background:'rgba(0,0,0,0.95)',
       zIndex:9999,
       display:'flex',
+      flexDirection:'column',
       alignItems:'center',
-      justifyContent:'center',
-      cursor:'zoom-out'
+      justifyContent:'center'
     }}
   >
+    {/* Close button */}
     <button 
-      onClick={() => setFullScreenImage(null)}
+      onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
       style={{
         position:'absolute',
         top:'16px',
@@ -2161,21 +2277,113 @@ return (
     >
       ×
     </button>
+
+    {/* Photo counter */}
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <div style={{
+        position:'absolute',
+        top:'20px',
+        left:'50%',
+        transform:'translateX(-50%)',
+        color:'#fff',
+        fontSize:'14px',
+        fontWeight:'600',
+        background:'rgba(255,255,255,0.15)',
+        padding:'4px 14px',
+        borderRadius:'16px'
+      }}>
+        {fullScreenIndex + 1} / {fullScreenPhotos.length}
+      </div>
+    )}
+
+    {/* Main image */}
     <img 
-      src={fullScreenImage} 
+      src={fullScreenPhotos ? fullScreenPhotos[fullScreenIndex] : fullScreenImage} 
       alt="Full view" 
       onClick={(e) => e.stopPropagation()}
       style={{
         maxWidth:'95vw',
-        maxHeight:'90vh',
+        maxHeight:'85vh',
         objectFit:'contain',
         borderRadius:'4px',
         cursor:'default'
       }} 
     />
-  </div>
-)}  
 
+    {/* Navigation arrows */}
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <>
+        <button
+          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.max(0, fullScreenIndex - 1));}}
+          disabled={fullScreenIndex === 0}
+          style={{
+            position:'absolute',
+            left:'12px',
+            top:'50%',
+            transform:'translateY(-50%)',
+            width:'44px',
+            height:'44px',
+            borderRadius:'50%',
+            background:'rgba(255,255,255,0.15)',
+            color:'#fff',
+            border:'none',
+            fontSize:'22px',
+            cursor:fullScreenIndex === 0 ? 'not-allowed':'pointer',
+            opacity:fullScreenIndex === 0 ? 0.3 : 1
+          }}
+        >
+          ‹
+        </button>
+        <button
+          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.min(fullScreenPhotos.length - 1, fullScreenIndex + 1));}}
+          disabled={fullScreenIndex === fullScreenPhotos.length - 1}
+          style={{
+            position:'absolute',
+            right:'12px',
+            top:'50%',
+            transform:'translateY(-50%)',
+            width:'44px',
+            height:'44px',
+            borderRadius:'50%',
+            background:'rgba(255,255,255,0.15)',
+            color:'#fff',
+            border:'none',
+            fontSize:'22px',
+            cursor:fullScreenIndex === fullScreenPhotos.length - 1 ? 'not-allowed':'pointer',
+            opacity:fullScreenIndex === fullScreenPhotos.length - 1 ? 0.3 : 1
+          }}
+        >
+          ›
+        </button>
+      </>
+    )}
+
+    {/* Dot indicators */}
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <div style={{
+        position:'absolute',
+        bottom:'24px',
+        display:'flex',
+        gap:'6px'
+      }}>
+        {fullScreenPhotos.map((_, i) => (
+          <div 
+            key={i}
+            onClick={(e) => {e.stopPropagation(); setFullScreenIndex(i);}}
+            style={{
+              width: i === fullScreenIndex ? '20px' : '8px',
+              height:'8px',
+              borderRadius:'4px',
+              background: i === fullScreenIndex ? '#fff' : 'rgba(255,255,255,0.4)',
+              cursor:'pointer',
+              transition:'all 0.2s'
+            }}
+          />
+        ))}
+      </div>
+    )}
+  </div>
+)}
       {/* Main Content */}
       <div style={{padding:'20px'}}>
         
