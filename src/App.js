@@ -106,19 +106,6 @@ function App() {
   
  const canPerformAction = (action = "default") => {
   if (!user) return false;
-  
-  // ⭐ ALLOW verification-related actions even if not verified
-  if (action === "verification") {
-    return true;
-  }
-  
-  // For all other actions, require verification
-  if (!isVerified) {
-    setError("Please verify your account to perform this action");
-    setShowVerifyModal(true);
-    return false;
-  }
-  
   return true;
 };
 
@@ -968,14 +955,19 @@ useEffect(() => {
   const isSaved = cart.some(c => c.id === item.id);
   
   if (isSaved) {
-   setCart(cart.filter(c => c.id !== item.id));
-    try {
+  setCart(cart.filter(c => c.id !== item.id));
+  try {
+    // Only decrement if saves > 0
+    const listingDoc = await getDoc(doc(db, "listings", item.id));
+    if (listingDoc.exists() && (listingDoc.data().saves || 0) > 0) {
       await updateDoc(doc(db, "listings", item.id), {
         saves: increment(-1)
       });
-    } catch (err) {
-      console.error("Error updating saves:", err);
     }
+  } catch (err) {
+    console.error("Error updating saves:", err);
+  }
+  
   } else {
     setCart([...cart, item]);
     try {
@@ -1301,7 +1293,7 @@ return (
     paddingBottom:'100px'
   }}>
 
-         {!isVerified && (
+         {false && (
   <div style={{
     background: verificationStatus === "pending" 
       ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'  // Blue for pending
@@ -1480,12 +1472,13 @@ return (
     <img
       src={item.photos[0]}
       alt={item.title}
-      onClick={(e) => {
-        e.stopPropagation();
-        setFullScreenImage(item.photos[0]);
-        setFullScreenPhotos(item.photos);
-        setFullScreenIndex(0);
-      }}
+     onClick={(e) => {
+  e.stopPropagation();
+  setFullScreenImage(item.photos[0]);
+  setFullScreenPhotos(item.photos);
+  setFullScreenIndex(0);
+  incrementViews(item.id);
+}}
       style={{
         width:'100%',
         height:'280px',
@@ -1503,6 +1496,7 @@ return (
       onClick={(e) => {
         e.stopPropagation();
         setFullScreenImage(item.photoUrl);
+        incrementViews(item.id);
       }}
       style={{
         width:'100%',
