@@ -17,9 +17,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const messaging = getMessaging(app);
 const auth = getAuth(app);
-const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-});
+const db = initializeFirestore(app, {});
 const storage = getStorage(app);
 
 const UNIVERSITIES = [
@@ -493,7 +491,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (user && page === "home") {
-      const interval = setInterval(() => loadListings(), 15000);
+      const interval = setInterval(() => loadListings(), 30000);
       return () => clearInterval(interval);
     }
   }, [user, page, loadListings]);
@@ -513,7 +511,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (user && page === "messages") {
-      const interval = setInterval(() => loadConversations(), 10000);
+      const interval = setInterval(() => loadConversations(), 15000);
       return () => clearInterval(interval);
     }
   }, [user, page, loadConversations]);
@@ -769,14 +767,63 @@ useEffect(() => {
     if (avatarUrl) updateData.avatarUrl = avatarUrl;
     if (editProfileData.name.trim()) updateData.name = editProfileData.name.trim();
 
+    // 1. Update user document
     await updateDoc(doc(db, "users", user.uid), updateData);
     
+    // 2. Update all user's listings with new name/avatar
+    const listingsQuery = query(
+      collection(db, "listings"),
+      where("userId", "==", user.uid)
+    );
+    const listingsSnap = await getDocs(listingsQuery);
+    const listingUpdates = listingsSnap.docs.map(d => 
+      updateDoc(doc(db, "listings", d.id), {
+        ...(updateData.name && { userName: updateData.name }),
+        ...(avatarUrl && { userAvatar: avatarUrl })
+      })
+    );
+    
+    // 3. Update conversations where user is buyer
+    const buyerConvQuery = query(
+      collection(db, "conversations"),
+      where("buyerId", "==", user.uid)
+    );
+    const buyerConvSnap = await getDocs(buyerConvQuery);
+    const buyerUpdates = buyerConvSnap.docs.map(d =>
+      updateDoc(doc(db, "conversations", d.id), {
+        ...(updateData.name && { buyerName: updateData.name }),
+        ...(avatarUrl && { buyerAvatar: avatarUrl })
+      })
+    );
+    
+    // 4. Update conversations where user is seller
+    const sellerConvQuery = query(
+      collection(db, "conversations"),
+      where("sellerId", "==", user.uid)
+    );
+    const sellerConvSnap = await getDocs(sellerConvQuery);
+    const sellerUpdates = sellerConvSnap.docs.map(d =>
+      updateDoc(doc(db, "conversations", d.id), {
+        ...(updateData.name && { sellerName: updateData.name }),
+        ...(avatarUrl && { sellerAvatar: avatarUrl })
+      })
+    );
+    
+    // Run all updates in parallel
+    await Promise.all([...listingUpdates, ...buyerUpdates, ...sellerUpdates]);
+    
+    // 5. Update local state
     if (updateData.name) setUserName(updateData.name);
     if (avatarUrl) setUserAvatar(avatarUrl);
     
     setShowEditProfile(false);
     setEditProfileData({ name: "", avatarFile: null, avatarPreview: null });
-    setSuccess("Profile updated!");
+    setSuccess("Profile updated everywhere!");
+    
+    // Reload to reflect changes
+    await loadListings();
+    await loadConversations();
+    
     setTimeout(() => setSuccess(""), 3000);
   } catch (err) {
     console.error("Error updating profile:", err);
@@ -1122,7 +1169,8 @@ return (
       color: '#991b1b',
       padding: '12px',
       borderRadius: '8px',
-      fontSize: '13px'
+      fontSize: '13px',
+      flexShrink: 0
     }}
   >
     {error}
@@ -1130,7 +1178,7 @@ return (
 )
   }
 
-      {success&&<div style={{margin:'16px',background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',fontSize:'13px'}}>{success}</div>}
+      {success&&<div style={{margin:'16px',background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',fontSize:'13px',flexShrink:0}}>{success}</div>}
       
       {showVerificationBanner && user && !user.emailVerified && (
         <div style={{background:'#fef3c7',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
@@ -1147,8 +1195,7 @@ return (
       alignItems:'center',
       gap:'10px',
       borderBottom:'1px solid #e2e6ea',
-      position:'sticky',
-      top:0,
+      flexShrink:0,
       zIndex:50
     }}
   >
@@ -1353,7 +1400,7 @@ return (
 )}
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy notes, sell electronics, find a roommate, or lease a room.</p>
+            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy phones, sell used laptops, find a roommate, or lease a room.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>setPage("create")} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button><button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button></div>
           </div>
           <div style={{display:'flex',gap:'8px',marginBottom:'16px',background:'#fff',padding:'8px',borderRadius:'12px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
@@ -1384,14 +1431,14 @@ return (
               filteredListings.map((item,idx)=>(
                 <div key={item.id}  style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
-                    <div style={{width:'36px',height:'36px',borderRadius:'50%',background:item.userAvatar?`url(${item.userAvatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                    <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span style={{fontSize:'13px',fontWeight:'600'}}>{item.userName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
-                {item.photos && item.photos.length > 0 && (
+               {(item.photos && item.photos.length > 0) ? (
   <div style={{marginBottom:'10px'}}>
     <img
       src={item.photos[0]}
@@ -1411,7 +1458,25 @@ return (
       }}
     />
   </div>
-)} 
+) : item.photoUrl ? (
+  <div style={{marginBottom:'10px'}}>
+    <img
+      src={item.photoUrl}
+      alt={item.title}
+      onClick={(e) => {
+        e.stopPropagation();
+        setFullScreenImage(item.photoUrl);
+      }}
+      style={{
+        width:'100%',
+        height:'280px',
+        objectFit:'cover',
+        borderRadius:'10px',
+        cursor:'pointer'
+      }}
+    />
+  </div>
+) : null}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                     <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
@@ -1693,7 +1758,10 @@ return (
      {page==="chat"&&activeConversation&&(
   <div style={{
     position:'fixed',
-    inset:0,
+    top:0,
+    left:0,
+    right:0,
+    height:'100dvh',
     display:'flex',
     flexDirection:'column',
     background:'#f4f6f8',
@@ -1757,7 +1825,8 @@ return (
               width:'40px',
               height:'40px',
               borderRadius:'50%',
-              background:otherUser.avatar?`url(${otherUser.avatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',
+             backgroundImage:otherUser.avatar?`url(${otherUser.avatar})`:'none',
+              backgroundColor:!otherUser.avatar?'#2dd4bf':'transparent',
               backgroundSize:'cover',
               backgroundPosition:'center',
               display:'flex',
@@ -1950,7 +2019,10 @@ return (
   }}>
           <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'16px',alignItems:'center'}}>
            <div style={{position:'relative',width:'60px',height:'60px',boxSizing:'border-box'}}>
-  <div style={{width:'60px',height:'60px',borderRadius:'50%',background:userAvatar?`url(${userAvatar})`:'#2dd4bf',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
+  <div style={{width:'60px',height:'60px',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
+backgroundColor:!userAvatar?'#2dd4bf':'transparent',
+backgroundSize:'cover',
+backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
     {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
   </div>
   {isVerified && (
@@ -2051,7 +2123,10 @@ return (
             
             <input type="file" id="avatar-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'profile')} />
             <label htmlFor="avatar-upload" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
-              <div style={{width:'80px',height:'80px',margin:'0 auto',borderRadius:'50%',background:editProfileData.avatarPreview?`url(${editProfileData.avatarPreview})`:'#f4f6f8',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
+              <div style={{width:'80px',height:'80px',margin:'0 auto',borderRadius:'50%',backgroundImage:editProfileData.avatarPreview?`url(${editProfileData.avatarPreview})`:'none',
+backgroundColor:!editProfileData.avatarPreview?'#f4f6f8':'transparent',
+backgroundSize:'cover',
+backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
                 {!editProfileData.avatarPreview && <span style={{fontSize:'32px'}}>📷</span>}
                 <div style={{position:'absolute',bottom:'0',background:'rgba(45,212,191,0.9)',color:'#0f1b2d',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
               </div>
@@ -2240,150 +2315,8 @@ return (
   }} 
 />
 ) : null}
-{fullScreenImage && (
-  <div 
-    onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
-    style={{
-      position:'fixed',
-      inset:0,
-      background:'rgba(0,0,0,0.95)',
-      zIndex:9999,
-      display:'flex',
-      flexDirection:'column',
-      alignItems:'center',
-      justifyContent:'center'
-    }}
-  >
-    {/* Close button */}
-    <button 
-      onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
-      style={{
-        position:'absolute',
-        top:'16px',
-        right:'16px',
-        width:'40px',
-        height:'40px',
-        borderRadius:'50%',
-        background:'rgba(255,255,255,0.15)',
-        color:'#fff',
-        border:'none',
-        fontSize:'24px',
-        cursor:'pointer',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        zIndex:10000
-      }}
-    >
-      ×
-    </button>
 
-    {/* Photo counter */}
-    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
-      <div style={{
-        position:'absolute',
-        top:'20px',
-        left:'50%',
-        transform:'translateX(-50%)',
-        color:'#fff',
-        fontSize:'14px',
-        fontWeight:'600',
-        background:'rgba(255,255,255,0.15)',
-        padding:'4px 14px',
-        borderRadius:'16px'
-      }}>
-        {fullScreenIndex + 1} / {fullScreenPhotos.length}
-      </div>
-    )}
 
-    {/* Main image */}
-    <img 
-      src={fullScreenPhotos ? fullScreenPhotos[fullScreenIndex] : fullScreenImage} 
-      alt="Full view" 
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        maxWidth:'95vw',
-        maxHeight:'85vh',
-        objectFit:'contain',
-        borderRadius:'4px',
-        cursor:'default'
-      }} 
-    />
-
-    {/* Navigation arrows */}
-    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
-      <>
-        <button
-          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.max(0, fullScreenIndex - 1));}}
-          disabled={fullScreenIndex === 0}
-          style={{
-            position:'absolute',
-            left:'12px',
-            top:'50%',
-            transform:'translateY(-50%)',
-            width:'44px',
-            height:'44px',
-            borderRadius:'50%',
-            background:'rgba(255,255,255,0.15)',
-            color:'#fff',
-            border:'none',
-            fontSize:'22px',
-            cursor:fullScreenIndex === 0 ? 'not-allowed':'pointer',
-            opacity:fullScreenIndex === 0 ? 0.3 : 1
-          }}
-        >
-          ‹
-        </button>
-        <button
-          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.min(fullScreenPhotos.length - 1, fullScreenIndex + 1));}}
-          disabled={fullScreenIndex === fullScreenPhotos.length - 1}
-          style={{
-            position:'absolute',
-            right:'12px',
-            top:'50%',
-            transform:'translateY(-50%)',
-            width:'44px',
-            height:'44px',
-            borderRadius:'50%',
-            background:'rgba(255,255,255,0.15)',
-            color:'#fff',
-            border:'none',
-            fontSize:'22px',
-            cursor:fullScreenIndex === fullScreenPhotos.length - 1 ? 'not-allowed':'pointer',
-            opacity:fullScreenIndex === fullScreenPhotos.length - 1 ? 0.3 : 1
-          }}
-        >
-          ›
-        </button>
-      </>
-    )}
-
-    {/* Dot indicators */}
-    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
-      <div style={{
-        position:'absolute',
-        bottom:'24px',
-        display:'flex',
-        gap:'6px'
-      }}>
-        {fullScreenPhotos.map((_, i) => (
-          <div 
-            key={i}
-            onClick={(e) => {e.stopPropagation(); setFullScreenIndex(i);}}
-            style={{
-              width: i === fullScreenIndex ? '20px' : '8px',
-              height:'8px',
-              borderRadius:'4px',
-              background: i === fullScreenIndex ? '#fff' : 'rgba(255,255,255,0.4)',
-              cursor:'pointer',
-              transition:'all 0.2s'
-            }}
-          />
-        ))}
-      </div>
-    )}
-  </div>
-)}
       {/* Main Content */}
       <div style={{padding:'20px'}}>
         
@@ -2853,6 +2786,147 @@ return (
         </div>
       )}
       
+    {fullScreenImage && (
+  <div 
+    onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
+    style={{
+      position:'fixed',
+      inset:0,
+      background:'rgba(0,0,0,0.95)',
+      zIndex:9999,
+      display:'flex',
+      flexDirection:'column',
+      alignItems:'center',
+      justifyContent:'center'
+    }}
+  >
+    <button 
+      onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
+      style={{
+        position:'absolute',
+        top:'16px',
+        right:'16px',
+        width:'40px',
+        height:'40px',
+        borderRadius:'50%',
+        background:'rgba(255,255,255,0.15)',
+        color:'#fff',
+        border:'none',
+        fontSize:'24px',
+        cursor:'pointer',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        zIndex:10000
+      }}
+    >
+      ×
+    </button>
+
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <div style={{
+        position:'absolute',
+        top:'20px',
+        left:'50%',
+        transform:'translateX(-50%)',
+        color:'#fff',
+        fontSize:'14px',
+        fontWeight:'600',
+        background:'rgba(255,255,255,0.15)',
+        padding:'4px 14px',
+        borderRadius:'16px'
+      }}>
+        {fullScreenIndex + 1} / {fullScreenPhotos.length}
+      </div>
+    )}
+
+    <img 
+      src={fullScreenPhotos ? fullScreenPhotos[fullScreenIndex] : fullScreenImage} 
+      alt="Full view" 
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        maxWidth:'95vw',
+        maxHeight:'85vh',
+        objectFit:'contain',
+        borderRadius:'4px',
+        cursor:'default'
+      }} 
+    />
+
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <>
+        <button
+          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.max(0, fullScreenIndex - 1));}}
+          disabled={fullScreenIndex === 0}
+          style={{
+            position:'absolute',
+            left:'12px',
+            top:'50%',
+            transform:'translateY(-50%)',
+            width:'44px',
+            height:'44px',
+            borderRadius:'50%',
+            background:'rgba(255,255,255,0.15)',
+            color:'#fff',
+            border:'none',
+            fontSize:'22px',
+            cursor:fullScreenIndex === 0 ? 'not-allowed':'pointer',
+            opacity:fullScreenIndex === 0 ? 0.3 : 1
+          }}
+        >
+          ‹
+        </button>
+        <button
+          onClick={(e) => {e.stopPropagation(); setFullScreenIndex(Math.min(fullScreenPhotos.length - 1, fullScreenIndex + 1));}}
+          disabled={fullScreenIndex === fullScreenPhotos.length - 1}
+          style={{
+            position:'absolute',
+            right:'12px',
+            top:'50%',
+            transform:'translateY(-50%)',
+            width:'44px',
+            height:'44px',
+            borderRadius:'50%',
+            background:'rgba(255,255,255,0.15)',
+            color:'#fff',
+            border:'none',
+            fontSize:'22px',
+            cursor:fullScreenIndex === fullScreenPhotos.length - 1 ? 'not-allowed':'pointer',
+            opacity:fullScreenIndex === fullScreenPhotos.length - 1 ? 0.3 : 1
+          }}
+        >
+          ›
+        </button>
+      </>
+    )}
+
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <div style={{
+        position:'absolute',
+        bottom:'24px',
+        display:'flex',
+        gap:'6px'
+      }}>
+        {fullScreenPhotos.map((_, i) => (
+          <div 
+            key={i}
+            onClick={(e) => {e.stopPropagation(); setFullScreenIndex(i);}}
+            style={{
+              width: i === fullScreenIndex ? '20px' : '8px',
+              height:'8px',
+              borderRadius:'4px',
+              background: i === fullScreenIndex ? '#fff' : 'rgba(255,255,255,0.4)',
+              cursor:'pointer',
+              transition:'all 0.2s'
+            }}
+          />
+        ))}
+      </div>
+    )}
+  </div>
+)}
+      
+
       <div style={{
   position:'fixed',
   bottom:0,
