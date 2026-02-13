@@ -167,6 +167,32 @@ function App() {
       setError("Failed to delete listing");
     }
   };
+  
+  const deleteConversation = async (conversationId) => {
+  if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
+  try {
+    // Delete all messages in the conversation first
+    const messagesQuery = query(
+      collection(db, "conversations", conversationId, "messages")
+    );
+    const messagesSnap = await getDocs(messagesQuery);
+    const deletePromises = messagesSnap.docs.map(d => 
+      deleteDoc(doc(db, "conversations", conversationId, "messages", d.id))
+    );
+    await Promise.all(deletePromises);
+    
+    // Then delete the conversation itself
+    await deleteDoc(doc(db, "conversations", conversationId));
+    
+    // Update local state
+    setConversations(prev => prev.filter(c => c.id !== conversationId));
+    setSuccess("Conversation deleted");
+    setTimeout(() => setSuccess(""), 3000);
+  } catch (err) {
+    console.error("Error deleting conversation:", err);
+    setError("Failed to delete conversation");
+  }
+};
 
   const submitReport = async () => {
     if (!reportReason.trim() || !reportTarget) return;
@@ -1078,6 +1104,18 @@ return (
  <>
     {/* ⭐ ADD THIS STYLE TAG HERE */}
     <style>{`
+       html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+@supports (height: 100dvh) {
+  .app-container {
+    height: 100dvh !important;
+  }
+}
+
       * {
         margin: 0;
         padding: 0;
@@ -1144,13 +1182,12 @@ return (
     `}</style>
     {/* ⭐ END OF STYLE TAG */}
 
-   <div style={{
+  <div className="app-container" style={{
   fontFamily:'system-ui',
   background:'#f4f6f8',
   width:'100%',
-  height:'100vh',
+  height:'calc(100vh - env(safe-area-inset-bottom))',
   maxWidth:'100vw',
-  maxHeight:'100vh',
   position:'fixed',
   top:0,
   left:0,
@@ -1261,7 +1298,7 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'88px'
+    paddingBottom:'100px'
   }}>
 
          {!isVerified && (
@@ -1505,7 +1542,7 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'88px'
+    paddingBottom:'100px'
   }}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateSuccess?"Success!":"New Listing"}</h2>
@@ -1713,7 +1750,7 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'88px'
+    paddingBottom:'100px'
   }}>
           {showSafetyMessage && (
             <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
@@ -1729,28 +1766,74 @@ return (
               <p style={{fontSize:'16px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
             </div>
           ):(
-            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-              {conversations.map(conv=>{
-                const otherPerson = user.uid===conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
-                const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
-                return (
-                  <div key={conv.id} onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}} style={{background:'#fff',padding:'16px',borderRadius:'12px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
-                    <div style={{display:'flex',gap:'12px'}}>
-                      <div style={{width:'48px',height:'48px',borderRadius:'50%',background:otherPerson.avatar?`url(${otherPerson.avatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:'700',fontSize:'16px',flexShrink:0}}>{!otherPerson.avatar&&otherPerson.name.split(" ").map(n=>n[0]).join("")}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
-                          <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
-                          {conv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(conv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
-                        </div>
-                        <div style={{fontSize:'12px',color:'#2dd4bf',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
-                        <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
-                      </div>
-                      {unread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#ef4444',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
-                    </div>
-                  </div>
-                );
-              })}
+           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+  {conversations.map(conv=>{
+    const otherPerson = user.uid===conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
+    const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+    return (
+      <div key={conv.id} style={{background:'#fff',borderRadius:'12px',border:'1px solid #e2e6ea',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center'}}>
+          {/* Main conversation area — tappable */}
+          <div 
+            onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}} 
+            style={{flex:1,padding:'16px',cursor:'pointer',display:'flex',gap:'12px',minWidth:0}}
+          >
+            <div style={{
+              width:'48px',
+              height:'48px',
+              borderRadius:'50%',
+              backgroundImage:otherPerson.avatar?`url(${otherPerson.avatar})`:'none',
+              backgroundColor:!otherPerson.avatar?'#2dd4bf':'transparent',
+              backgroundSize:'cover',
+              backgroundPosition:'center',
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              color:'#fff',
+              fontWeight:'700',
+              fontSize:'16px',
+              flexShrink:0
+            }}>
+              {!otherPerson.avatar&&otherPerson.name.split(" ").map(n=>n[0]).join("")}
             </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
+                {conv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(conv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
+              </div>
+              <div style={{fontSize:'12px',color:'#2dd4bf',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+              <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
+            </div>
+            {unread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#ef4444',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,alignSelf:'center'}}>{unread}</div>}
+          </div>
+          
+          {/* 3-dot menu button */}
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteConversation(conv.id);
+            }}
+            style={{
+              padding:'16px 12px',
+              background:'none',
+              border:'none',
+              borderLeft:'1px solid #f0f0f0',
+              cursor:'pointer',
+              fontSize:'18px',
+              color:'#8a9bb0',
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+              flexShrink:0
+            }}
+          >
+            🗑
+          </button>
+        </div>
+      </div>
+    );
+  })}
+</div>
           )}
         </div>
       )}
@@ -1984,7 +2067,7 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'88px',
+    paddingBottom:'100px',
   }}>
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
           <div style={{display:'flex',flexDirection:'column'}}>
