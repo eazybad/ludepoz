@@ -38,7 +38,6 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("signup");
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authReturnAction, setAuthReturnAction] = useState(null);
   const [userName, setUserName] = useState("");
   const [userAvatar, setUserAvatar] = useState(null);
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
@@ -115,7 +114,6 @@ function App() {
   // Require auth - shows modal if not logged in
   const requireAuth = (action, callback) => {
     if (user) { callback(); return; }
-    setAuthReturnAction(() => callback);
     setShowAuthModal(true);
   };
 
@@ -123,7 +121,7 @@ function App() {
   const shareOnWhatsApp = (item) => {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
-    const appUrl = "https://kampasika.netlify.app";
+    const appUrl = "https://ludepoz.netlify.app";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -1382,7 +1380,7 @@ return (
       
       <button 
         onClick={() => {
-          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
+          const text = `Join Ludepoz - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }}
         style={{
