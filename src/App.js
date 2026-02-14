@@ -22,6 +22,14 @@ const storage = getStorage(app);
 
 const DEFAULT_UNI = { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" };
 
+// Generate URL-friendly slug from seller name + uni
+const generateSellerSlug = (name, uni) => {
+  return (name + '-' + (uni || 'student'))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+};
+
 const CATEGORIES = [
   { id: "all", name: "All", icon: "◻" },
   { id: "notes", name: "Notes & Books", icon: "📓" },
@@ -96,10 +104,11 @@ function App() {
   const [studentIdPreview, setStudentIdPreview] = useState(null); 
   const [verificationStatus, setVerificationStatus] = useState(null);
 
-  // Activity tab state
-  const [activityData, setActivityData] = useState({ activeSellers: [], verifiedSellers: [], recentDeals: [] });
-  const [activityTab, setActivityTab] = useState("active");
-  const [activityLoading, setActivityLoading] = useState(false);
+  // Public seller profile state
+  const [publicSeller, setPublicSeller] = useState(null);
+  const [publicSellerListings, setPublicSellerListings] = useState([]);
+  const [publicSellerStats, setPublicSellerStats] = useState(null);
+  const [publicSellerLoading, setPublicSellerLoading] = useState(false);
 
   const isExpired = (listing) => {
     if (!listing.expiresAt) return false;
@@ -129,6 +138,60 @@ function App() {
       `By ${item.userName} (${sellerUni})\n` +
       `\nCheck it out on Kampasika: ${appUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // Load a public seller profile by userId
+  const loadPublicSellerProfile = useCallback(async (userId) => {
+    setPublicSellerLoading(true);
+    try {
+      const userDocRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userDocRef);
+      if (!userSnap.exists()) { setPublicSellerLoading(false); return; }
+      const userData = userSnap.data();
+      setPublicSeller({ odId: userId, ...userData });
+
+      // Update URL without reload
+      const slug = generateSellerSlug(userData.name, userData.universityName);
+      window.history.pushState({}, '', `/seller/${slug}`);
+
+      // SEO: update title + meta description
+      document.title = `${userData.name} - Student Seller on Kampasika | ${userData.universityName || ''}`;
+      let metaDesc = document.querySelector('meta[name="description"]');
+      if (!metaDesc) { metaDesc = document.createElement('meta'); metaDesc.name = 'description'; document.head.appendChild(metaDesc); }
+      metaDesc.content = `Check out ${userData.name}'s listings on Kampasika. Student marketplace for buying and selling on campus.`;
+
+      // Load their active listings
+      try {
+        const listQ = query(collection(db, "listings"), where("userId", "==", userId), where("sold", "==", false), orderBy("createdAt", "desc"));
+        const listSnap = await getDocs(listQ);
+        setPublicSellerListings(listSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      } catch(e) {
+        const listQ2 = query(collection(db, "listings"), where("userId", "==", userId), where("sold", "==", false));
+        const listSnap2 = await getDocs(listQ2);
+        setPublicSellerListings(listSnap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      }
+
+      // Load sold stats
+      const soldQ = query(collection(db, "listings"), where("userId", "==", userId), where("sold", "==", true));
+      const soldSnap = await getDocs(soldQ);
+      setPublicSellerStats({ sold: soldSnap.size });
+
+      setPage("seller");
+    } catch (err) { console.error("Error loading public seller:", err); }
+    finally { setPublicSellerLoading(false); }
+  }, []);
+
+  // Open seller profile from a listing card
+  const openSellerProfile = (listing) => { loadPublicSellerProfile(listing.userId); };
+
+  // Close seller profile and restore URL
+  const closeSellerProfile = () => {
+    setPublicSeller(null);
+    setPublicSellerListings([]);
+    setPublicSellerStats(null);
+    window.history.pushState({}, '', '/');
+    document.title = 'Kampasika - Student Marketplace';
+    setPage("home");
   };
 
   const getTimeUntilExpiry = (listing) => {
@@ -260,53 +323,6 @@ function App() {
     }
   }
 }, []);
-
-  // Load activity data
-  const loadActivityData = useCallback(async () => {
-    setActivityLoading(true);
-    try {
-      const activeListingsQ = query(collection(db, "listings"), where("sold", "==", false), orderBy("createdAt", "desc"));
-      const activeSnap = await getDocs(activeListingsQ);
-      const sellerMap = {};
-      activeSnap.docs.forEach(d => {
-        const data = d.data();
-        const expiryDate = data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
-        if (expiryDate > new Date()) {
-          if (!sellerMap[data.userId]) {
-            sellerMap[data.userId] = { userId: data.userId, name: data.userName, avatar: data.userAvatar, uni: data.universityName, activeCount: 0, latestTitle: data.title, latestPrice: data.price };
-          }
-          sellerMap[data.userId].activeCount++;
-        }
-      });
-      const activeSellers = Object.values(sellerMap).sort((a,b) => b.activeCount - a.activeCount);
-      let verifiedSellers = [];
-      try {
-        const verifiedQ = query(collection(db, "verificationRequests"), where("status", "==", "approved"));
-        const verifiedSnap = await getDocs(verifiedQ);
-        verifiedSellers = verifiedSnap.docs.map(d => ({ userId: d.data().userId, name: d.data().userName, uni: d.data().universityName }));
-      } catch(e) { console.log("Verified query failed:", e); }
-      let recentDeals = [];
-      try {
-        const dealsQ = query(collection(db, "listings"), where("sold", "==", true), orderBy("soldAt", "desc"));
-        const dealsSnap = await getDocs(dealsQ);
-        recentDeals = dealsSnap.docs.slice(0, 20).map(d => {
-          const data = d.data();
-          return { id: d.id, title: data.title, price: data.price, sellerName: data.userName, uni: data.universityName, soldAt: data.soldAt?.toDate ? data.soldAt.toDate() : new Date(data.soldAt), category: data.category };
-        });
-      } catch(e) {
-        try {
-          const dealsQ2 = query(collection(db, "listings"), where("sold", "==", true));
-          const dealsSnap2 = await getDocs(dealsQ2);
-          recentDeals = dealsSnap2.docs.slice(0, 20).map(d => {
-            const data = d.data();
-            return { id: d.id, title: data.title, price: data.price, sellerName: data.userName, uni: data.universityName, soldAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(), category: data.category };
-          });
-        } catch(e2) { console.log("Deals fallback failed:", e2); }
-      }
-      setActivityData({ activeSellers, verifiedSellers, recentDeals });
-    } catch (err) { console.error("Error loading activity:", err); }
-    finally { setActivityLoading(false); }
-  }, []);
 
  const checkVerificationStatus = useCallback(async (userId) => {
   try {
@@ -522,6 +538,36 @@ const requestNotificationPermission = async (currentUser) => {
     // Load listings immediately for everyone (no auth required)
     loadListings();
     
+    // Check URL for /seller/ route (public seller profiles)
+    const path = window.location.pathname;
+    if (path.startsWith('/seller/')) {
+      const slug = path.replace('/seller/', '');
+      // Find seller by slug - search all users
+      (async () => {
+        try {
+          const usersSnap = await getDocs(collection(db, "users"));
+          const match = usersSnap.docs.find(d => {
+            const data = d.data();
+            return generateSellerSlug(data.name, data.universityName) === slug;
+          });
+          if (match) {
+            loadPublicSellerProfile(match.id);
+          }
+        } catch(e) { console.error("Error resolving seller slug:", e); }
+      })();
+    }
+    
+    // Handle browser back/forward
+    const handlePopState = () => {
+      const p = window.location.pathname;
+      if (p === '/' || p === '') {
+        setPublicSeller(null);
+        setPage("home");
+        document.title = 'Kampasika - Student Marketplace';
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
@@ -536,8 +582,8 @@ const requestNotificationPermission = async (currentUser) => {
       }
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, [loadUserProfile, loadListings, loadConversations]);
+    return () => { unsubscribe(); window.removeEventListener('popstate', handlePopState); };
+  }, [loadUserProfile, loadListings, loadConversations, loadPublicSellerProfile]);
 
   const [tokenRequested, setTokenRequested] = useState(false);
 
@@ -576,11 +622,6 @@ useEffect(() => {
       return () => clearInterval(interval);
     }
   }, [user, page, loadConversations]);
-
-  // Load activity data when switching to activity page
-  useEffect(() => {
-    if (page === "activity") loadActivityData();
-  }, [page, loadActivityData]);
 
 useEffect(() => {
   if (!activeConversation) return;
@@ -1212,9 +1253,9 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="activity") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller") && (
       <button
-        onClick={()=>setPage("home")}
+        onClick={()=>{page==="seller" ? closeSellerProfile() : setPage("home");}}
         style={{
           width:'36px',
           height:'36px',
@@ -1381,7 +1422,7 @@ return (
       
       <button 
         onClick={() => {
-          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
+          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.netlify.app`;
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }}
         style={{
@@ -1439,8 +1480,8 @@ return (
               filteredListings.map((item,idx)=>(
                 <div key={item.id}  style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
-                    <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
-                    <span style={{fontSize:'13px',fontWeight:'600'}}>{item.userName}</span>
+                    <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                    <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
@@ -1489,8 +1530,7 @@ return (
 ) : null}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                    <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
-                      {openListingId === item.id && (
+                    {openListingId === item.id && (
   <div style={{
     marginTop:'10px',
     display:'flex',
@@ -1539,6 +1579,8 @@ return (
     </button>
   </div>
 )}
+
+                    <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
                       {item.userId !== user?.uid && (
   <button
     onClick={(e) => {
@@ -1566,6 +1608,7 @@ return (
     📋 Details
   </button>
 )}
+                      
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
                       <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
@@ -2107,7 +2150,7 @@ return (
   </div>
 )}
       
-      {page==="activity"&&(
+      {page==="saved"&&(
         <div style={{
     width:'100%',
     flex:1,
@@ -2118,85 +2161,121 @@ return (
     paddingBottom:'100px',
     padding:'0 16px 100px 16px'
   }}>
-          <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Activity</h2>
+          <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
+          <div style={{display:'flex',flexDirection:'column'}}>
+            {cart.length===0?(
+              <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>🔖</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No saved items</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Save items from the home feed to see them here</div></div>
+            ):(
+              cart.map((item,idx)=>(
+                <div key={item.id} style={{background:'#fff',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
+                  {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
+                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
+                  {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px'}}>{item.description}</div>}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                    <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                    <button onClick={()=>toggleSave(item)} style={{fontSize:'12px',color:'#ef4444',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>Remove</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ PUBLIC SELLER PROFILE ============ */}
+      {page==="seller"&&publicSeller&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
-          {/* Activity sub-tabs */}
-          <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
-            <button onClick={()=>setActivityTab("active")} style={{flex:1,padding:'10px 8px',border:'none',background:activityTab==="active"?'#0f1b2d':'none',color:activityTab==="active"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'600',cursor:'pointer',borderRadius:'8px'}}>🟢 Active Sellers</button>
-            <button onClick={()=>setActivityTab("verified")} style={{flex:1,padding:'10px 8px',border:'none',background:activityTab==="verified"?'#0f1b2d':'none',color:activityTab==="verified"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'600',cursor:'pointer',borderRadius:'8px'}}>✅ Verified</button>
-            <button onClick={()=>setActivityTab("deals")} style={{flex:1,padding:'10px 8px',border:'none',background:activityTab==="deals"?'#0f1b2d':'none',color:activityTab==="deals"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'600',cursor:'pointer',borderRadius:'8px'}}>🤝 Deals</button>
+          {publicSellerLoading ? (
+            <div style={{textAlign:'center',padding:'60px',color:'#8a9bb0'}}>Loading seller profile...</div>
+          ) : (
+          <>
+          {/* Seller Hero */}
+          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',padding:'28px 20px',textAlign:'center'}}>
+            <div style={{width:'80px',height:'80px',borderRadius:'50%',margin:'0 auto 12px',backgroundImage:publicSeller.avatarUrl?`url(${publicSeller.avatarUrl})`:'none',backgroundColor:!publicSeller.avatarUrl?'#2dd4bf':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:'700',color:'#0f1b2d',border:'3px solid rgba(255,255,255,0.2)'}}>
+              {!publicSeller.avatarUrl&&publicSeller.name.split(" ").map(n=>n[0]).join("")}
+            </div>
+            <h1 style={{fontFamily:'serif',fontSize:'24px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{publicSeller.name}</h1>
+            {publicSeller.universityName && <div style={{fontSize:'13px',color:'#2dd4bf',marginBottom:'12px'}}>{publicSeller.universityName} Student</div>}
+            
+            {/* Stats row */}
+            <div style={{display:'flex',justifyContent:'center',gap:'24px',marginBottom:'16px'}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:'20px',fontWeight:'700',color:'#fff'}}>{publicSellerListings.length}</div>
+                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Active</div>
+              </div>
+              {publicSellerStats && (
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:'20px',fontWeight:'700',color:'#2dd4bf'}}>{publicSellerStats.sold}</div>
+                  <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Sold</div>
+                </div>
+              )}
+            </div>
+
+            {/* Share this profile */}
+            <div style={{display:'flex',gap:'8px',justifyContent:'center'}}>
+              <button onClick={()=>{
+                const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
+                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                const msg = `Check out ${publicSeller.name}'s listings on Kampasika (${publicSeller.universityName || 'student'} seller)!\n\n${profileUrl}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+              }} style={{padding:'10px 20px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
+                📲 Share Profile
+              </button>
+              <button onClick={()=>{
+                const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
+                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                navigator.clipboard?.writeText(profileUrl).then(()=>{setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000);}).catch(()=>{});
+              }} style={{padding:'10px 20px',background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
+                🔗 Copy Link
+              </button>
+            </div>
           </div>
 
-          {activityLoading ? (
-            <div style={{textAlign:'center',padding:'40px',color:'#8a9bb0'}}>Loading activity...</div>
-          ) : (
-            <>
-              {activityTab === "active" && (
-                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                  {activityData.activeSellers.length === 0 ? (
-                    <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'12px'}}>🏪</div><div style={{fontSize:'16px',fontWeight:'600'}}>No active sellers yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to list something!</div></div>
-                  ) : (
-                    activityData.activeSellers.map((seller) => (
-                      <div key={seller.userId} style={{background:'#fff',borderRadius:'12px',padding:'16px',display:'flex',alignItems:'center',gap:'12px'}}>
-                        <div style={{position:'relative'}}>
-                          <div style={{width:'48px',height:'48px',borderRadius:'50%',backgroundImage:seller.avatar?`url(${seller.avatar})`:'none',backgroundColor:!seller.avatar?'#2dd4bf':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',fontWeight:'700',color:'#fff'}}>{!seller.avatar&&seller.name.split(" ").map(n=>n[0]).join("")}</div>
-                          <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'14px',height:'14px',borderRadius:'50%',background:'#10b981',border:'2px solid #fff'}}/>
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:'15px',fontWeight:'600'}}>{seller.name}</div>
-                          <div style={{fontSize:'12px',color:'#8a9bb0'}}>{seller.uni} • {seller.activeCount} active listing{seller.activeCount>1?'s':''}</div>
-                          <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Latest: {seller.latestTitle}</div>
-                        </div>
-                        <div style={{fontSize:'14px',fontWeight:'700',color:'#2dd4bf'}}>{seller.latestPrice?.toLocaleString()} TSh</div>
+          {/* Seller's Listings */}
+          <div style={{padding:'16px'}}>
+            <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'12px'}}>
+              {publicSellerListings.length > 0 ? `${publicSeller.name}'s Listings` : 'No Active Listings'}
+            </h3>
+            
+            {publicSellerListings.length === 0 ? (
+              <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
+                <div style={{fontSize:'40px',marginBottom:'12px'}}>📭</div>
+                <div style={{fontSize:'14px',color:'#8a9bb0'}}>This seller has no active listings right now</div>
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column'}}>
+                {publicSellerListings.filter(l=>!isExpired(l)).map((item, idx) => (
+                  <div key={item.id} style={{background:'#fff',borderBottom:idx===publicSellerListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===publicSellerListings.length-1?'0 0 12px 12px':'0'}}>
+                    {(item.photos && item.photos.length > 0) ? (
+                      <img src={item.photos[0]} alt={item.title} onClick={()=>{setFullScreenImage(item.photos[0]);setFullScreenPhotos(item.photos);setFullScreenIndex(0);}} style={{width:'100%',height:'220px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px',cursor:'pointer'}} />
+                    ) : item.photoUrl ? (
+                      <img src={item.photoUrl} alt={item.title} onClick={()=>setFullScreenImage(item.photoUrl)} style={{width:'100%',height:'220px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px',cursor:'pointer'}} />
+                    ) : null}
+                    <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
+                    {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description.substring(0,120)}{item.description.length>120?'...':''}</div>}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                      <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price?.toLocaleString()} TSh</div>
+                      <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
+                        {item.condition && <span style={{fontSize:'11px',color:'#6b7280',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.condition}</span>}
+                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
+                        <button onClick={()=>shareOnWhatsApp(item)} style={{fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📲</button>
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
-              {activityTab === "verified" && (
-                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                  {activityData.verifiedSellers.length === 0 ? (
-                    <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'12px'}}>🎓</div><div style={{fontSize:'16px',fontWeight:'600'}}>No verified sellers yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Get verified by uploading your student ID</div></div>
-                  ) : (
-                    activityData.verifiedSellers.map((seller) => (
-                      <div key={seller.userId} style={{background:'#fff',borderRadius:'12px',padding:'16px',display:'flex',alignItems:'center',gap:'12px'}}>
-                        <div style={{width:'48px',height:'48px',borderRadius:'50%',background:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',fontWeight:'700',color:'#fff'}}>{seller.name.split(" ").map(n=>n[0]).join("")}</div>
-                        <div style={{flex:1}}>
-                          <div style={{display:'flex',alignItems:'center',gap:'6px'}}><span style={{fontSize:'15px',fontWeight:'600'}}>{seller.name}</span><span style={{fontSize:'12px',background:'#d1fae5',color:'#065f46',padding:'2px 8px',borderRadius:'8px',fontWeight:'600'}}>✓ Verified</span></div>
-                          <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px'}}>{seller.uni}</div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-              {activityTab === "deals" && (
-                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                  {activityData.recentDeals.length === 0 ? (
-                    <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'12px'}}>🤝</div><div style={{fontSize:'16px',fontWeight:'600'}}>No completed deals yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Successful transactions will appear here</div></div>
-                  ) : (
-                    activityData.recentDeals.map((deal) => (
-                      <div key={deal.id} style={{background:'#fff',borderRadius:'12px',padding:'16px'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'8px'}}>
-                          <div>
-                            <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{deal.title}</div>
-                            <div style={{fontSize:'12px',color:'#8a9bb0'}}>Sold by {deal.sellerName} • {deal.uni}</div>
-                          </div>
-                          <div style={{textAlign:'right'}}>
-                            <div style={{fontSize:'15px',fontWeight:'700',color:'#10b981'}}>{deal.price?.toLocaleString()} TSh</div>
-                            <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>{deal.soldAt ? new Date(deal.soldAt).toLocaleDateString('en',{month:'short',day:'numeric'}) : 'Recently'}</div>
-                          </div>
-                        </div>
-                        <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                          <span style={{fontSize:'12px',background:'#d1fae5',color:'#065f46',padding:'2px 10px',borderRadius:'8px',fontWeight:'600'}}>✅ Completed</span>
-                          {deal.category && <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{CATEGORIES.find(c=>c.id===deal.category)?.icon} {CATEGORIES.find(c=>c.id===deal.category)?.name}</span>}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SEO-friendly footer text */}
+          <div style={{padding:'16px',textAlign:'center',fontSize:'12px',color:'#8a9bb0',lineHeight:'1.6'}}>
+            <p>{publicSeller.name} is a student seller on Kampasika, the campus marketplace. Browse their listings, message them directly, or share their profile with friends.</p>
+            <p style={{marginTop:'8px'}}>
+              <span style={{fontFamily:'serif',fontWeight:'700',color:'#0f1b2d'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
+            </p>
+          </div>
+          </>
           )}
         </div>
       )}
@@ -3186,7 +3265,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
         <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
-        <button onClick={()=>setPage("activity")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="activity"?'#2dd4bf':'#8a9bb0'}}>📊</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Activity</span></button>
+        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span></button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
       
     </div>
