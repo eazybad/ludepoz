@@ -79,6 +79,7 @@ function App() {
   const [reportReason, setReportReason] = useState("");
   const [viewingListing, setViewingListing] = useState(null);
   const [sellerStats, setSellerStats] = useState(null);
+  const [openListingId, setOpenListingId] = useState(null);
   const [viewedListingsSet, setViewedListingsSet] = useState(() => {
   const stored = localStorage.getItem('viewedListings');
   return new Set(stored ? JSON.parse(stored) : []);
@@ -121,7 +122,7 @@ function App() {
   const shareOnWhatsApp = (item) => {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
-    const appUrl = "https://ludepoz.netlify.app";
+    const appUrl = "https://kampasika.netlify.app";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -1380,7 +1381,7 @@ return (
       
       <button 
         onClick={() => {
-          const text = `Join Ludepoz - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
+          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://ludepoz.netlify.app`;
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }}
         style={{
@@ -1487,10 +1488,84 @@ return (
   </div>
 ) : null}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                    <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                    <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-                      {item.userId!==user?.uid&&<button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId!==user?.uid){loadSellerStats(item.userId);}}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#0f1b2d',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📋 Details</button>}
-                      <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
+                    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
+                      {openListingId === item.id && (
+  <div style={{
+    marginTop:'10px',
+    display:'flex',
+    gap:'12px',
+    borderTop:'1px solid #f0f0f0',
+    paddingTop:'10px'
+  }}>
+    <button
+      onClick={(e)=>{
+        e.stopPropagation();
+        requireAuth("message",()=>startConversation(item));
+      }}
+      style={{
+        flex:1,
+        padding:'8px',
+        background:'#2dd4bf',
+        color:'#fff',
+        border:'none',
+        borderRadius:'6px',
+        fontSize:'13px',
+        fontWeight:'600',
+        cursor:'pointer'
+      }}
+    >
+      💬 Message
+    </button>
+
+    <button
+      onClick={(e)=>{
+        e.stopPropagation();
+        shareOnWhatsApp(item);
+      }}
+      style={{
+        flex:1,
+        padding:'8px',
+        background:'#25D366',
+        color:'#fff',
+        border:'none',
+        borderRadius:'6px',
+        fontSize:'13px',
+        fontWeight:'600',
+        cursor:'pointer'
+      }}
+    >
+      📲 WhatsApp
+    </button>
+  </div>
+)}
+                      {item.userId !== user?.uid && (
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      setOpenListingId(openListingId === item.id ? null : item.id);
+      setViewingListing(item);
+      setPhotoIndex(0);
+      incrementViews(item.id);
+      if (item.userId !== user?.uid) {
+        loadSellerStats(item.userId);
+      }
+    }}
+    style={{
+      display:'flex',
+      alignItems:'center',
+      gap:'4px',
+      fontSize:'12px',
+      color:'#0f1b2d',
+      cursor:'pointer',
+      border:'none',
+      background:'none',
+      fontWeight:'600'
+    }}
+  >
+    📋 Details
+  </button>
+)}
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
                       <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
