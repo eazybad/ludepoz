@@ -22,6 +22,22 @@ const storage = getStorage(app);
 
 const DEFAULT_UNI = { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" };
 
+const SERVICE_TAGS = [
+  { id: "phone_repair", label: "Phone Repair", icon: "📱" },
+  { id: "laptop_repair", label: "Laptop Repair", icon: "💻" },
+  { id: "logo_design", label: "Logo Design", icon: "🎨" },
+  { id: "graphic_design", label: "Graphic Design", icon: "✏️" },
+  { id: "room_broker", label: "Room Broker", icon: "🏠" },
+  { id: "tutor", label: "Tutoring", icon: "📚" },
+  { id: "photography", label: "Photography", icon: "📷" },
+  { id: "delivery", label: "Delivery", icon: "🚚" },
+  { id: "hair_beauty", label: "Hair & Beauty", icon: "💇" },
+  { id: "tailor", label: "Tailoring", icon: "🧵" },
+  { id: "food", label: "Food & Snacks", icon: "🍲" },
+  { id: "printing", label: "Printing", icon: "🖨️" },
+  { id: "other_service", label: "Other", icon: "⚡" },
+];
+
 // Generate URL-friendly slug from seller name + uni
 const generateSellerSlug = (name, uni) => {
   return (name + '-' + (uni || 'student'))
@@ -48,6 +64,8 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [userName, setUserName] = useState("");
   const [userAvatar, setUserAvatar] = useState(null);
+  const [userBio, setUserBio] = useState("");
+  const [userServices, setUserServices] = useState([]);
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +95,7 @@ function App() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editProfileData, setEditProfileData] = useState({ name: "", avatarFile: null, avatarPreview: null });
+  const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
@@ -385,6 +403,8 @@ const requestNotificationPermission = async (currentUser) => {
       const userData = userDoc.data();
       setUserName(userData.name || "");
       setUserAvatar(userData.avatarUrl || null);
+      setUserBio(userData.bio || "");
+      setUserServices(userData.services || []);
       setSelectedUni(DEFAULT_UNI);
       setIsVerified(userData.verified || false);
       
@@ -676,6 +696,8 @@ useEffect(() => {
         universityId: DEFAULT_UNI.id,
         universityName: DEFAULT_UNI.short,
         avatarUrl: null,
+        bio: "",
+        services: [],
         emailVerified: false,
         createdAt: serverTimestamp()
       });
@@ -876,6 +898,8 @@ useEffect(() => {
     const updateData = {};
     if (avatarUrl) updateData.avatarUrl = avatarUrl;
     if (editProfileData.name.trim()) updateData.name = editProfileData.name.trim();
+    updateData.bio = (editProfileData.bio || "").trim();
+    updateData.services = editProfileData.services || [];
 
     // 1. Update user document
     await updateDoc(doc(db, "users", user.uid), updateData);
@@ -925,9 +949,11 @@ useEffect(() => {
     // 5. Update local state
     if (updateData.name) setUserName(updateData.name);
     if (avatarUrl) setUserAvatar(avatarUrl);
+    setUserBio(updateData.bio);
+    setUserServices(updateData.services);
     
     setShowEditProfile(false);
-    setEditProfileData({ name: "", avatarFile: null, avatarPreview: null });
+    setEditProfileData({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
     setSuccess("Profile updated everywhere!");
     
     // Reload to reflect changes
@@ -1608,7 +1634,8 @@ return (
     📋 Details
   </button>
 )}
-                      
+
+                     
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
                       <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
@@ -2196,7 +2223,20 @@ return (
               {!publicSeller.avatarUrl&&publicSeller.name.split(" ").map(n=>n[0]).join("")}
             </div>
             <h1 style={{fontFamily:'serif',fontSize:'24px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{publicSeller.name}</h1>
-            {publicSeller.universityName && <div style={{fontSize:'13px',color:'#2dd4bf',marginBottom:'12px'}}>{publicSeller.universityName} Student</div>}
+            {publicSeller.universityName && <div style={{fontSize:'13px',color:'#2dd4bf',marginBottom:'8px'}}>{publicSeller.universityName} Student</div>}
+            
+            {/* Bio */}
+            {publicSeller.bio && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.75)',marginBottom:'12px',lineHeight:'1.5',maxWidth:'320px',margin:'0 auto 12px'}}>{publicSeller.bio}</div>}
+            
+            {/* Service Tags */}
+            {publicSeller.services && publicSeller.services.length > 0 && (
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',justifyContent:'center',marginBottom:'16px'}}>
+                {publicSeller.services.map(sId => {
+                  const tag = SERVICE_TAGS.find(t=>t.id===sId);
+                  return tag ? <span key={sId} style={{fontSize:'12px',background:'rgba(255,255,255,0.15)',padding:'4px 12px',borderRadius:'20px',color:'#fff',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span> : null;
+                })}
+              </div>
+            )}
             
             {/* Stats row */}
             <div style={{display:'flex',justifyContent:'center',gap:'24px',marginBottom:'16px'}}>
@@ -2212,8 +2252,14 @@ return (
               )}
             </div>
 
-            {/* Share this profile */}
-            <div style={{display:'flex',gap:'8px',justifyContent:'center'}}>
+            {/* Action buttons */}
+            <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
+              <button onClick={()=>{
+                if (!publicSellerListings.length) return;
+                requireAuth("message", () => startConversation(publicSellerListings[0]));
+              }} style={{padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
+                💬 Message Seller
+              </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
                 const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
@@ -2306,9 +2352,22 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 </div>
             <div style={{flex:1}}>
               <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
-              <button onClick={()=>{setEditProfileData({name:userName,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✏️ Edit Profile</button>
+              {userBio && <div style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',marginTop:'4px',lineHeight:'1.4'}}>{userBio}</div>}
+              <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
             </div>
           </div>
+          
+          {/* Service Tags */}
+          {userServices.length > 0 && (
+            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
+              {userServices.map(sId => {
+                const tag = SERVICE_TAGS.find(t=>t.id===sId);
+                return tag ? (
+                  <span key={sId} style={{fontSize:'12px',background:'#fff',padding:'4px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span>
+                ) : null;
+              })}
+            </div>
+          )}
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
             <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings</button>
@@ -2404,9 +2463,36 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
             </label>
             
+            <div style={{marginBottom:'12px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label>
+              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+            </div>
+
+            <div style={{marginBottom:'12px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Bio / What you do</label>
+              <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="e.g. I fix phones and sell accessories near campus gate" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'70px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
+              <div style={{fontSize:'11px',color:'#8a9bb0',textAlign:'right',marginTop:'4px'}}>{(editProfileData.bio||"").length}/150</div>
+            </div>
+
             <div style={{marginBottom:'16px'}}>
-              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>username</label>
-              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}} />
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>What do you offer? (pick up to 3)</label>
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                {SERVICE_TAGS.map(tag => {
+                  const selected = (editProfileData.services||[]).includes(tag.id);
+                  return (
+                    <button key={tag.id} onClick={()=>{
+                      const current = editProfileData.services || [];
+                      if (selected) {
+                        setEditProfileData({...editProfileData, services: current.filter(s=>s!==tag.id)});
+                      } else if (current.length < 3) {
+                        setEditProfileData({...editProfileData, services: [...current, tag.id]});
+                      }
+                    }} style={{padding:'6px 12px',borderRadius:'20px',border: selected ? '2px solid #2dd4bf' : '1.5px solid #e2e6ea',background: selected ? '#f0fdfa' : '#fff',color: selected ? '#0f1b2d' : '#6b7280',fontSize:'12px',fontWeight:'500',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',opacity: !selected && (editProfileData.services||[]).length >= 3 ? 0.4 : 1}}>
+                      {tag.icon} {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             
             <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
