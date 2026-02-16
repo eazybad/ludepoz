@@ -127,7 +127,8 @@ function App() {
   const [publicSellerListings, setPublicSellerListings] = useState([]);
   const [publicSellerStats, setPublicSellerStats] = useState(null);
   const [publicSellerLoading, setPublicSellerLoading] = useState(false);
-
+  
+  // eslint-disable-next-line no-unused-vars
   const isExpired = (listing) => {
     if (!listing.expiresAt) return false;
     const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
