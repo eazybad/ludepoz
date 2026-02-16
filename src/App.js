@@ -127,8 +127,7 @@ function App() {
   const [publicSellerListings, setPublicSellerListings] = useState([]);
   const [publicSellerStats, setPublicSellerStats] = useState(null);
   const [publicSellerLoading, setPublicSellerLoading] = useState(false);
-  
-  // eslint-disable-next-line no-unused-vars
+
   const isExpired = (listing) => {
     if (!listing.expiresAt) return false;
     const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
@@ -1486,7 +1485,7 @@ return (
 )}
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy second hand phones, sell used laptops, find a roommate, or lease a room.</p>
+            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy secondhand phones, sell used laptops, also find furniture, and other useful items.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
@@ -2229,8 +2228,8 @@ return (
             <h1 style={{fontFamily:'serif',fontSize:'24px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{publicSeller.name}</h1>
             {publicSeller.universityName && <div style={{fontSize:'13px',color:'#2dd4bf',marginBottom:'8px'}}>{publicSeller.universityName} Student</div>}
             
-            {/* Bio */}
-            {publicSeller.bio && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.75)',marginBottom:'12px',lineHeight:'1.5',maxWidth:'320px',margin:'0 auto 12px'}}>{publicSeller.bio}</div>}
+            {/* Bio — HIDDEN FOR NOW, uncomment to re-enable */}
+            {/* {publicSeller.bio && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.75)',marginBottom:'12px',lineHeight:'1.5',maxWidth:'320px',margin:'0 auto 12px'}}>{publicSeller.bio}</div>} */}
             
             {/* Service Tags */}
             {publicSeller.services && publicSeller.services.length > 0 && (
@@ -2356,7 +2355,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 </div>
             <div style={{flex:1}}>
               <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
-              {userBio && <div style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',marginTop:'4px',lineHeight:'1.4'}}>{userBio}</div>}
+              {/* BIO HIDDEN FOR NOW */}
+              {/* {userBio && <div style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',marginTop:'4px',lineHeight:'1.4'}}>{userBio}</div>} */}
               <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
             </div>
           </div>
@@ -2472,11 +2472,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
             </div>
 
+            {/* BIO FIELD HIDDEN FOR NOW — uncomment to re-enable */}
+            {/*
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Bio / What you do</label>
               <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="e.g. I fix phones and sell accessories near campus gate" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'70px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
               <div style={{fontSize:'11px',color:'#8a9bb0',textAlign:'right',marginTop:'4px'}}>{(editProfileData.bio||"").length}/150</div>
             </div>
+            */}
 
             <div style={{marginBottom:'16px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>What do you offer? (pick up to 3)</label>
