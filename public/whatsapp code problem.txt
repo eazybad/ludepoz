@@ -1600,13 +1600,7 @@ return (
     <button
       onClick={(e)=>{
         e.stopPropagation();
-        if (item.whatsapp) {
-          const num = item.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
-          const msg = `Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;
-          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
-        } else {
-          shareOnWhatsApp(item);
-        }
+        shareOnWhatsApp(item);
       }}
       style={{
         flex:1,
@@ -1620,7 +1614,7 @@ return (
         cursor:'pointer'
       }}
     >
-      {item.whatsapp ? '📱 WhatsApp Seller' : '📲 Share'}
+      📲 WhatsApp
     </button>
   </div>
 )}
@@ -1656,11 +1650,7 @@ return (
 
                      
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
-                      {item.whatsapp ? (
-                        <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Contact seller on WhatsApp">📱 Chat</button>
-                      ) : (
-                        <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
-                      )}
+                      <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
                       <button onClick={(e)=>{e.stopPropagation();setReportTarget({type:'listing',id:item.id,name:item.title});setShowReportModal(true);}} style={{fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>⋮</button>
                     </div>
@@ -3012,6 +3002,21 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             }}
           >
             🔖
+          </button>
+          <button 
+            onClick={() => shareOnWhatsApp(viewingListing)}
+            style={{
+              padding:'16px',
+              background:'#25D366',
+              color:'#fff',
+              border:'none',
+              borderRadius:'10px',
+              fontSize:'15px',
+              fontWeight:'600',
+              cursor:'pointer'
+            }}
+          >
+            📲
           </button>
           <button 
             onClick={() => {
