@@ -86,6 +86,8 @@ function App() {
   desc: "", 
   price: "", 
   cond: "", 
+  location: "",
+  whatsapp: "",
   photoFiles: [],      // Changed from photoFile to photoFiles (array)
   photoPreviews: []    // Changed from photoPreview to photoPreviews (array)
 });
@@ -150,10 +152,12 @@ function App() {
   const shareOnWhatsApp = (item) => {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
+    const locationStr = item.location ? `📍 ${item.location}` : "";
     const appUrl = "https://kampasika.netlify.app";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
+      `${locationStr ? locationStr + '\n' : ''}` +
       `By ${item.userName} (${sellerUni})\n` +
       `\nCheck it out on Kampasika: ${appUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
@@ -818,8 +822,8 @@ useEffect(() => {
   const handleCreateListing = async () => {
     if (!canPerformAction()) return;
 
-  if (!createData.cat || !createData.title.trim() || !createData.price || !user) {
-    setError("Please fill in all required fields");
+  if (!createData.cat || !createData.title.trim() || !createData.price || !createData.location.trim() || !user) {
+    setError("Please fill in all required fields (category, title, price, location)");
     return;
   }
   try {
@@ -849,6 +853,8 @@ useEffect(() => {
       description: createData.desc.trim(),
       price: parseInt(createData.price),
       condition: createData.cond,
+      location: createData.location.trim(),
+      whatsapp: createData.whatsapp.trim(),
       photoUrl: photoUrls[0] || null,        // Keep first photo as main
       photos: photoUrls,                      // ⭐ ADD ALL PHOTOS
       sold: false,
@@ -866,6 +872,8 @@ useEffect(() => {
       desc: "", 
       price: "", 
       cond: "", 
+      location: "",
+      whatsapp: "",
       photoFiles: [],      // Reset to empty array
       photoPreviews: []    // Reset to empty array
     });
@@ -1513,6 +1521,7 @@ return (
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
                     <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
+                    {item.location && <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>📍 {item.location}</span>}
                     <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
@@ -1857,6 +1866,8 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. UDSM Main Campus, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
                 <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
               </>
             )}
@@ -2725,6 +2736,21 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           }}>
             📍 {viewingListing.universityName}
           </span>
+          {viewingListing.location && (
+            <span style={{
+              fontSize:'12px',
+              background:'#f0fdfa',
+              padding:'6px 12px',
+              borderRadius:'20px',
+              color:'#0f1b2d',
+              display:'flex',
+              alignItems:'center',
+              gap:'4px',
+              fontWeight:'500'
+            }}>
+              📍 {viewingListing.location}
+            </span>
+          )}
           <span style={{
             fontSize:'12px',
             background:'#f4f6f8',
@@ -2840,6 +2866,31 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <span>✅ {sellerStats.sold} sold</span>
               </div>
             )}
+            {viewingListing.whatsapp && (
+              <div 
+                onClick={() => {
+                  const num = viewingListing.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
+                  const msg = `Hi! I'm interested in your listing "${viewingListing.title}" on Kampasika for ${viewingListing.price.toLocaleString()} TSh.`;
+                  window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+                }}
+                style={{
+                  marginTop:'12px',
+                  padding:'10px 16px',
+                  background:'#f0fdf4',
+                  borderRadius:'10px',
+                  display:'flex',
+                  alignItems:'center',
+                  gap:'8px',
+                  cursor:'pointer'
+                }}
+              >
+                <span style={{fontSize:'18px'}}>📱</span>
+                <div>
+                  <div style={{fontSize:'13px',fontWeight:'600',color:'#166534'}}>WhatsApp Available</div>
+                  <div style={{fontSize:'12px',color:'#6b7280'}}>Tap to chat directly with seller</div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2915,6 +2966,28 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           >
             💬 Message Seller
           </button>
+          {viewingListing.whatsapp && (
+            <button 
+              onClick={() => {
+                const num = viewingListing.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
+                const msg = `Hi! I'm interested in your listing "${viewingListing.title}" on Kampasika for ${viewingListing.price.toLocaleString()} TSh.`;
+                window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+              }}
+              style={{
+                flex:2,
+                padding:'16px',
+                background:'#25D366',
+                color:'#fff',
+                border:'none',
+                borderRadius:'10px',
+                fontSize:'15px',
+                fontWeight:'600',
+                cursor:'pointer'
+              }}
+            >
+              📱 WhatsApp
+            </button>
+          )}
           <button 
             onClick={() => toggleSave(viewingListing)}
             style={{
