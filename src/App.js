@@ -111,6 +111,7 @@ function App() {
   const [reportTarget, setReportTarget] = useState(null);
   const [reportReason, setReportReason] = useState("");
   const [viewingListing, setViewingListing] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [sellerStats, setSellerStats] = useState(null);
   const [openListingId, setOpenListingId] = useState(null);
   const [viewedListingsSet, setViewedListingsSet] = useState(() => {
