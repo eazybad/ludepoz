@@ -100,6 +100,7 @@ function App() {
   const [fullScreenIndex, setFullScreenIndex] = useState(0);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
+  const [lastCreatedListing, setLastCreatedListing] = useState(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
@@ -879,6 +880,16 @@ useEffect(() => {
     
     setShowCreateSuccess(true);
     setSuccess("Listing created successfully!");
+    // Store last listing info for the share prompt
+    const lastListing = {
+      title: createData.title.trim(),
+      price: parseInt(createData.price),
+      description: createData.desc.trim(),
+      location: createData.location.trim(),
+      universityName: selectedUni.short,
+      userName: userName
+    };
+    setLastCreatedListing(lastListing);
     setCreateData({ 
       cat: "", 
       title: "", 
@@ -891,10 +902,7 @@ useEffect(() => {
       photoPreviews: []    // Reset to empty array
     });
     await loadListings();
-    setTimeout(() => { 
-      setShowCreateSuccess(false); 
-      setPage("home"); 
-    }, 2000);
+    // Don't auto-redirect — let user choose to share or go home
   } catch (err) {
     console.error("Error creating listing:", err);
     setError("Failed to create listing: " + err.message);
@@ -1286,7 +1294,7 @@ return (
       
       {showVerificationBanner && user && !user.emailVerified && (
         <div style={{background:'#fef3c7',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
-          <span>📧 Please verify your email to unlock all features(check spam folder)</span>
+          
           <button onClick={()=>setShowVerificationBanner(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer'}}>×</button>
         </div>
       )}
@@ -1674,7 +1682,8 @@ return (
                       ) : (
                         <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       )}
-                      <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
+                      {/* VIEW COUNT HIDDEN FOR NOW — uncomment to re-enable */}
+                      {/* <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span> */}
                       <button onClick={(e)=>{e.stopPropagation();setReportTarget({type:'listing',id:item.id,name:item.title});setShowReportModal(true);}} style={{fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>⋮</button>
                     </div>
                   </div>
@@ -1701,7 +1710,66 @@ return (
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateSuccess?"Success!":"New Listing"}</h2>
             {showCreateSuccess?(
-              <div style={{textAlign:'center',padding:'40px'}}><div style={{fontSize:'48px',marginBottom:'12px'}}>✅</div><div style={{fontSize:'16px',fontWeight:'600'}}>Listing created!</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Active for 48 hours</div></div>
+              <div style={{textAlign:'center',padding:'32px 16px'}}>
+                <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>Listing created!</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Share it to get buyers faster</div>
+                
+                <button 
+                  onClick={() => {
+                    if (lastCreatedListing) {
+                      const priceStr = lastCreatedListing.price ? `TSh ${lastCreatedListing.price.toLocaleString()}` : "";
+                      const locationStr = lastCreatedListing.location ? `📍 ${lastCreatedListing.location}` : "";
+                      const appUrl = "https://kampasika.netlify.app";
+                      const msg = `I just listed something on Kampasika!\n\n` +
+                        `*${lastCreatedListing.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
+                        `${lastCreatedListing.description ? lastCreatedListing.description.substring(0, 80) + (lastCreatedListing.description.length > 80 ? '...' : '') + '\n' : ''}` +
+                        `${locationStr ? locationStr + '\n' : ''}` +
+                        `\nCheck it out: ${appUrl}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                    }
+                  }}
+                  style={{
+                    width:'100%',
+                    padding:'14px',
+                    background:'#25D366',
+                    color:'#fff',
+                    border:'none',
+                    borderRadius:'12px',
+                    fontSize:'16px',
+                    fontWeight:'600',
+                    cursor:'pointer',
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                    gap:'8px',
+                    marginBottom:'12px'
+                  }}
+                >
+                  📲 Share on WhatsApp
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    setShowCreateSuccess(false);
+                    setLastCreatedListing(null);
+                    setPage("home");
+                  }}
+                  style={{
+                    width:'100%',
+                    padding:'14px',
+                    background:'#f4f6f8',
+                    color:'#0f1b2d',
+                    border:'none',
+                    borderRadius:'12px',
+                    fontSize:'16px',
+                    fontWeight:'600',
+                    cursor:'pointer'
+                  }}
+                >
+                  ← Go to Home
+                </button>
+              </div>
             ):(
               <>
                 <input 
@@ -2426,7 +2494,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       <div style={{fontSize:'12px',color:'#10b981',marginBottom:'8px',fontWeight:'600'}}>⏰ {getTimeUntilExpiry(item)}</div>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                        <span style={{fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
+                        {/* VIEW COUNT HIDDEN FOR NOW */}
                       </div>
                      <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
               {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
@@ -2878,7 +2946,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 </div>
               </div>
             </div>
-            {sellerStats && (
+            {/* SELLER STATS HIDDEN FOR NOW — uncomment to re-enable */}
+            {/* {sellerStats && (
               <div style={{
                 display:'flex',
                 gap:'16px',
@@ -2888,7 +2957,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <span>📦 {sellerStats.active} active</span>
                 <span>✅ {sellerStats.sold} sold</span>
               </div>
-            )}
+            )} */}
             {viewingListing.whatsapp && (
               <div 
                 onClick={() => {
@@ -2930,16 +2999,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             fontSize:'16px',
             color:'#6b7280'
           }}>
-            <div style={{textAlign:'center'}}>
-              <div style={{fontSize:'20px',marginBottom:'4px'}}>👁</div>
-              <div style={{fontWeight:'600',color:'#0f1b2d'}}>{viewingListing.views||0}</div>
-              <div style={{fontSize:'12px'}}>views</div>
-            </div>
-            <div style={{textAlign:'center'}}>
-              <div style={{fontSize:'20px',marginBottom:'4px'}}>🔖</div>
-              <div style={{fontWeight:'600',color:'#0f1b2d'}}>{viewingListing.saves||0}</div>
-              <div style={{fontSize:'12px'}}>saves</div>
-            </div>
+            {/* SAVES HIDDEN FOR NOW */}
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:'20px',marginBottom:'4px'}}>📅</div>
               <div style={{fontWeight:'600',color:'#0f1b2d'}}>
@@ -3402,7 +3462,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account to sell, message sellers, and save items</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Registration Number (optional)</label><input type="text" placeholder="e.g. 33421/T.2022" value={regNumber} onChange={e=>setRegNumber(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Registration Number</label><input type="text" placeholder="e.g. 33421/T.2022" value={regNumber} onChange={e=>setRegNumber(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University *</label><select value={signupUni} onChange={e=>setSignupUni(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'#fff',color:signupUni?'#0f1b2d':'#8a9bb0'}}><option value="">Select your university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name} ({u.short})</option>)}</select></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"Create Account"}</button>
