@@ -56,8 +56,6 @@ const CATEGORIES = [
   { id: "notes", name: "Notes & Books", icon: "📓" },
   { id: "electronics", name: "Electronics", icon: "💻" },
   { id: "furniture", name: "Furniture", icon: "🪑" },
-  { id: "roommates", name: "Roommates", icon: "🤝" },
-  { id: "rooms", name: "Room Leasing", icon: "🏠" },
   { id: "clothing", name: "Clothing", icon: "👕" },
   { id: "other", name: "Other", icon: "📦" },
 ];
