@@ -20,7 +20,12 @@ const auth = getAuth(app);
 const db = initializeFirestore(app, {});
 const storage = getStorage(app);
 
-const DEFAULT_UNI = { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" };
+const UNIVERSITIES = [
+  { id: 1, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" },
+  { id: 2, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
+];
+
+const DEFAULT_UNI = UNIVERSITIES[0];
 
 const SERVICE_TAGS = [
   { id: "phone_repair", label: "Phone Repair", icon: "📱" },
@@ -71,6 +76,7 @@ function App() {
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
   const [regNumber, setRegNumber] = useState("");
+  const [signupUni, setSignupUni] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -410,7 +416,7 @@ const requestNotificationPermission = async (currentUser) => {
       setUserAvatar(userData.avatarUrl || null);
       setUserBio(userData.bio || "");
       setUserServices(userData.services || []);
-      setSelectedUni(DEFAULT_UNI);
+      setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
       setIsVerified(userData.verified || false);
       
       // ⭐ CHECK VERIFICATION STATUS
@@ -679,12 +685,21 @@ useEffect(() => {
       setError("Please fill in all required fields");
       return;
     }
+    if (!signupUni) {
+      setError("Please select your university");
+      return;
+    }
     if (!email.endsWith('@gmail.com')) {
       setError("Please use a Gmail address (@gmail.com)");
       return;
     }
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
+      return;
+    }
+    const chosenUni = UNIVERSITIES.find(u => u.id === parseInt(signupUni));
+    if (!chosenUni) {
+      setError("Please select a valid university");
       return;
     }
     try {
@@ -698,8 +713,8 @@ useEffect(() => {
         name: signupName.trim(),
         email: email,
         registrationNumber: regNumber.trim(),
-        universityId: DEFAULT_UNI.id,
-        universityName: DEFAULT_UNI.short,
+        universityId: chosenUni.id,
+        universityName: chosenUni.short,
         avatarUrl: null,
         bio: "",
         services: [],
@@ -708,7 +723,7 @@ useEffect(() => {
       });
       
       setUserName(signupName.trim());
-      setSelectedUni(DEFAULT_UNI);
+      setSelectedUni(chosenUni);
       setSuccess("Account created! Check your email to verify.");
       setShowVerificationBanner(true);
       setShowAuthModal(false);
@@ -1600,13 +1615,7 @@ return (
     <button
       onClick={(e)=>{
         e.stopPropagation();
-        if (item.whatsapp) {
-          const num = item.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
-          const msg = `Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;
-          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
-        } else {
-          shareOnWhatsApp(item);
-        }
+        shareOnWhatsApp(item);
       }}
       style={{
         flex:1,
@@ -1620,7 +1629,7 @@ return (
         cursor:'pointer'
       }}
     >
-      {item.whatsapp ? '📱 WhatsApp Seller' : '📲 Share'}
+      📲 WhatsApp
     </button>
   </div>
 )}
@@ -1656,11 +1665,7 @@ return (
 
                      
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
-                      {item.whatsapp ? (
-                        <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Contact seller on WhatsApp">📱 Chat</button>
-                      ) : (
-                        <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
-                      )}
+                      <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
                       <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span>
                       <button onClick={(e)=>{e.stopPropagation();setReportTarget({type:'listing',id:item.id,name:item.title});setShowReportModal(true);}} style={{fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>⋮</button>
                     </div>
@@ -3014,6 +3019,21 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             🔖
           </button>
           <button 
+            onClick={() => shareOnWhatsApp(viewingListing)}
+            style={{
+              padding:'16px',
+              background:'#25D366',
+              color:'#fff',
+              border:'none',
+              borderRadius:'10px',
+              fontSize:'15px',
+              fontWeight:'600',
+              cursor:'pointer'
+            }}
+          >
+            📲
+          </button>
+          <button 
             onClick={() => {
               setViewingListing(null);
               setReportTarget({
@@ -3390,6 +3410,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email (@gmail.com)</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Registration Number (optional)</label><input type="text" placeholder="e.g. 33421/T.2022" value={regNumber} onChange={e=>setRegNumber(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University *</label><select value={signupUni} onChange={e=>setSignupUni(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'#fff',color:signupUni?'#0f1b2d':'#8a9bb0'}}><option value="">Select your university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name} ({u.short})</option>)}</select></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"Create Account"}</button>
                 <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
