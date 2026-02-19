@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendEmailVerification } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { initializeFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
@@ -104,6 +104,7 @@ function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
@@ -421,10 +422,6 @@ const requestNotificationPermission = async (currentUser) => {
       
       // ⭐ CHECK VERIFICATION STATUS
       await checkVerificationStatus(userId);
-      
-      if (auth.currentUser && !auth.currentUser.emailVerified) {
-        setShowVerificationBanner(true);
-      }
     }
   } catch (err) {
     console.error("Error loading profile:", err);
@@ -707,8 +704,6 @@ useEffect(() => {
       setLoading(true);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
-      await sendEmailVerification(userCredential.user);
-      
       await setDoc(doc(db, "users", userCredential.user.uid), {
         name: signupName.trim(),
         email: email,
@@ -718,14 +713,12 @@ useEffect(() => {
         avatarUrl: null,
         bio: "",
         services: [],
-        emailVerified: false,
         createdAt: serverTimestamp()
       });
       
       setUserName(signupName.trim());
       setSelectedUni(chosenUni);
-      setSuccess("Account created! Check your email to verify.");
-      setShowVerificationBanner(true);
+      setSuccess("Account created! Welcome to Kampasika 🎉");
       setShowAuthModal(false);
       setPage("home");
     } catch (err) {
@@ -1293,12 +1286,7 @@ return (
 
       {success&&<div style={{margin:'16px',background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',fontSize:'13px',flexShrink:0}}>{success}</div>}
       
-      {showVerificationBanner && user && !user.emailVerified && (
-        <div style={{background:'#fef3c7',padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
-          
-          <button onClick={()=>setShowVerificationBanner(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer'}}>×</button>
-        </div>
-      )}
+      {/* EMAIL VERIFICATION BANNER REMOVED */}
     {page !== "chat" && (
   <div
     style={{
