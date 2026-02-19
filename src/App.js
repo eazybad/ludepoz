@@ -107,6 +107,7 @@ function App() {
   // eslint-disable-next-line no-unused-vars
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
+  const [showHeroBanner, setShowHeroBanner] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
@@ -1502,11 +1503,14 @@ return (
     </div>
   </div>
 )}
-          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
+          {showHeroBanner && (
+          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative'}}>
+            <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.6)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
             <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy secondhand phones, sell used laptops, also find furniture, and other useful items.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
+          )}
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
         {(() => {
   const filteredListings = listings.filter(item => {
