@@ -137,6 +137,12 @@ function App() {
   const [publicSellerListings, setPublicSellerListings] = useState([]);
   const [publicSellerStats, setPublicSellerStats] = useState(null);
   const [publicSellerLoading, setPublicSellerLoading] = useState(false);
+
+  // PWA Install Prompt state
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isIos, setIsIos] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   
   // eslint-disable-next-line no-unused-vars
   const isExpired = (listing) => {
@@ -624,6 +630,78 @@ useEffect(() => {
 
 }, [user, tokenRequested]);
 
+  // PWA Install Prompt logic
+  useEffect(() => {
+    // Check if already running as installed PWA
+    const standalone = window.matchMedia('(display-mode: standalone)').matches 
+      || window.navigator.standalone === true;
+    setIsStandalone(standalone);
+    if (standalone) return; // Already installed, don't show banner
+
+    // Check if user already dismissed the banner
+    const dismissed = localStorage.getItem('installBannerDismissed');
+    if (dismissed) {
+      const dismissedAt = parseInt(dismissed);
+      // Show again after 7 days
+      if (Date.now() - dismissedAt < 7 * 24 * 60 * 60 * 1000) return;
+    }
+
+    // Detect iOS
+    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    setIsIos(isIosDevice);
+
+    if (isIosDevice) {
+      // iOS doesn't support beforeinstallprompt, show manual instructions after 3s
+      const timer = setTimeout(() => setShowInstallBanner(true), 3000);
+      return () => clearTimeout(timer);
+    }
+
+    // Android / Desktop Chrome — listen for the native install prompt
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      // Show banner after a short delay so user sees the page first
+      setTimeout(() => setShowInstallBanner(true), 2500);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (isIos) {
+      // Can't programmatically install on iOS — banner already shows instructions
+      return;
+    }
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const result = await deferredPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      setShowInstallBanner(false);
+      localStorage.setItem('installBannerDismissed', Date.now().toString());
+    }
+    setDeferredPrompt(null);
+  };
+
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    localStorage.setItem('installBannerDismissed', Date.now().toString());
+  };
+
+
+  // Auto-clear success messages after 4 seconds
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(""), 4000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
+  // Auto-clear error messages after 5 seconds
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(""), 5000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   useEffect(() => {
     if (page === "home") {
@@ -720,6 +798,7 @@ useEffect(() => {
       setUserName(signupName.trim());
       setSelectedUni(chosenUni);
       setSuccess("Account created! Welcome to Kampasika 🎉");
+      setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
       setPage("home");
     } catch (err) {
@@ -739,6 +818,7 @@ useEffect(() => {
       setLoading(true);
       await signInWithEmailAndPassword(auth, email, password);
       setSuccess("Logged in successfully!");
+      setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
       setPage("home");
     } catch (err) {
@@ -875,6 +955,7 @@ useEffect(() => {
     
     setShowCreateSuccess(true);
     setSuccess("Listing created successfully!");
+    setTimeout(() => setSuccess(""), 4000);
     // Store last listing info for the share prompt
     const lastListing = {
       title: createData.title.trim(),
@@ -1249,6 +1330,21 @@ return (
         -webkit-overflow-scrolling: touch;
         overflow-y: auto;
       }
+
+      @keyframes installSlideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes toastSlideIn {
+        from { opacity: 0; transform: translateY(-12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes toastProgress {
+        from { width: 100%; }
+        to { width: 0%; }
+      }
     `}</style>
     {/* ⭐ END OF STYLE TAG */}
 
@@ -1270,22 +1366,58 @@ return (
 }}>
        {error && (
   <div
+    onClick={() => setError("")}
     style={{
       margin: '16px',
       background: '#fee2e2',
       color: '#991b1b',
-      padding: '12px',
+      padding: '12px 40px 12px 12px',
       borderRadius: '8px',
       fontSize: '13px',
-      flexShrink: 0
+      flexShrink: 0,
+      position: 'relative',
+      cursor: 'pointer',
+      animation: 'toastSlideIn 0.3s ease-out'
     }}
   >
     {error}
+    <button onClick={(e) => { e.stopPropagation(); setError(""); }} style={{
+      position:'absolute', top:'8px', right:'10px', background:'none', border:'none',
+      color:'#991b1b', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
+    }}>×</button>
   </div>
 )
   }
 
-      {success&&<div style={{margin:'16px',background:'#d1fae5',color:'#065f46',padding:'12px',borderRadius:'8px',fontSize:'13px',flexShrink:0}}>{success}</div>}
+      {success && (
+  <div
+    onClick={() => setSuccess("")}
+    style={{
+      margin:'16px',
+      background:'#d1fae5',
+      color:'#065f46',
+      padding:'12px 40px 12px 12px',
+      borderRadius:'8px',
+      fontSize:'13px',
+      flexShrink:0,
+      position:'relative',
+      cursor:'pointer',
+      animation:'toastSlideIn 0.3s ease-out',
+      overflow:'hidden'
+    }}
+  >
+    {success}
+    <button onClick={(e) => { e.stopPropagation(); setSuccess(""); }} style={{
+      position:'absolute', top:'8px', right:'10px', background:'none', border:'none',
+      color:'#065f46', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
+    }}>×</button>
+    <div style={{
+      position:'absolute', bottom:0, left:0, height:'3px',
+      background:'#059669', borderRadius:'0 0 8px 8px',
+      animation:'toastProgress 4s linear forwards'
+    }} />
+  </div>
+)}
       
       {/* EMAIL VERIFICATION BANNER REMOVED */}
     {page !== "chat" && (
@@ -3470,6 +3602,79 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* PWA Install Banner */}
+      {showInstallBanner && !isStandalone && (
+        <div style={{
+          position:'fixed',
+          bottom:'76px',
+          left:'12px',
+          right:'12px',
+          background:'linear-gradient(135deg, #0f1b2d 0%, #1a2d4a 100%)',
+          color:'#fff',
+          borderRadius:'16px',
+          padding:'16px',
+          zIndex:1100,
+          boxShadow:'0 8px 32px rgba(0,0,0,0.3)',
+          animation:'installSlideUp 0.4s ease-out'
+        }}>
+          <button onClick={dismissInstallBanner} style={{
+            position:'absolute', top:'10px', right:'12px', background:'none', border:'none',
+            color:'rgba(255,255,255,0.6)', fontSize:'20px', cursor:'pointer', padding:'4px'
+          }}>×</button>
+
+          <div style={{display:'flex', alignItems:'center', gap:'12px', marginBottom:'12px'}}>
+            <div style={{
+              width:'44px', height:'44px', borderRadius:'12px',
+              background:'linear-gradient(135deg, #2dd4bf, #14b8a6)',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:'20px', flexShrink:0
+            }}>📲</div>
+            <div>
+              <div style={{fontWeight:'700', fontSize:'15px', marginBottom:'2px'}}>
+                Install Kampasika
+              </div>
+              <div style={{fontSize:'12px', color:'rgba(255,255,255,0.7)'}}>
+                Get the full app experience — faster, offline access & notifications
+              </div>
+            </div>
+          </div>
+
+          {isIos ? (
+            <div style={{
+              background:'rgba(255,255,255,0.1)', borderRadius:'10px',
+              padding:'12px', fontSize:'13px', lineHeight:'1.5'
+            }}>
+              <span style={{fontWeight:'600'}}>To install on iPhone/iPad:</span><br/>
+              1. Tap the <span style={{
+                display:'inline-flex', alignItems:'center', justifyContent:'center',
+                background:'rgba(255,255,255,0.2)', borderRadius:'4px',
+                padding:'1px 6px', fontSize:'16px', verticalAlign:'middle', margin:'0 2px'
+              }}>⬆</span> Share button in Safari<br/>
+              2. Scroll down and tap <strong>"Add to Home Screen"</strong><br/>
+              3. Tap <strong>"Add"</strong> — done!
+            </div>
+          ) : (
+            <button onClick={handleInstallClick} style={{
+              width:'100%', padding:'12px', border:'none', borderRadius:'10px',
+              background:'linear-gradient(135deg, #2dd4bf, #14b8a6)',
+              color:'#fff', fontSize:'15px', fontWeight:'700',
+              cursor:'pointer', letterSpacing:'0.3px'
+            }}>
+              Install App
+            </button>
+          )}
+
+          <div style={{textAlign:'center', marginTop:'8px'}}>
+            <button onClick={dismissInstallBanner} style={{
+              background:'none', border:'none', color:'rgba(255,255,255,0.5)',
+              fontSize:'12px', cursor:'pointer', padding:'4px 8px'
+            }}>
+              Not now
+            </button>
           </div>
         </div>
       )}
