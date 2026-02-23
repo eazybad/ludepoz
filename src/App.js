@@ -22,7 +22,6 @@ const storage = getStorage(app);
 
 const UNIVERSITIES = [
   { id: 1, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
-  { id: 2, name: "University of Dar es Salaam", short: "UDSM", location: "Dar es Salaam" },
 ];
 
 const DEFAULT_UNI = UNIVERSITIES[0];
