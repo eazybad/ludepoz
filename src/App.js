@@ -1452,7 +1452,7 @@ return (
       </button>
     )}
 
-    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
+    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d',flexShrink:0}}>
       {page==="chat" && activeConversation ? (
         activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
       ) : (
@@ -1462,29 +1462,29 @@ return (
       )}
     </div>
 
-    <div style={{flex:1}} />
-
     {page==="home" && (
       <div style={{
         flex:1,
+        minWidth:0,
         display:'flex',
         alignItems:'center',
         background:'#f4f6f8',
         borderRadius:'20px',
-        padding:'8px 16px'
+        padding:'6px 12px',
+        marginLeft:'8px'
       }}>
         <input
           type="text"
           placeholder="Search listings..."
           value={searchQ}
           onChange={e=>setSearchQ(e.target.value)}
-          style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'16px'}}
+          style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px'}}
         />
-        <span style={{fontSize:'18px',cursor:'pointer',marginLeft:'8px'}}>🔍</span>
+        <span style={{fontSize:'16px',cursor:'pointer',marginLeft:'4px',flexShrink:0}}>🔍</span>
       </div>
     )}
     {!user && page === "home" && (
-      <button onClick={()=>setShowAuthModal(true)} style={{padding:'8px 16px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'20px',fontSize:'13px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>Sign In</button>
+      <button onClick={()=>setShowAuthModal(true)} style={{padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'20px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px'}}>Sign In</button>
     )}
   </div>
 )}
@@ -2081,7 +2081,7 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Ardhi Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
                 <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
               </>
