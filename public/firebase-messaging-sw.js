@@ -1,8 +1,11 @@
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+// Firebase Messaging Service Worker
+// This file MUST be in your public/ folder at the root
+
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: "BCpZgxfVSjWFXh3ySZm5oeZb3ak8nEK_zCc9brxVGq-9JVgEIhpiJCOg3169zvMK4OvF3CBGzSq9YpMMnjYaGTE",
+  apiKey: "AIzaSyANHZKNAfYFlEFAQ0lwG50PMOv2OBrEXEY",
   authDomain: "ludepoz.firebaseapp.com",
   projectId: "ludepoz",
   storageBucket: "ludepoz.firebasestorage.app",
@@ -12,9 +15,40 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage(function(payload) {
-  self.registration.showNotification(payload.notification.title, {
-    body: payload.notification.body,
-    icon: '/logo192.png'
-  });
+// Handle background push notifications (when app is not in focus)
+messaging.onBackgroundMessage((payload) => {
+  console.log('[SW] Background message received:', payload);
+
+  const title = payload.notification?.title || 'Kampasika';
+  const options = {
+    body: payload.notification?.body || 'You have a new notification',
+    icon: '/logo192.png',
+    badge: '/logo192.png',
+    tag: 'kampasika-notification',
+    data: payload.data || {},
+    vibrate: [200, 100, 200],
+    actions: [
+      { action: 'open', title: 'Open Kampasika' }
+    ]
+  };
+
+  self.registration.showNotification(title, options);
+});
+
+// Handle notification click — open the app
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If app is already open, focus it
+      for (const client of clientList) {
+        if (client.url.includes('kampasika') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open new window
+      return clients.openWindow('/');
+    })
+  );
 });
