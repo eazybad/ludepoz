@@ -471,6 +471,39 @@ const requestNotificationPermission = async (currentUser) => {
     }
   }, [user]);
 
+  // Realtime conversation listener for instant notification updates
+  useEffect(() => {
+    if (!user) return;
+    const unsubs = [];
+    const mergeConvos = (allDocs) => {
+      const uniqueConvos = Array.from(new Map(allDocs.map(c => [c.id, c])).values());
+      uniqueConvos.sort((a, b) => (b.lastMessageAt?.seconds || 0) - (a.lastMessageAt?.seconds || 0));
+      setConversations(uniqueConvos);
+      const unread = uniqueConvos.reduce((sum, conv) => {
+        const myUnread = user.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+        return sum + (myUnread || 0);
+      }, 0);
+      setUnreadCount(unread);
+    };
+    let buyerConvos = [];
+    let sellerConvos = [];
+    try {
+      const q1 = query(collection(db, "conversations"), where("buyerId", "==", user.uid), orderBy("lastMessageAt", "desc"));
+      unsubs.push(onSnapshot(q1, (snap) => {
+        buyerConvos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeConvos([...buyerConvos, ...sellerConvos]);
+      }));
+      const q2 = query(collection(db, "conversations"), where("sellerId", "==", user.uid), orderBy("lastMessageAt", "desc"));
+      unsubs.push(onSnapshot(q2, (snap) => {
+        sellerConvos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeConvos([...buyerConvos, ...sellerConvos]);
+      }));
+    } catch (err) {
+      console.error("Error setting up realtime conversations:", err);
+    }
+    return () => unsubs.forEach(u => u());
+  }, [user]);
+
   const startConversation = async (listing) => {
     if (!user) {
       requireAuth("message", () => startConversation(listing));
@@ -483,6 +516,7 @@ const requestNotificationPermission = async (currentUser) => {
     }
     
     try {
+      setSuccess("Opening conversation...");
       const q = query(
         collection(db, "conversations"),
         where("listingId", "==", listing.id),
@@ -495,9 +529,10 @@ const requestNotificationPermission = async (currentUser) => {
         const conv = { id: existing.docs[0].id, ...existing.docs[0].data() };
         setActiveConversation(conv);
         setPage("chat");
-        await markAsRead(conv.id);
+        setSuccess("");
+        markAsRead(conv.id);
       } else {
-        const newConv = await addDoc(collection(db, "conversations"), {
+        const convData = {
           listingId: listing.id,
           listingTitle: listing.title,
           listingPrice: listing.price,
@@ -513,15 +548,17 @@ const requestNotificationPermission = async (currentUser) => {
           buyerUnread: 0,
           sellerUnread: 0,
           createdAt: serverTimestamp()
-        });
-        
-        const convDoc = await getDoc(newConv);
-        setActiveConversation({ id: convDoc.id, ...convDoc.data() });
+        };
+        const newConvRef = await addDoc(collection(db, "conversations"), convData);
+        // Use local data instead of extra getDoc round trip
+        setActiveConversation({ id: newConvRef.id, ...convData });
         setPage("chat");
+        setSuccess("");
       }
     } catch (err) {
       console.error("Error starting conversation:", err);
-      setError("Failed to start conversation");
+      setError("Failed to start conversation. Check your connection.");
+      setSuccess("");
     }
   };
 
@@ -529,7 +566,18 @@ const requestNotificationPermission = async (currentUser) => {
     if (!messageText.trim() || !activeConversation) return;
     
     const text = messageText.trim();
-    setMessageText(""); // Clear immediately (optimistic)
+    const tempId = 'temp_' + Date.now();
+    setMessageText(""); // Clear immediately
+    
+    // Optimistic: show message instantly before server confirms
+    setMessages(prev => [...prev, {
+      id: tempId,
+      senderId: user.uid,
+      senderName: userName,
+      text: text,
+      createdAt: new Date(),
+      _pending: true
+    }]);
     
     try {
       await addDoc(collection(db, "conversations", activeConversation.id, "messages"), {
@@ -547,22 +595,35 @@ const requestNotificationPermission = async (currentUser) => {
       });
     } catch (err) {
       console.error("Error sending message:", err);
-      setMessageText(text); // Restore text if failed
-      setError("Failed to send message");
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setMessageText(text); // Restore text
+      setError("Failed to send. Check your connection.");
     }
   };
 
   const markAsRead = async (conversationId) => {
     if (!user) return;
     try {
-      const convRef = doc(db, "conversations", conversationId);
-      const convDoc = await getDoc(convRef);
-      if (convDoc.exists()) {
-        const conv = convDoc.data();
+      // Find the conversation in local state to determine which field to update
+      const conv = conversations.find(c => c.id === conversationId);
+      if (conv) {
         const isFromBuyer = user.uid === conv.buyerId;
         const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
         if ((conv[unreadField] || 0) > 0) {
-          await updateDoc(convRef, { [unreadField]: 0 });
+          await updateDoc(doc(db, "conversations", conversationId), { [unreadField]: 0 });
+        }
+      } else {
+        // Fallback: fetch then update (for conversations not yet in local state)
+        const convRef = doc(db, "conversations", conversationId);
+        const convDoc = await getDoc(convRef);
+        if (convDoc.exists()) {
+          const convData = convDoc.data();
+          const isFromBuyer = user.uid === convData.buyerId;
+          const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
+          if ((convData[unreadField] || 0) > 0) {
+            await updateDoc(convRef, { [unreadField]: 0 });
+          }
         }
       }
     } catch (err) {
@@ -712,22 +773,41 @@ useEffect(() => {
   }, [page, loadListings]);
 
   useEffect(() => {
-  const unsubscribe = onMessage(messaging, (payload) => {
-    console.log("Message received:", payload);
-
-    new Notification(payload.notification.title, {
-      body: payload.notification.body,
-      icon: '/logo192.png'
+  let unsubscribe;
+  try {
+    unsubscribe = onMessage(messaging, (payload) => {
+      console.log("Message received:", payload);
+      
+      // Only show notification if we have permission and app is in foreground
+      if (Notification.permission === "granted") {
+        try {
+          new Notification(payload.notification?.title || "Kampasika", {
+            body: payload.notification?.body || "You have a new message",
+            icon: '/logo192.png',
+            tag: 'kampasika-msg',
+            vibrate: [200, 100, 200]
+          });
+        } catch (e) {
+          // Notification API not available (some mobile browsers)
+          console.log("Notification display failed:", e);
+        }
+      }
+      
+      // Always refresh conversations when we get a push
+      if (user) loadConversations();
     });
-  });
+  } catch (e) {
+    console.log("FCM onMessage setup failed:", e);
+  }
 
-  return () => unsubscribe();
-}, []);
+  return () => { if (unsubscribe) unsubscribe(); };
+}, [user, loadConversations]);
 
+  // Conversations now use realtime onSnapshot listener - no polling needed
+  // Mark messages as read when entering messages page
   useEffect(() => {
     if (user && page === "messages") {
-      const interval = setInterval(() => loadConversations(), 15000);
-      return () => clearInterval(interval);
+      loadConversations(); // One initial load to sync
     }
   }, [user, page, loadConversations]);
 
@@ -2360,7 +2440,7 @@ return (
               {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
               <div style={{wordBreak:'break-word'}}>{msg.text}</div>
               <div style={{fontSize:'10px',marginTop:'4px',opacity:0.6,textAlign:'right'}}>
-                {msg.createdAt ? (() => {
+                {msg._pending ? '⏳ sending...' : msg.createdAt ? (() => {
                   try {
                     const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
                     return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
