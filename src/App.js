@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { initializeFirestore, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
@@ -17,7 +17,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const messaging = getMessaging(app);
 const auth = getAuth(app);
-const db = initializeFirestore(app, {});
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
+});
 const storage = getStorage(app);
 
 const UNIVERSITIES = [
@@ -1243,8 +1245,28 @@ const loadSellerStats = useCallback(async (userId) => {
 
   if (loading) {
   return (
-    <div style={{textAlign:'center',padding:'40px',fontFamily:'system-ui'}}>
-      ⏳ Loading...
+    <div style={{
+      display:'flex',
+      flexDirection:'column',
+      alignItems:'center',
+      justifyContent:'center',
+      height:'100vh',
+      background:'#0f1b2d',
+      fontFamily:'system-ui'
+    }}>
+      <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#fff',marginBottom:'8px'}}>
+        Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
+      </div>
+      <div style={{fontSize:'13px',color:'rgba(255,255,255,0.5)'}}>Student Marketplace</div>
+      <div style={{
+        marginTop:'24px',
+        width:'32px',height:'32px',
+        border:'3px solid rgba(255,255,255,0.1)',
+        borderTopColor:'#2dd4bf',
+        borderRadius:'50%',
+        animation:'spin 0.8s linear infinite'
+      }}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
@@ -1676,6 +1698,7 @@ return (
     <img
       src={item.photos[0]}
       alt={item.title}
+      loading="lazy"
      onClick={(e) => {
   e.stopPropagation();
   setFullScreenImage(item.photos[0]);
@@ -1697,6 +1720,7 @@ return (
     <img
       src={item.photoUrl}
       alt={item.title}
+      loading="lazy"
       onClick={(e) => {
         e.stopPropagation();
         setFullScreenImage(item.photoUrl);
@@ -1722,42 +1746,40 @@ return (
     borderTop:'1px solid #f0f0f0',
     paddingTop:'10px'
   }}>
-    <button
-      onClick={(e)=>{
-        e.stopPropagation();
-        requireAuth("message",()=>startConversation(item));
-      }}
-      style={{
-        flex:1,
-        padding:'8px',
-        background:'#2dd4bf',
-        color:'#fff',
-        border:'none',
-        borderRadius:'6px',
-        fontSize:'13px',
-        fontWeight:'600',
-        cursor:'pointer'
-      }}
-    >
-      💬 Message
-    </button>
+    {item.whatsapp ? (
+      <button
+        onClick={(e)=>{
+          e.stopPropagation();
+          const num = item.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
+          const msg = `Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;
+          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+        }}
+        style={{
+          flex:1,
+          padding:'8px',
+          background:'#25D366',
+          color:'#fff',
+          border:'none',
+          borderRadius:'6px',
+          fontSize:'13px',
+          fontWeight:'600',
+          cursor:'pointer'
+        }}
+      >
+        📱 WhatsApp
+      </button>
+    ) : null}
 
     <button
       onClick={(e)=>{
         e.stopPropagation();
-        if (item.whatsapp) {
-          const num = item.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
-          const msg = `Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;
-          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
-        } else {
-          shareOnWhatsApp(item);
-        }
+        shareOnWhatsApp(item);
       }}
       style={{
         flex:1,
         padding:'8px',
-        background:'#25D366',
-        color:'#fff',
+        background:'#f4f6f8',
+        color:'#0f1b2d',
         border:'none',
         borderRadius:'6px',
         fontSize:'13px',
@@ -1765,7 +1787,7 @@ return (
         cursor:'pointer'
       }}
     >
-      {item.whatsapp ? '📱 WhatsApp Seller' : '📲 Share'}
+      📲 Share
     </button>
   </div>
 )}
@@ -1801,10 +1823,8 @@ return (
 
                      
                       <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
-                      {item.whatsapp ? (
-                        <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Contact seller on WhatsApp">📱 Chat</button>
-                      ) : (
-                        <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Share on WhatsApp">📲</button>
+                      {item.userId !== user?.uid && (
+                        <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Message seller">💬 Message</button>
                       )}
                       {/* VIEW COUNT HIDDEN FOR NOW — uncomment to re-enable */}
                       {/* <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span> */}
