@@ -35,12 +35,17 @@ messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(title, options);
 });
 
-// Handle notification click — open the app
+// Handle notification click — open the app and clear notifications
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    // Close all kampasika notifications
+    self.registration.getNotifications().then((notifications) => {
+      notifications.forEach(n => n.close());
+    }).then(() => {
+      return clients.matchAll({ type: 'window', includeUncontrolled: true });
+    }).then((clientList) => {
       // If app is already open, focus it
       for (const client of clientList) {
         if (client.url.includes('kampasika') && 'focus' in client) {

@@ -804,10 +804,18 @@ useEffect(() => {
 }, [user, loadConversations]);
 
   // Conversations now use realtime onSnapshot listener - no polling needed
-  // Mark messages as read when entering messages page
+  // Clear notifications when entering messages page
   useEffect(() => {
     if (user && page === "messages") {
-      loadConversations(); // One initial load to sync
+      loadConversations();
+      // Clear all PWA notifications
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.getNotifications().then(notifications => {
+            notifications.forEach(n => n.close());
+          });
+        }).catch(() => {});
+      }
     }
   }, [user, page, loadConversations]);
 
@@ -825,10 +833,31 @@ useEffect(() => {
       ...d.data()
     }));
     setMessages(msgs);
+    
+    // Auto mark as read whenever new messages arrive while chat is open
+    if (page === "chat" && user) {
+      markAsRead(activeConversation.id);
+    }
   });
 
+  // Clear all PWA/browser notifications when opening a chat
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.getNotifications({ tag: 'kampasika-notification' }).then(notifications => {
+        notifications.forEach(n => n.close());
+      });
+      reg.getNotifications({ tag: 'kampasika-msg' }).then(notifications => {
+        notifications.forEach(n => n.close());
+      });
+      // Also clear any untagged notifications
+      reg.getNotifications().then(notifications => {
+        notifications.forEach(n => n.close());
+      });
+    });
+  }
+
   return () => unsubscribe();
-}, [activeConversation]);
+}, [activeConversation, page, user]);
 
 useEffect(() => {
   const container = document.getElementById('messages-container');
@@ -3534,6 +3563,35 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     {fullScreenImage && (
   <div 
     onClick={() => {setFullScreenImage(null); setFullScreenPhotos(null); setFullScreenIndex(0);}}
+    onTouchStart={(e) => {
+      const touch = e.touches[0];
+      e.currentTarget._touchStartX = touch.clientX;
+      e.currentTarget._touchStartY = touch.clientY;
+      e.currentTarget._touchStartTime = Date.now();
+    }}
+    onTouchEnd={(e) => {
+      if (!fullScreenPhotos || fullScreenPhotos.length <= 1) return;
+      const startX = e.currentTarget._touchStartX;
+      const startY = e.currentTarget._touchStartY;
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const diffX = startX - endX;
+      const diffY = Math.abs(startY - endY);
+      const elapsed = Date.now() - (e.currentTarget._touchStartTime || 0);
+      
+      // Only count as swipe if horizontal movement > 50px, more horizontal than vertical, and fast enough
+      if (Math.abs(diffX) > 50 && diffX !== 0 && Math.abs(diffX) > diffY && elapsed < 500) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (diffX > 0 && fullScreenIndex < fullScreenPhotos.length - 1) {
+          // Swipe left = next
+          setFullScreenIndex(fullScreenIndex + 1);
+        } else if (diffX < 0 && fullScreenIndex > 0) {
+          // Swipe right = previous
+          setFullScreenIndex(fullScreenIndex - 1);
+        }
+      }
+    }}
     style={{
       position:'fixed',
       inset:0,
@@ -3542,7 +3600,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       display:'flex',
       flexDirection:'column',
       alignItems:'center',
-      justifyContent:'center'
+      justifyContent:'center',
+      touchAction: 'pan-y'
     }}
   >
     <button 
@@ -3585,18 +3644,31 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       </div>
     )}
 
-    <img 
-      src={fullScreenPhotos ? fullScreenPhotos[fullScreenIndex] : fullScreenImage} 
-      alt="Full view" 
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        maxWidth:'95vw',
-        maxHeight:'85vh',
-        objectFit:'contain',
-        borderRadius:'4px',
-        cursor:'default'
-      }} 
-    />
+    <div style={{
+      width:'100%',
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'center',
+      overflow:'hidden',
+      position:'relative'
+    }}>
+      <img 
+        src={fullScreenPhotos ? fullScreenPhotos[fullScreenIndex] : fullScreenImage} 
+        alt="Full view" 
+        onClick={(e) => e.stopPropagation()}
+        draggable={false}
+        style={{
+          maxWidth:'95vw',
+          maxHeight:'85vh',
+          objectFit:'contain',
+          borderRadius:'4px',
+          cursor:'default',
+          userSelect:'none',
+          WebkitUserSelect:'none',
+          transition:'opacity 0.15s ease'
+        }} 
+      />
+    </div>
 
     {fullScreenPhotos && fullScreenPhotos.length > 1 && (
       <>
@@ -3666,6 +3738,17 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             }}
           />
         ))}
+      </div>
+    )}
+
+    {fullScreenPhotos && fullScreenPhotos.length > 1 && (
+      <div style={{
+        position:'absolute',
+        bottom:'44px',
+        color:'rgba(255,255,255,0.4)',
+        fontSize:'11px'
+      }}>
+        Swipe or tap arrows to browse
       </div>
     )}
   </div>
