@@ -61,6 +61,16 @@ const CATEGORIES = [
   { id: "other", name: "Other", icon: "📦" },
 ];
 
+const SERVICE_CATEGORIES = [
+  { id: "all", name: "All Services", icon: "⚡" },
+  { id: "personal_care", name: "Personal Care", icon: "💇", desc: "Haircuts, nails, barber, braiding" },
+  { id: "creative", name: "Creative", icon: "📸", desc: "Photography, videography, design" },
+  { id: "clothing_brand", name: "Clothing Brands", icon: "👕", desc: "Student-run fashion & merch" },
+  { id: "food", name: "Food & Drinks", icon: "🍲", desc: "Homemade meals, snacks, drinks" },
+  { id: "delivery", name: "Campus Runner", icon: "🏃", desc: "Delivery & errands within campus" },
+  { id: "other_service", name: "Other", icon: "🔧", desc: "Tutoring, printing, tech help" },
+];
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -110,6 +120,16 @@ function App() {
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
   const [showHeroBanner, setShowHeroBanner] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
+  // Services state
+  const [services, setServices] = useState([]);
+  const [activeServiceCat, setActiveServiceCat] = useState("all");
+  const [serviceSearchQ, setServiceSearchQ] = useState("");
+  const [viewingService, setViewingService] = useState(null);
+  const [createServiceData, setCreateServiceData] = useState({
+    category: "", title: "", desc: "", price: "", priceType: "fixed",
+    whatsapp: "", location: "", photoFiles: [], photoPreviews: []
+  });
+  const [showCreateServiceSuccess, setShowCreateServiceSuccess] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reportReason, setReportReason] = useState("");
@@ -361,6 +381,33 @@ function App() {
     }
   }
 }, []);
+
+  const loadServices = useCallback(async () => {
+    try {
+      let q = query(
+        collection(db, "services"),
+        where("active", "==", true),
+        orderBy("createdAt", "desc")
+      );
+      const snap = await getDocs(q);
+      setServices(snap.docs.map(d => ({
+        id: d.id, ...d.data(),
+        createdAt: d.data().createdAt?.toDate()
+      })));
+    } catch (err) {
+      console.error("Error loading services:", err);
+      try {
+        let q2 = query(collection(db, "services"), where("active", "==", true));
+        const snap2 = await getDocs(q2);
+        setServices(snap2.docs.map(d => ({
+          id: d.id, ...d.data(),
+          createdAt: d.data().createdAt?.toDate()
+        })));
+      } catch (err2) {
+        console.error("Error loading services (fallback):", err2);
+      }
+    }
+  }, []);
 
  const checkVerificationStatus = useCallback(async (userId) => {
   try {
@@ -634,6 +681,7 @@ const requestNotificationPermission = async (currentUser) => {
   useEffect(() => {
     // Load listings immediately for everyone (no auth required)
     loadListings();
+    loadServices();
     
     // Check URL for /seller/ route (public seller profiles)
     const path = window.location.pathname;
@@ -671,6 +719,7 @@ const requestNotificationPermission = async (currentUser) => {
         await requestNotificationPermission(currentUser);
         await loadUserProfile(currentUser.uid);
         await loadListings();
+        await loadServices();
         await loadConversations();
       } else {
         setUser(null);
@@ -680,7 +729,7 @@ const requestNotificationPermission = async (currentUser) => {
       setLoading(false);
     });
     return () => { unsubscribe(); window.removeEventListener('popstate', handlePopState); };
-  }, [loadUserProfile, loadListings, loadConversations, loadPublicSellerProfile]);
+  }, [loadUserProfile, loadListings, loadServices, loadConversations, loadPublicSellerProfile]);
 
   const [tokenRequested, setTokenRequested] = useState(false);
 
@@ -1098,6 +1147,105 @@ useEffect(() => {
   }
 };
 
+  const handleCreateService = async () => {
+    if (!canPerformAction()) return;
+    if (!createServiceData.category || !createServiceData.title.trim() || !createServiceData.price || !user) {
+      setError("Please fill in all required fields (category, title, price)");
+      return;
+    }
+    try {
+      setError("");
+      setUploading(true);
+      
+      const photoUrls = [];
+      if (createServiceData.photoFiles.length > 0) {
+        for (let i = 0; i < createServiceData.photoFiles.length; i++) {
+          const file = createServiceData.photoFiles[i];
+          const storageRef = ref(storage, `services/${user.uid}_${Date.now()}_${i}.jpg`);
+          const snapshot = await uploadBytes(storageRef, file);
+          const url = await getDownloadURL(snapshot.ref);
+          photoUrls.push(url);
+        }
+      }
+
+      await addDoc(collection(db, "services"), {
+        userId: user.uid,
+        userName: userName,
+        userAvatar: userAvatar,
+        universityId: selectedUni.id,
+        universityName: selectedUni.short,
+        category: createServiceData.category,
+        title: createServiceData.title.trim(),
+        description: createServiceData.desc.trim(),
+        price: parseInt(createServiceData.price),
+        priceType: createServiceData.priceType || "fixed",
+        location: (createServiceData.location || "").trim(),
+        whatsapp: (createServiceData.whatsapp || "").trim(),
+        photoUrl: photoUrls[0] || null,
+        photos: photoUrls,
+        active: true,
+        views: 0,
+        createdAt: serverTimestamp()
+      });
+      
+      setShowCreateServiceSuccess(true);
+      setSuccess("Service listed successfully!");
+      setCreateServiceData({
+        category: "", title: "", desc: "", price: "", priceType: "fixed",
+        whatsapp: "", location: "", photoFiles: [], photoPreviews: []
+      });
+      await loadServices();
+    } catch (err) {
+      console.error("Error creating service:", err);
+      setError("Failed to create service: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deleteService = async (serviceId) => {
+    if (!window.confirm("Remove this service listing?")) return;
+    try {
+      await deleteDoc(doc(db, "services", serviceId));
+      await loadServices();
+      setSuccess("Service removed!");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error deleting service:", err);
+      setError("Failed to remove service");
+    }
+  };
+
+  const handleServicePhotoSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) { setError("All files must be images"); return; }
+      if (file.size > 5 * 1024 * 1024) { setError("Each image must be under 5MB"); return; }
+    }
+    const existingFiles = createServiceData.photoFiles || [];
+    const existingPreviews = createServiceData.photoPreviews || [];
+    const combinedFiles = [...existingFiles, ...files].slice(0, 3);
+    const newPreviews = [...existingPreviews];
+    let processedCount = 0;
+    files.forEach((file, index) => {
+      if (existingFiles.length + index >= 3) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        newPreviews.push(event.target.result);
+        processedCount++;
+        if (processedCount === Math.min(files.length, 3 - existingFiles.length)) {
+          setCreateServiceData({
+            ...createServiceData,
+            photoFiles: combinedFiles,
+            photoPreviews: newPreviews
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
  const handleUpdateProfile = async () => {
   if (!user) return;
   
@@ -1352,6 +1500,7 @@ const loadSellerStats = useCallback(async (userId) => {
   // To re-enable: restore isExpired checks below
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myExpiredListings = []; // listings.filter(l => l.userId === user?.uid && isExpired(l));
+  const myServices = services.filter(s => s.userId === user?.uid);
 
   if (loading) {
   return (
@@ -1564,9 +1713,13 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService") && (
       <button
-        onClick={()=>{page==="seller" ? closeSellerProfile() : setPage("home");}}
+        onClick={()=>{
+          if (page==="seller") closeSellerProfile();
+          else if (page==="createService") setPage("services");
+          else setPage("home");
+        }}
         style={{
           width:'36px',
           height:'36px',
@@ -1775,6 +1928,26 @@ return (
           </div>
           )}
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
+
+          {/* Services Quick Access Banner */}
+          <div style={{margin:'0 16px 16px 16px',background:'linear-gradient(135deg,#7c3aed 0%,#a78bfa 100%)',borderRadius:'14px',padding:'16px',cursor:'pointer'}} onClick={()=>setPage("services")}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:'15px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>🔥 Campus Services</div>
+                <div style={{fontSize:'12px',color:'rgba(255,255,255,0.8)'}}>Haircuts, food, photography, delivery & more</div>
+              </div>
+              <div style={{fontSize:'22px',color:'rgba(255,255,255,0.8)'}}>→</div>
+            </div>
+            {services.length > 0 && (
+              <div style={{display:'flex',gap:'6px',marginTop:'10px',overflowX:'auto'}}>
+                {services.slice(0,4).map(svc => (
+                  <div key={svc.id} style={{flexShrink:0,background:'rgba(255,255,255,0.15)',borderRadius:'10px',padding:'6px 10px',fontSize:'11px',color:'#fff',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>
+                    {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon} {svc.title.substring(0,18)}{svc.title.length>18?'...':''}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         {(() => {
   const filteredListings = listings.filter(item => {
     
@@ -2569,6 +2742,257 @@ return (
         </div>
       )}
 
+      {/* ============ SERVICES BROWSE ============ */}
+      {page==="services"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          
+          {/* Services Hero */}
+          <div style={{background:'linear-gradient(135deg,#7c3aed 0%,#a78bfa 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>Campus Services</h2>
+            <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Book haircuts, order food, hire photographers & more — all from fellow students.</p>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#fff',color:'#7c3aed',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+            <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+            <span style={{fontSize:'16px'}}>🔍</span>
+          </div>
+
+          {/* Category Filter */}
+          <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px'}}>
+            {SERVICE_CATEGORIES.map(c=>(
+              <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#7c3aed':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #7c3aed':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+            ))}
+          </div>
+
+          {/* Services Grid */}
+          {(() => {
+            const filtered = services.filter(s => {
+              if (activeServiceCat !== "all" && s.category !== activeServiceCat) return false;
+              if (serviceSearchQ.trim()) {
+                const q = serviceSearchQ.toLowerCase();
+                return s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q);
+              }
+              return true;
+            });
+            return (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
+                {filtered.length === 0 ? (
+                  <div style={{gridColumn:'1/-1',textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+                    <div style={{fontSize:'40px',marginBottom:'16px'}}>🔍</div>
+                    <div style={{fontSize:'16px',fontWeight:'600'}}>No services yet</div>
+                    <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to offer a service!</div>
+                    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                  </div>
+                ) : (
+                  filtered.map(svc => (
+                    <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                      {(svc.photos && svc.photos.length > 0) ? (
+                        <img src={svc.photos[0]} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
+                      ) : svc.photoUrl ? (
+                        <img src={svc.photoUrl} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
+                      ) : (
+                        <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
+                          {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
+                        </div>
+                      )}
+                      <div style={{padding:'10px'}}>
+                        <div style={{fontSize:'13px',fontWeight:'600',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
+                        <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'6px'}}>
+                          <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#7c3aed':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
+                            {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
+                          </div>
+                          <span style={{fontSize:'11px',color:'#8a9bb0'}}>{svc.userName}</span>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <span style={{fontFamily:'serif',fontSize:'15px',fontWeight:'700',color:'#7c3aed'}}>{svc.price?.toLocaleString()} TSh</span>
+                          <span style={{fontSize:'10px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{svc.priceType === "starting" ? "from" : ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ============ CREATE SERVICE ============ */}
+      {page==="createService"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateServiceSuccess?"Success!":"Offer a Service"}</h2>
+            {showCreateServiceSuccess ? (
+              <div style={{textAlign:'center',padding:'32px 16px'}}>
+                <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>Service listed!</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and book you</div>
+                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("services");}} style={{width:'100%',padding:'14px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Services</button>
+                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Go to Home</button>
+              </div>
+            ) : (
+              <>
+                {/* Service Photo Upload */}
+                <input type="file" id="service-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleServicePhotoSelect}/>
+                <label htmlFor="service-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
+                  {createServiceData.photoPreviews.length > 0 ? (
+                    <div>
+                      <img src={createServiceData.photoPreviews[0]} alt="Preview" style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'12px',marginBottom:'8px'}}/>
+                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>
+                        {createServiceData.photoPreviews.slice(1).map((p,i)=>(
+                          <div key={i} style={{position:'relative',flexShrink:0}}>
+                            <img src={p} alt="" style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'8px'}}/>
+                            <button onClick={(e)=>{e.preventDefault();e.stopPropagation();const nf=[...createServiceData.photoFiles];const np=[...createServiceData.photoPreviews];nf.splice(i+1,1);np.splice(i+1,1);setCreateServiceData({...createServiceData,photoFiles:nf,photoPreviews:np});}} style={{position:'absolute',top:'-4px',right:'-4px',width:'18px',height:'18px',borderRadius:'50%',background:'#ef4444',color:'#fff',border:'2px solid #fff',cursor:'pointer',fontSize:'10px',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+                          </div>
+                        ))}
+                        {createServiceData.photoPreviews.length < 3 && (
+                          <div style={{width:'60px',height:'60px',border:'2px dashed #7c3aed',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f5f3ff',flexShrink:0}}>
+                            <span style={{fontSize:'20px',color:'#7c3aed'}}>+</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'32px',textAlign:'center',background:'#f9fafb'}}>
+                      <div style={{fontSize:'48px',marginBottom:'12px'}}>📸</div>
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Add Photos of Your Work</div>
+                      <div style={{fontSize:'13px',color:'#8a9bb0'}}>Show off your skills (up to 3 photos)</div>
+                    </div>
+                  )}
+                </label>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Service Category *</label><select value={createServiceData.category} onChange={e=>setCreateServiceData({...createServiceData,category:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select category...</option>{SERVICE_CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}</select></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Service Title *</label><input type="text" placeholder="e.g. Men's Haircuts & Fades, Campus Food Delivery" value={createServiceData.title} onChange={e=>setCreateServiceData({...createServiceData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe what you offer, your experience, availability..." value={createServiceData.desc} onChange={e=>setCreateServiceData({...createServiceData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
+
+                <div style={{display:'flex',gap:'10px',marginBottom:'16px'}}>
+                  <div style={{flex:1}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 5000" value={createServiceData.price} onChange={e=>setCreateServiceData({...createServiceData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                  <div style={{width:'130px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price Type</label><select value={createServiceData.priceType} onChange={e=>setCreateServiceData({...createServiceData,priceType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="fixed">Fixed</option><option value="starting">Starting at</option><option value="negotiable">Negotiable</option></select></div>
+                </div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Where? (optional)</label><input type="text" placeholder="e.g. Room 23 Block B, Campus Gate" value={createServiceData.location} onChange={e=>setCreateServiceData({...createServiceData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createServiceData.whatsapp} onChange={e=>setCreateServiceData({...createServiceData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let customers contact you directly on WhatsApp</div></div>
+
+                <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ SERVICE DETAIL ============ */}
+      {viewingService && (
+        <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
+          <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
+            <button onClick={()=>setViewingService(null)} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
+            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Service Details</div>
+          </div>
+
+          {/* Service Photos */}
+          {(viewingService.photos && viewingService.photos.length > 0) ? (
+            <img src={viewingService.photos[0]} alt={viewingService.title} onClick={()=>{setFullScreenImage(viewingService.photos[0]);setFullScreenPhotos(viewingService.photos);setFullScreenIndex(0);}} style={{width:'100%',height:'300px',objectFit:'cover',cursor:'pointer'}}/>
+          ) : viewingService.photoUrl ? (
+            <img src={viewingService.photoUrl} alt={viewingService.title} onClick={()=>setFullScreenImage(viewingService.photoUrl)} style={{width:'100%',height:'300px',objectFit:'cover',cursor:'pointer'}}/>
+          ) : (
+            <div style={{width:'100%',height:'200px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>
+              {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.icon || '⚡'}
+            </div>
+          )}
+
+          {/* Thumbnail strip */}
+          {viewingService.photos && viewingService.photos.length > 1 && (
+            <div style={{padding:'10px 16px',background:'#fff',display:'flex',gap:'8px',overflowX:'auto'}}>
+              {viewingService.photos.map((p,i)=>(
+                <img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingService.photos);setFullScreenIndex(i);}} style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>
+              ))}
+            </div>
+          )}
+
+          <div style={{padding:'20px'}}>
+            {/* Category Badge */}
+            <span style={{fontSize:'12px',background:'#f5f3ff',color:'#7c3aed',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>
+              {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.icon} {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.name}
+            </span>
+
+            <h1 style={{fontSize:'24px',fontWeight:'700',margin:'12px 0 8px',color:'#0f1b2d'}}>{viewingService.title}</h1>
+            
+            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#7c3aed',marginBottom:'16px'}}>
+              {viewingService.priceType === "starting" ? "From " : ""}{viewingService.price?.toLocaleString()} TSh
+              {viewingService.priceType === "negotiable" && <span style={{fontSize:'14px',color:'#8a9bb0',fontFamily:'system-ui',fontWeight:'400'}}> (negotiable)</span>}
+            </div>
+
+            {/* Meta */}
+            <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
+              <span style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'20px',color:'#6b7280'}}>🎓 {viewingService.universityName}</span>
+              {viewingService.location && <span style={{fontSize:'12px',background:'#f0fdfa',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
+            </div>
+
+            {/* Description */}
+            {viewingService.description && (
+              <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>About this service</h4>
+                <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingService.description}</p>
+              </div>
+            )}
+
+            {/* Provider Info */}
+            <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+              <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Service Provider</h4>
+              <div style={{display:'flex',alignItems:'center',gap:'12px'}} onClick={()=>{setViewingService(null);loadPublicSellerProfile(viewingService.userId);}}>
+                <div style={{width:'52px',height:'52px',borderRadius:'50%',background:viewingService.userAvatar?`url(${viewingService.userAvatar})`:'linear-gradient(135deg,#7c3aed,#a78bfa)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>
+                  {!viewingService.userAvatar && viewingService.userName.split(" ").map(n=>n[0]).join("")}
+                </div>
+                <div>
+                  <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',cursor:'pointer'}}>{viewingService.userName}</div>
+                  <div style={{fontSize:'13px',color:'#6b7280'}}>{viewingService.universityName} Student</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sticky Bottom Actions */}
+          <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+            {(!user || viewingService.userId !== user.uid) ? (
+              <>
+                {viewingService.whatsapp ? (
+                  <button onClick={()=>{
+                    const num = viewingService.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');
+                    const msg = `Hi! I'm interested in your service "${viewingService.title}" on Kampasika.`;
+                    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
+                  }} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
+                ) : null}
+                <button onClick={()=>{
+                  // Create a dummy listing-like object for conversation
+                  const svcAsListing = {
+                    id: viewingService.id,
+                    title: viewingService.title,
+                    price: viewingService.price,
+                    photoUrl: viewingService.photoUrl || null,
+                    userId: viewingService.userId,
+                    userName: viewingService.userName,
+                    userAvatar: viewingService.userAvatar
+                  };
+                  setViewingService(null);
+                  requireAuth("message",()=>startConversation(svcAsListing));
+                }} style={{flex:1,padding:'16px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>💬 Message</button>
+              </>
+            ) : (
+              <div style={{width:'100%',display:'flex',gap:'8px'}}>
+                <div style={{flex:1,textAlign:'center',padding:'12px',background:'#f5f3ff',borderRadius:'10px',color:'#7c3aed',fontSize:'14px',fontWeight:'600'}}>This is your service</div>
+                <button onClick={()=>{setViewingService(null);deleteService(viewingService.id);}} style={{padding:'12px 20px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ============ PUBLIC SELLER PROFILE ============ */}
       {page==="seller"&&publicSeller&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
@@ -2732,6 +3156,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
             <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings</button>
+            <button onClick={()=>setProfileTab("myServices")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="myServices"?'#7c3aed':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Services</button>
             <button onClick={()=>setProfileTab("saved")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>Saved ({cart.length})</button>
           </div>
           
@@ -2784,6 +3209,42 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </>
           )}
           
+          {profileTab==="myServices"&&(
+            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+              {myServices.length === 0 ? (
+                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+                  <div style={{fontSize:'40px'}}>⚡</div>
+                  <div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No services listed</div>
+                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Offer your skills to fellow students</div>
+                  <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                </div>
+              ) : (
+                <>
+                  {myServices.map((svc,idx)=>(
+                    <div key={svc.id} style={{background:'#fff',padding:'16px',borderRadius:'12px',border:'1px solid #e2e6ea'}}>
+                      <div style={{display:'flex',gap:'12px',alignItems:'center',marginBottom:'8px'}}>
+                        {(svc.photos && svc.photos.length > 0) ? (
+                          <img src={svc.photos[0]} alt="" style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
+                        ) : (
+                          <div style={{width:'60px',height:'60px',borderRadius:'10px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>
+                            {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
+                          </div>
+                        )}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{svc.title}</div>
+                          <div style={{fontSize:'13px',color:'#7c3aed',fontWeight:'600'}}>{svc.price?.toLocaleString()} TSh</div>
+                          <div style={{fontSize:'11px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
+                        </div>
+                      </div>
+                      <button onClick={()=>deleteService(svc.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
+                </>
+              )}
+            </div>
+          )}
+
           {profileTab==="saved"&&(
             <div style={{display:'flex',flexDirection:'column'}}>
               {cart.length===0?(
@@ -3872,18 +4333,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   height:'68px',
   background:'#fff',
   borderTop:'1px solid #e2e6ea',
-  display:page==="create"||page==="chat"?'none':'flex',
+  display:page==="create"||page==="chat"||page==="createService"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
   boxSizing:'border-box',
   padding:'8px 0'
 }}>
-        <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Home</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:page==="home"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Home</span></button>
+        <button onClick={()=>setPage("services")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="services"||page==="createService"?'#7c3aed':'#8a9bb0'}}>⚡</span><span style={{fontSize:'10px',color:page==="services"||page==="createService"?'#7c3aed':'#8a9bb0',fontWeight:'500'}}>Services</span></button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
-        <button onClick={()=>setPage("saved")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="saved"?'#2dd4bf':'#8a9bb0'}}>🔖</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Saved</span></button>
-        <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
+        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:page==="profile"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
       
     </div>
   </div>
