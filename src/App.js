@@ -1339,6 +1339,7 @@ useEffect(() => {
     if (!orderFormData.studentName.trim()) { setError("Please enter your name"); return; }
     try {
       setUploading(true);
+      // eslint-disable-next-line no-unused-vars
       const orderRef = await addDoc(collection(db, "collections", collectionItem.id, "orders"), {
         userId: user.uid,
         studentName: orderFormData.studentName.trim(),
@@ -2095,7 +2096,7 @@ return (
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative'}}>
             <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.6)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Get cheap ,safe and reliable useful items.</p>
+            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Get cheap, safe and reliable deals on campus.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
@@ -3198,6 +3199,7 @@ return (
               {collections.map(col => {
                 const target = col.expectedPeople || col.totalOrders || 0;
                 const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
+                // eslint-disable-next-line no-unused-vars
                 const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
                 return (
                   <div key={col.id} onClick={async()=>{setViewingCollection(col);await loadCollectionOrders(col.id);setOrderFormData({...orderFormData,studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
