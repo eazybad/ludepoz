@@ -130,6 +130,15 @@ function App() {
     whatsapp: "", location: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateServiceSuccess, setShowCreateServiceSuccess] = useState(false);
+  // Collections/Orders tracker state
+  const [collections, setCollections] = useState([]);
+  const [viewingCollection, setViewingCollection] = useState(null);
+  const [collectionOrders, setCollectionOrders] = useState([]);
+  const [createCollectionData, setCreateCollectionData] = useState({
+    title: "", desc: "", price: "", expectedPeople: "", options: "", mpesaNumber: "", mpesaName: "", deadline: "", photoFiles: [], photoPreviews: []
+  });
+  const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
+  const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "" });
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reportReason, setReportReason] = useState("");
@@ -409,6 +418,21 @@ function App() {
     }
   }, []);
 
+  const loadCollections = useCallback(async () => {
+    try {
+      let q = query(collection(db, "collections"), where("active", "==", true), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setCollections(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    } catch (err) {
+      console.error("Error loading collections:", err);
+      try {
+        let q2 = query(collection(db, "collections"), where("active", "==", true));
+        const snap2 = await getDocs(q2);
+        setCollections(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      } catch (err2) { console.error("Error loading collections fallback:", err2); }
+    }
+  }, []);
+
  const checkVerificationStatus = useCallback(async (userId) => {
   try {
     // Check if user already has a verification request
@@ -682,6 +706,7 @@ const requestNotificationPermission = async (currentUser) => {
     // Load listings immediately for everyone (no auth required)
     loadListings();
     loadServices();
+    loadCollections();
     
     // Check URL for /seller/ route (public seller profiles)
     const path = window.location.pathname;
@@ -720,6 +745,7 @@ const requestNotificationPermission = async (currentUser) => {
         await loadUserProfile(currentUser.uid);
         await loadListings();
         await loadServices();
+        await loadCollections();
         await loadConversations();
       } else {
         setUser(null);
@@ -729,7 +755,7 @@ const requestNotificationPermission = async (currentUser) => {
       setLoading(false);
     });
     return () => { unsubscribe(); window.removeEventListener('popstate', handlePopState); };
-  }, [loadUserProfile, loadListings, loadServices, loadConversations, loadPublicSellerProfile]);
+  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadConversations, loadPublicSellerProfile]);
 
   const [tokenRequested, setTokenRequested] = useState(false);
 
@@ -1246,6 +1272,150 @@ useEffect(() => {
     });
   };
 
+  const loadCollectionOrders = async (collectionId) => {
+    try {
+      const q = query(collection(db, "collections", collectionId, "orders"), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    } catch (err) {
+      console.error("Error loading orders:", err);
+      const q2 = query(collection(db, "collections", collectionId, "orders"));
+      const snap2 = await getDocs(q2);
+      setCollectionOrders(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    }
+  };
+
+  const handleCreateCollection = async () => {
+    if (!user) return;
+    if (!createCollectionData.title.trim() || !createCollectionData.price) {
+      setError("Please fill in title and price"); return;
+    }
+    try {
+      setUploading(true);
+      const photoUrls = [];
+      if (createCollectionData.photoFiles.length > 0) {
+        for (let i = 0; i < createCollectionData.photoFiles.length; i++) {
+          const file = createCollectionData.photoFiles[i];
+          const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
+          const snapshot = await uploadBytes(storageRef, file);
+          photoUrls.push(await getDownloadURL(snapshot.ref));
+        }
+      }
+      const optionsList = createCollectionData.options.split(",").map(o => o.trim()).filter(o => o);
+      await addDoc(collection(db, "collections"), {
+        userId: user.uid,
+        userName: userName,
+        userAvatar: userAvatar,
+        universityId: selectedUni.id,
+        universityName: selectedUni.short,
+        title: createCollectionData.title.trim(),
+        description: createCollectionData.desc.trim(),
+        price: parseInt(createCollectionData.price),
+        expectedPeople: createCollectionData.expectedPeople ? parseInt(createCollectionData.expectedPeople) : 0,
+        options: optionsList,
+        mpesaNumber: createCollectionData.mpesaNumber.trim(),
+        mpesaName: createCollectionData.mpesaName.trim(),
+        deadline: createCollectionData.deadline || null,
+        photoUrl: photoUrls[0] || null,
+        photos: photoUrls,
+        active: true,
+        totalOrders: 0,
+        totalPaid: 0,
+        totalAmount: 0,
+        createdAt: serverTimestamp()
+      });
+      setShowCreateCollectionSuccess(true);
+      setSuccess("Collection created!");
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", mpesaNumber: "", mpesaName: "", deadline: "", photoFiles: [], photoPreviews: [] });
+      await loadCollections();
+    } catch (err) {
+      console.error("Error creating collection:", err);
+      setError("Failed to create collection: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  const placeOrder = async (collectionItem) => {
+    if (!user) { requireAuth("order", () => {}); return; }
+    if (!orderFormData.studentName.trim()) { setError("Please enter your name"); return; }
+    try {
+      setUploading(true);
+      const orderRef = await addDoc(collection(db, "collections", collectionItem.id, "orders"), {
+        userId: user.uid,
+        studentName: orderFormData.studentName.trim(),
+        phone: orderFormData.phone.trim(),
+        selectedOption: orderFormData.selectedOption || "",
+        paymentRef: orderFormData.paymentRef.trim(),
+        amount: collectionItem.price,
+        paid: false,
+        createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, "collections", collectionItem.id), {
+        totalOrders: increment(1),
+        totalAmount: increment(collectionItem.price)
+      });
+      setSuccess("Order placed! " + (collectionItem.mpesaNumber ? "Send payment to " + collectionItem.mpesaNumber : ""));
+      setOrderFormData({ selectedOption: "", paymentRef: "", studentName: userName, phone: "" });
+      await loadCollectionOrders(collectionItem.id);
+      // Refresh the collection data
+      const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
+      if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
+    } catch (err) {
+      console.error("Error placing order:", err);
+      setError("Failed to place order: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  const toggleOrderPaid = async (collectionId, orderId, currentlyPaid, orderAmount) => {
+    try {
+      await updateDoc(doc(db, "collections", collectionId, "orders", orderId), { paid: !currentlyPaid });
+      await updateDoc(doc(db, "collections", collectionId), {
+        totalPaid: increment(currentlyPaid ? -1 : 1)
+      });
+      await loadCollectionOrders(collectionId);
+      const updatedDoc = await getDoc(doc(db, "collections", collectionId));
+      if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
+    } catch (err) {
+      console.error("Error updating payment:", err);
+      setError("Failed to update payment status");
+    }
+  };
+
+  const closeCollection = async (collectionId) => {
+    if (!window.confirm("Close this collection? No new orders will be accepted.")) return;
+    try {
+      await updateDoc(doc(db, "collections", collectionId), { active: false });
+      await loadCollections();
+      setViewingCollection(null);
+      setSuccess("Collection closed!");
+    } catch (err) { setError("Failed to close collection"); }
+  };
+
+  const handleCollectionPhotoSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) { setError("Must be an image"); return; }
+      if (file.size > 5 * 1024 * 1024) { setError("Max 5MB per photo"); return; }
+    }
+    const existing = createCollectionData.photoFiles || [];
+    const existingP = createCollectionData.photoPreviews || [];
+    const combined = [...existing, ...files].slice(0, 3);
+    const newPreviews = [...existingP];
+    let count = 0;
+    files.forEach((file, i) => {
+      if (existing.length + i >= 3) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        newPreviews.push(ev.target.result);
+        count++;
+        if (count === Math.min(files.length, 3 - existing.length)) {
+          setCreateCollectionData({ ...createCollectionData, photoFiles: combined, photoPreviews: newPreviews });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
  const handleUpdateProfile = async () => {
   if (!user) return;
   
@@ -1713,11 +1883,13 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
           else if (page==="createService") setPage("services");
+          else if (page==="createCollection") setPage("collections");
+          else if (page==="collectionDetail") { setViewingCollection(null); setCollectionOrders([]); setPage("collections"); }
           else setPage("home");
         }}
         style={{
@@ -1923,7 +2095,7 @@ return (
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative'}}>
             <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.6)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy secondhand phones, sell used laptops, also find furniture, and other useful items.</p>
+            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Get cheap ,safe and reliable useful items.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
@@ -1948,6 +2120,18 @@ return (
               </div>
             )}
           </div>
+
+          {/* Collections Quick Access */}
+            <div style={{margin:'0 16px 16px 16px',background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'14px',padding:'14px',cursor:'pointer'}} onClick={()=>setPage("collections")}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>📋 Collections & Orders{collections.length > 0 ? ` (${collections.length})` : ''}</div>
+                  <div style={{fontSize:'12px',color:'rgba(15,27,45,0.7)'}}>T-shirts, event tickets, class contributions — track payments</div>
+                </div>
+                <div style={{fontSize:'20px',color:'rgba(15,27,45,0.6)'}}>→</div>
+              </div>
+            </div>
+
         {(() => {
   const filteredListings = listings.filter(item => {
     
@@ -2987,6 +3171,298 @@ return (
               <div style={{width:'100%',display:'flex',gap:'8px'}}>
                 <div style={{flex:1,textAlign:'center',padding:'12px',background:'#f5f3ff',borderRadius:'10px',color:'#7c3aed',fontSize:'14px',fontWeight:'600'}}>This is your service</div>
                 <button onClick={()=>{setViewingService(null);deleteService(viewingService.id);}} style={{padding:'12px 20px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ COLLECTIONS / ORDERS TRACKER ============ */}
+      {page==="collections"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          
+          <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Collections & Orders</h2>
+            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — order and track payments in one place.</p>
+            <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Collection</button>
+          </div>
+
+          {collections.length === 0 ? (
+            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+              <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active collections</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create collections for t-shirts, tickets, contributions etc.</div>
+            </div>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+              {collections.map(col => {
+                const target = col.expectedPeople || col.totalOrders || 0;
+                const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
+                const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
+                return (
+                  <div key={col.id} onClick={async()=>{setViewingCollection(col);await loadCollectionOrders(col.id);setOrderFormData({...orderFormData,studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                    <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
+                      {col.photoUrl ? (
+                        <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
+                      ) : (
+                        <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
+                      )}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
+                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>by {col.userName} • {col.universityName}</div>
+                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{marginTop:'12px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>
+                        <span>{col.totalOrders || 0}{col.expectedPeople ? `/${col.expectedPeople}` : ''} ordered</span>
+                        <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
+                      </div>
+                      <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#f59e0b',borderRadius:'3px',transition:'width 0.3s'}}/>
+                      </div>
+                    </div>
+                    {col.options && col.options.length > 0 && (
+                      <div style={{display:'flex',gap:'4px',marginTop:'8px',flexWrap:'wrap'}}>
+                        {col.options.slice(0,4).map((opt,i)=><span key={i} style={{fontSize:'10px',background:'#fef3c7',color:'#92400e',padding:'2px 8px',borderRadius:'8px'}}>{opt}</span>)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============ CREATE COLLECTION ============ */}
+      {page==="createCollection"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New Collection"}</h2>
+            {showCreateCollectionSuccess ? (
+              <div style={{textAlign:'center',padding:'32px 16px'}}>
+                <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Collection created!</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Share the link with your class or group</div>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("collections");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Collections</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+              </div>
+            ) : (
+              <>
+                <div style={{background:'#fef3c7',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#92400e',lineHeight:1.5}}>
+                  📋 <strong>For class reps & councils:</strong> Create a collection for t-shirts, event tickets, field trip contributions, or any group order. Students can order and you can track who has paid.
+                </div>
+
+                <input type="file" id="collection-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleCollectionPhotoSelect}/>
+                <label htmlFor="collection-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
+                  {createCollectionData.photoPreviews.length > 0 ? (
+                    <div><img src={createCollectionData.photoPreviews[0]} alt="" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px'}}/></div>
+                  ) : (
+                    <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'24px',textAlign:'center',background:'#f9fafb'}}>
+                      <div style={{fontSize:'36px',marginBottom:'8px'}}>📸</div>
+                      <div style={{fontSize:'14px',fontWeight:'600'}}>Add a photo</div>
+                      <div style={{fontSize:'12px',color:'#8a9bb0'}}>e.g. the t-shirt design, event poster</div>
+                    </div>
+                  )}
+                </label>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>What are you collecting for? *</label><input type="text" placeholder="e.g. Year 3 Graduation T-Shirts, Field Trip Bus" value={createCollectionData.title} onChange={e=>setCreateCollectionData({...createCollectionData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Details — deadline, what's included, pickup info..." value={createCollectionData.desc} onChange={e=>setCreateCollectionData({...createCollectionData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price per person (TSh) *</label><input type="number" placeholder="e.g. 15000" value={createCollectionData.price} onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Expected number of people (optional)</label><input type="number" placeholder="e.g. 45" value={createCollectionData.expectedPeople} onChange={e=>setCreateCollectionData({...createCollectionData,expectedPeople:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>How many people in your class/group? This helps calculate the expected total amount{createCollectionData.price && createCollectionData.expectedPeople ? ` — Expected: ${(parseInt(createCollectionData.price) * parseInt(createCollectionData.expectedPeople)).toLocaleString()} TSh` : ''}</div></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Options (comma separated, optional)</label><input type="text" placeholder="e.g. Size S, Size M, Size L, Size XL" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Sizes, colors, quantities — anything students need to pick</div></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 M-Pesa Number to pay to</label><input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.mpesaNumber} onChange={e=>setCreateCollectionData({...createCollectionData,mpesaNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>M-Pesa Name (so students know it's correct)</label><input type="text" placeholder="e.g. JOHN MWANGI" value={createCollectionData.mpesaName} onChange={e=>setCreateCollectionData({...createCollectionData,mpesaName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create Collection"}</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ COLLECTION DETAIL ============ */}
+      {page==="collectionDetail"&&viewingCollection&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          
+          {/* Header image */}
+          {viewingCollection.photoUrl && <img src={viewingCollection.photoUrl} alt="" style={{width:'100%',height:'200px',objectFit:'cover'}}/>}
+          
+          <div style={{padding:'16px'}}>
+            <h2 style={{fontSize:'22px',fontWeight:'700',marginBottom:'4px'}}>{viewingCollection.title}</h2>
+            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'8px'}}>by {viewingCollection.userName} • {viewingCollection.universityName}</div>
+            
+            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
+
+            {viewingCollection.description && <p style={{fontSize:'14px',color:'#4a5568',lineHeight:1.6,marginBottom:'16px',whiteSpace:'pre-wrap'}}>{viewingCollection.description}</p>}
+
+            {viewingCollection.deadline && <div style={{fontSize:'13px',color:'#ef4444',fontWeight:'600',marginBottom:'12px'}}>⏰ Deadline: {new Date(viewingCollection.deadline).toLocaleDateString('en',{day:'numeric',month:'long',year:'numeric'})}</div>}
+
+            {/* Stats cards */}
+            <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+              <div style={{flex:1,background:'#fef3c7',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#f59e0b'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#92400e'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
+                <div style={{fontSize:'11px',color:'#92400e'}}>Ordered</div>
+              </div>
+              <div style={{flex:1,background:'#d1fae5',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#10b981'}}>{viewingCollection.totalPaid || 0}</div>
+                <div style={{fontSize:'11px',color:'#065f46'}}>Paid</div>
+              </div>
+              <div style={{flex:1,background:'#fee2e2',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#ef4444'}}>{(viewingCollection.totalOrders||0)-(viewingCollection.totalPaid||0)}</div>
+                <div style={{fontSize:'11px',color:'#991b1b'}}>Unpaid</div>
+              </div>
+            </div>
+
+            {/* Amount collected */}
+            <div style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea',marginBottom:'16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:'13px',color:'#6b7280'}}>Amount Collected</span>
+                <span style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#10b981'}}>{((viewingCollection.totalPaid||0) * viewingCollection.price).toLocaleString()} TSh</span>
+              </div>
+              {viewingCollection.expectedPeople > 0 && (
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'6px'}}>
+                  <span style={{fontSize:'13px',color:'#6b7280'}}>Expected Total ({viewingCollection.expectedPeople} people)</span>
+                  <span style={{fontFamily:'serif',fontSize:'16px',fontWeight:'600',color:'#8a9bb0'}}>{(viewingCollection.expectedPeople * viewingCollection.price).toLocaleString()} TSh</span>
+                </div>
+              )}
+              {viewingCollection.expectedPeople > 0 && (
+                <div style={{marginTop:'8px'}}>
+                  <div style={{height:'8px',background:'#f4f6f8',borderRadius:'4px',overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min(100, Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100))}%`,background:((viewingCollection.totalPaid||0) >= viewingCollection.expectedPeople)?'#10b981':'#f59e0b',borderRadius:'4px',transition:'width 0.3s'}}/>
+                  </div>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px',textAlign:'right'}}>{Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100)}% collected</div>
+                </div>
+              )}
+            </div>
+
+            {/* M-Pesa payment info (visible to buyers) */}
+            {viewingCollection.mpesaNumber && user?.uid !== viewingCollection.userId && (
+              <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:'1px solid #bbf7d0'}}>
+                <div style={{fontSize:'14px',fontWeight:'600',color:'#166534',marginBottom:'6px'}}>💰 How to Pay</div>
+                <div style={{fontSize:'15px',color:'#0f1b2d',fontWeight:'600'}}>M-Pesa: {viewingCollection.mpesaNumber}</div>
+                {viewingCollection.mpesaName && <div style={{fontSize:'13px',color:'#6b7280'}}>Name: {viewingCollection.mpesaName}</div>}
+                <div style={{fontSize:'12px',color:'#6b7280',marginTop:'6px'}}>After sending, paste your M-Pesa code below so the rep can verify</div>
+              </div>
+            )}
+
+            {/* ORDER FORM — for students who are NOT the creator */}
+            {user && user.uid !== viewingCollection.userId && viewingCollection.active && (
+              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'16px'}}>
+                <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'12px',color:'#0f1b2d'}}>📝 Place Your Order</h3>
+                
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Your Name *</label><input type="text" value={orderFormData.studentName} onChange={e=>setOrderFormData({...orderFormData,studentName:e.target.value})} placeholder="Full name" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Phone (optional)</label><input type="tel" value={orderFormData.phone} onChange={e=>setOrderFormData({...orderFormData,phone:e.target.value})} placeholder="0712345678" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                {viewingCollection.options && viewingCollection.options.length > 0 && (
+                  <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Select Option *</label>
+                    <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      {viewingCollection.options.map((opt,i)=>(
+                        <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'8px 16px',borderRadius:'8px',border:orderFormData.selectedOption===opt?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'14px',fontWeight:'500',cursor:'pointer'}}>{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>M-Pesa Transaction Code (after paying)</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Paste the code from your M-Pesa SMS so the rep can verify your payment</div></div>
+
+                <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Placing...":"✓ Place Order"}</button>
+              </div>
+            )}
+
+            {!user && viewingCollection.active && (
+              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'16px'}}>Sign in to Order</button>
+            )}
+
+            {/* ORDERS LIST — visible to collection creator (the rep) */}
+            {user && user.uid === viewingCollection.userId && (
+              <div style={{marginBottom:'16px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+                  <h3 style={{fontSize:'16px',fontWeight:'700'}}>Orders ({collectionOrders.length})</h3>
+                  {viewingCollection.active && <button onClick={()=>closeCollection(viewingCollection.id)} style={{padding:'6px 14px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Close Collection</button>}
+                </div>
+                
+                {collectionOrders.length === 0 ? (
+                  <div style={{textAlign:'center',padding:'32px',background:'#fff',borderRadius:'12px',color:'#8a9bb0'}}>No orders yet. Share this collection with your class!</div>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {collectionOrders.map(order => (
+                      <div key={order.id} style={{background:'#fff',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea',display:'flex',alignItems:'center',gap:'12px'}}>
+                        {/* Paid toggle */}
+                        <button onClick={()=>toggleOrderPaid(viewingCollection.id,order.id,order.paid,order.amount)} style={{width:'36px',height:'36px',borderRadius:'50%',border:order.paid?'2px solid #10b981':'2px solid #e2e6ea',background:order.paid?'#d1fae5':'#fff',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px',flexShrink:0}}>
+                          {order.paid ? '✓' : ''}
+                        </button>
+                        
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'14px',fontWeight:'600',color:order.paid?'#10b981':'#0f1b2d'}}>{order.studentName}</div>
+                          <div style={{fontSize:'12px',color:'#8a9bb0'}}>
+                            {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'6px',fontSize:'11px'}}>{order.selectedOption}</span>}
+                            {order.phone && <span>{order.phone} • </span>}
+                            {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref code</span>}
+                          </div>
+                        </div>
+                        
+                        <div style={{fontSize:'12px',fontWeight:'600',color:order.paid?'#10b981':'#ef4444',flexShrink:0}}>
+                          {order.paid ? 'PAID' : 'UNPAID'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Summary for sharing */}
+                  <button onClick={()=>{
+                    if (collectionOrders.length === 0) {
+                      // No orders yet — share collection link
+                      let msg = `📋 *${viewingCollection.title}*\n\n`;
+                      msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
+                      if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
+                      if (viewingCollection.mpesaNumber) msg += `\n📱 Pay to: ${viewingCollection.mpesaNumber}${viewingCollection.mpesaName ? ' ('+viewingCollection.mpesaName+')' : ''}\n`;
+                      msg += `\nOrder on Kampasika: https://kampasika.netlify.app`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+                    } else {
+                      const unpaid = collectionOrders.filter(o=>!o.paid);
+                      const paid = collectionOrders.filter(o=>o.paid);
+                      let msg = `📋 *${viewingCollection.title}* — Status Update\n\n`;
+                      msg += `✅ Paid: ${paid.length}${viewingCollection.expectedPeople ? '/'+viewingCollection.expectedPeople : ''}\n❌ Unpaid: ${unpaid.length}\n💰 Collected: ${(paid.length * viewingCollection.price).toLocaleString()} TSh${viewingCollection.expectedPeople ? ' / '+(viewingCollection.expectedPeople * viewingCollection.price).toLocaleString()+' TSh expected' : ''}\n\n`;
+                      if (unpaid.length > 0) {
+                        msg += `⚠️ *Not yet paid:*\n`;
+                        unpaid.forEach(o => { msg += `- ${o.studentName}${o.selectedOption ? ' ('+o.selectedOption+')' : ''}\n`; });
+                        msg += `\nPlease send ${viewingCollection.price.toLocaleString()} TSh to ${viewingCollection.mpesaNumber || 'the rep'}`;
+                      } else {
+                        msg += `🎉 Everyone has paid!`;
+                      }
+                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+                    }
+                  }} style={{width:'100%',padding:'12px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                    📲 {collectionOrders.length === 0 ? 'Share Collection on WhatsApp' : 'Share Payment Status on WhatsApp'}
+                  </button>
+              </div>
+            )}
+
+            {/* Check own order status — for students */}
+            {user && user.uid !== viewingCollection.userId && collectionOrders.length > 0 && (
+              <div style={{marginBottom:'16px'}}>
+                {collectionOrders.filter(o=>o.userId===user.uid).map(order=>(
+                  <div key={order.id} style={{background:order.paid?'#d1fae5':'#fef3c7',borderRadius:'12px',padding:'14px',border:order.paid?'1px solid #6ee7b7':'1px solid #fde68a'}}>
+                    <div style={{fontSize:'14px',fontWeight:'600',color:order.paid?'#065f46':'#92400e'}}>
+                      {order.paid ? '✅ Your payment has been confirmed!' : '⏳ Your order is placed — waiting for payment confirmation'}
+                    </div>
+                    {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
+                    {order.paymentRef && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Ref: {order.paymentRef}</div>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -4333,7 +4809,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   height:'68px',
   background:'#fff',
   borderTop:'1px solid #e2e6ea',
-  display:page==="create"||page==="chat"||page==="createService"?'none':'flex',
+  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
