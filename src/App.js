@@ -135,10 +135,13 @@ function App() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
-    title: "", desc: "", price: "", expectedPeople: "", options: "", mpesaNumber: "", mpesaName: "", deadline: "", photoFiles: [], photoPreviews: []
+    title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
-  const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "" });
+  const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "" });
+  const [collectionSearchQ, setCollectionSearchQ] = useState("");
+  const [orderSearchQ, setOrderSearchQ] = useState("");
+  const [editingCollection, setEditingCollection] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reportReason, setReportReason] = useState("");
@@ -1313,20 +1316,22 @@ useEffect(() => {
         price: parseInt(createCollectionData.price),
         expectedPeople: createCollectionData.expectedPeople ? parseInt(createCollectionData.expectedPeople) : 0,
         options: optionsList,
-        mpesaNumber: createCollectionData.mpesaNumber.trim(),
-        mpesaName: createCollectionData.mpesaName.trim(),
+        payNumber: createCollectionData.payNumber.trim(),
+        payName: createCollectionData.payName.trim(),
+        payNetwork: createCollectionData.payNetwork || "M-Pesa",
         deadline: createCollectionData.deadline || null,
         photoUrl: photoUrls[0] || null,
         photos: photoUrls,
         active: true,
         totalOrders: 0,
         totalPaid: 0,
+        totalCollected: 0,
         totalAmount: 0,
         createdAt: serverTimestamp()
       });
       setShowCreateCollectionSuccess(true);
       setSuccess("Collection created!");
-      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", mpesaNumber: "", mpesaName: "", deadline: "", photoFiles: [], photoPreviews: [] });
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: [] });
       await loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
@@ -1337,6 +1342,7 @@ useEffect(() => {
   const placeOrder = async (collectionItem) => {
     if (!user) { requireAuth("order", () => {}); return; }
     if (!orderFormData.studentName.trim()) { setError("Please enter your name"); return; }
+    const amountPaid = orderFormData.amountPaid ? parseInt(orderFormData.amountPaid) : 0;
     try {
       setUploading(true);
       // eslint-disable-next-line no-unused-vars
@@ -1344,20 +1350,24 @@ useEffect(() => {
         userId: user.uid,
         studentName: orderFormData.studentName.trim(),
         phone: orderFormData.phone.trim(),
+        payerName: (orderFormData.payerName || "").trim(),
         selectedOption: orderFormData.selectedOption || "",
         paymentRef: orderFormData.paymentRef.trim(),
         amount: collectionItem.price,
-        paid: false,
+        amountPaid: amountPaid,
+        paid: amountPaid >= collectionItem.price,
+        status: amountPaid >= collectionItem.price ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
         createdAt: serverTimestamp()
       });
       await updateDoc(doc(db, "collections", collectionItem.id), {
         totalOrders: increment(1),
-        totalAmount: increment(collectionItem.price)
+        totalAmount: increment(collectionItem.price),
+        ...(amountPaid >= collectionItem.price ? { totalPaid: increment(1) } : {}),
+        totalCollected: increment(amountPaid)
       });
-      setSuccess("Order placed! " + (collectionItem.mpesaNumber ? "Send payment to " + collectionItem.mpesaNumber : ""));
-      setOrderFormData({ selectedOption: "", paymentRef: "", studentName: userName, phone: "" });
+      setSuccess("Order placed!" + (collectionItem.payNumber ? " Send payment to " + collectionItem.payNumber + " (" + (collectionItem.payNetwork||"Mobile Money") + ")" : ""));
+      setOrderFormData({ selectedOption: "", paymentRef: "", studentName: userName, phone: "", amountPaid: "", payerName: "" });
       await loadCollectionOrders(collectionItem.id);
-      // Refresh the collection data
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
     } catch (err) {
@@ -1368,7 +1378,12 @@ useEffect(() => {
 
   const toggleOrderPaid = async (collectionId, orderId, currentlyPaid, orderAmount) => {
     try {
-      await updateDoc(doc(db, "collections", collectionId, "orders", orderId), { paid: !currentlyPaid });
+      const newPaid = !currentlyPaid;
+      await updateDoc(doc(db, "collections", collectionId, "orders", orderId), { 
+        paid: newPaid,
+        status: newPaid ? "paid" : "unpaid",
+        ...(newPaid ? { amountPaid: orderAmount } : {})
+      });
       await updateDoc(doc(db, "collections", collectionId), {
         totalPaid: increment(currentlyPaid ? -1 : 1)
       });
@@ -1379,6 +1394,16 @@ useEffect(() => {
       console.error("Error updating payment:", err);
       setError("Failed to update payment status");
     }
+  };
+
+  const updateCollectionField = async (collectionId, updates) => {
+    try {
+      await updateDoc(doc(db, "collections", collectionId), updates);
+      const updatedDoc = await getDoc(doc(db, "collections", collectionId));
+      if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
+      setSuccess("Collection updated!");
+      await loadCollections();
+    } catch (err) { setError("Failed to update: " + err.message); }
   };
 
   const closeCollection = async (collectionId) => {
@@ -2096,7 +2121,7 @@ return (
           <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative'}}>
             <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.6)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Get cheap, safe and reliable deals on campus.</p>
+            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy secondhand phones, sell used laptops, also find furniture, and other useful items.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
@@ -3188,6 +3213,14 @@ return (
             <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Collection</button>
           </div>
 
+          {/* Search collections */}
+          {collections.length > 2 && (
+            <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+              <input type="text" placeholder="Search collections..." value={collectionSearchQ} onChange={e=>setCollectionSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+              <span style={{fontSize:'14px'}}>🔍</span>
+            </div>
+          )}
+
           {collections.length === 0 ? (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
@@ -3196,7 +3229,11 @@ return (
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {collections.map(col => {
+              {collections.filter(col => {
+                if (!collectionSearchQ.trim()) return true;
+                const q = collectionSearchQ.toLowerCase();
+                return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q);
+              }).map(col => {
                 const target = col.expectedPeople || col.totalOrders || 0;
                 const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
                 // eslint-disable-next-line no-unused-vars
@@ -3280,9 +3317,17 @@ return (
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Options (comma separated, optional)</label><input type="text" placeholder="e.g. Size S, Size M, Size L, Size XL" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Sizes, colors, quantities — anything students need to pick</div></div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 M-Pesa Number to pay to</label><input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.mpesaNumber} onChange={e=>setCreateCollectionData({...createCollectionData,mpesaNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Payment Network</label>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
+                    {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa"].map(net=>(
+                      <button key={net} onClick={()=>setCreateCollectionData({...createCollectionData,payNetwork:net})} style={{padding:'6px 14px',borderRadius:'8px',border:createCollectionData.payNetwork===net?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:createCollectionData.payNetwork===net?'#fef3c7':'#fff',fontSize:'13px',cursor:'pointer',fontWeight:createCollectionData.payNetwork===net?'600':'400'}}>{net}</button>
+                    ))}
+                  </div>
+                </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>M-Pesa Name (so students know it's correct)</label><input type="text" placeholder="e.g. JOHN MWANGI" value={createCollectionData.mpesaName} onChange={e=>setCreateCollectionData({...createCollectionData,mpesaName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Number to pay to</label><input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.payNumber} onChange={e=>setCreateCollectionData({...createCollectionData,payNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The {createCollectionData.payNetwork} number students will send money to</div></div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Name on the account</label><input type="text" placeholder="e.g. JOHN MWANGI" value={createCollectionData.payName} onChange={e=>setCreateCollectionData({...createCollectionData,payName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>So students can verify they're sending to the right person</div></div>
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
@@ -3348,20 +3393,54 @@ return (
               )}
             </div>
 
-            {/* M-Pesa payment info (visible to buyers) */}
-            {viewingCollection.mpesaNumber && user?.uid !== viewingCollection.userId && (
+            {/* Payment info (visible to buyers) */}
+            {viewingCollection.payNumber && user?.uid !== viewingCollection.userId && (
               <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:'1px solid #bbf7d0'}}>
                 <div style={{fontSize:'14px',fontWeight:'600',color:'#166534',marginBottom:'6px'}}>💰 How to Pay</div>
-                <div style={{fontSize:'15px',color:'#0f1b2d',fontWeight:'600'}}>M-Pesa: {viewingCollection.mpesaNumber}</div>
-                {viewingCollection.mpesaName && <div style={{fontSize:'13px',color:'#6b7280'}}>Name: {viewingCollection.mpesaName}</div>}
-                <div style={{fontSize:'12px',color:'#6b7280',marginTop:'6px'}}>After sending, paste your M-Pesa code below so the rep can verify</div>
+                <div style={{fontSize:'15px',color:'#0f1b2d',fontWeight:'600'}}>{viewingCollection.payNetwork || "Mobile Money"}: {viewingCollection.payNumber}</div>
+                {viewingCollection.payName && <div style={{fontSize:'13px',color:'#6b7280'}}>Account Name: {viewingCollection.payName}</div>}
+                <div style={{fontSize:'12px',color:'#6b7280',marginTop:'6px'}}>After sending, fill in your details below so the rep can verify your payment</div>
               </div>
             )}
 
-            {/* ORDER FORM — for students who are NOT the creator */}
-            {user && user.uid !== viewingCollection.userId && viewingCollection.active && (
+            {/* Payment info also visible to creator */}
+            {viewingCollection.payNumber && user?.uid === viewingCollection.userId && (
+              <div style={{background:'#eff6ff',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:'1px solid #bfdbfe',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontSize:'12px',color:'#1e40af',fontWeight:'600'}}>Collecting via {viewingCollection.payNetwork || "Mobile Money"}</div>
+                  <div style={{fontSize:'14px',color:'#0f1b2d',fontWeight:'600'}}>{viewingCollection.payNumber} {viewingCollection.payName ? '• '+viewingCollection.payName : ''}</div>
+                </div>
+                <button onClick={()=>setEditingCollection(!editingCollection)} style={{padding:'6px 12px',background:'#dbeafe',color:'#1e40af',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✏️ Edit</button>
+              </div>
+            )}
+
+            {/* Edit Collection (for creator) */}
+            {editingCollection && user?.uid === viewingCollection.userId && (
+              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #3b82f6',marginBottom:'16px'}}>
+                <h3 style={{fontSize:'15px',fontWeight:'700',marginBottom:'12px'}}>Edit Collection</h3>
+                <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Title</label><input type="text" defaultValue={viewingCollection.title} id="edit-col-title" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginTop:'4px'}}/></div>
+                <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Description</label><textarea defaultValue={viewingCollection.description} id="edit-col-desc" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',minHeight:'60px',fontFamily:'inherit',boxSizing:'border-box',marginTop:'4px'}}/></div>
+                <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Price (TSh)</label><input type="number" defaultValue={viewingCollection.price} id="edit-col-price" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginTop:'4px'}}/></div>
+                <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Payment Number</label><input type="text" defaultValue={viewingCollection.payNumber} id="edit-col-paynum" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginTop:'4px'}}/></div>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <button onClick={()=>{
+                    const t=document.getElementById('edit-col-title').value;
+                    const d=document.getElementById('edit-col-desc').value;
+                    const p=document.getElementById('edit-col-price').value;
+                    const pn=document.getElementById('edit-col-paynum').value;
+                    updateCollectionField(viewingCollection.id,{title:t.trim(),description:d.trim(),price:parseInt(p),payNumber:pn.trim()});
+                    setEditingCollection(false);
+                  }} style={{flex:1,padding:'10px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>Save</button>
+                  <button onClick={()=>setEditingCollection(false)} style={{padding:'10px 16px',background:'#f4f6f8',color:'#6b7280',border:'none',borderRadius:'8px',fontSize:'14px',cursor:'pointer'}}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* ORDER FORM — for students (including creator if they want to add themselves) */}
+            {user && viewingCollection.active && (
               <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'16px'}}>
-                <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'12px',color:'#0f1b2d'}}>📝 Place Your Order</h3>
+                <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>📝 {user.uid === viewingCollection.userId ? 'Add Yourself to This Collection' : 'Place Your Order'}</h3>
+                <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Required amount: <strong>{viewingCollection.price?.toLocaleString()} TSh</strong></div>
                 
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Your Name *</label><input type="text" value={orderFormData.studentName} onChange={e=>setOrderFormData({...orderFormData,studentName:e.target.value})} placeholder="Full name" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
 
@@ -3377,7 +3456,15 @@ return (
                   </div>
                 )}
 
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>M-Pesa Transaction Code (after paying)</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Paste the code from your M-Pesa SMS so the rep can verify your payment</div></div>
+                <div style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'12px'}}>
+                  <div style={{fontSize:'12px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'}}>💰 PAYMENT DETAILS</div>
+                  
+                  <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh)</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`Full amount: ${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}{!orderFormData.amountPaid && <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Leave empty if you haven't paid yet — you can update later</div>}</div>
+
+                  <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Name on the {viewingCollection.payNetwork || 'Mobile Money'} account</label><input type="text" value={orderFormData.payerName} onChange={e=>setOrderFormData({...orderFormData,payerName:e.target.value})} placeholder="e.g. AMINA JUMA (as it appears on M-Pesa)" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The name the rep will see on their payment notification</div></div>
+
+                  <div style={{marginBottom:'4px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Transaction Code</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The code from your payment SMS so the rep can verify</div></div>
+                </div>
 
                 <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Placing...":"✓ Place Order"}</button>
               </div>
@@ -3394,32 +3481,61 @@ return (
                   <h3 style={{fontSize:'16px',fontWeight:'700'}}>Orders ({collectionOrders.length})</h3>
                   {viewingCollection.active && <button onClick={()=>closeCollection(viewingCollection.id)} style={{padding:'6px 14px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Close Collection</button>}
                 </div>
+
+                {/* Search orders */}
+                {collectionOrders.length > 3 && (
+                  <div style={{marginBottom:'10px',display:'flex',alignItems:'center',background:'#f4f6f8',borderRadius:'8px',padding:'8px 10px'}}>
+                    <input type="text" placeholder="Search by name, phone, ref code..." value={orderSearchQ} onChange={e=>setOrderSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'13px'}}/>
+                    <span style={{fontSize:'14px'}}>🔍</span>
+                  </div>
+                )}
                 
                 {collectionOrders.length === 0 ? (
                   <div style={{textAlign:'center',padding:'32px',background:'#fff',borderRadius:'12px',color:'#8a9bb0'}}>No orders yet. Share this collection with your class!</div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                    {collectionOrders.map(order => (
-                      <div key={order.id} style={{background:'#fff',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea',display:'flex',alignItems:'center',gap:'12px'}}>
-                        {/* Paid toggle */}
-                        <button onClick={()=>toggleOrderPaid(viewingCollection.id,order.id,order.paid,order.amount)} style={{width:'36px',height:'36px',borderRadius:'50%',border:order.paid?'2px solid #10b981':'2px solid #e2e6ea',background:order.paid?'#d1fae5':'#fff',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px',flexShrink:0}}>
-                          {order.paid ? '✓' : ''}
-                        </button>
-                        
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:'14px',fontWeight:'600',color:order.paid?'#10b981':'#0f1b2d'}}>{order.studentName}</div>
-                          <div style={{fontSize:'12px',color:'#8a9bb0'}}>
-                            {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'6px',fontSize:'11px'}}>{order.selectedOption}</span>}
-                            {order.phone && <span>{order.phone} • </span>}
-                            {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref code</span>}
+                    {collectionOrders.filter(order => {
+                      if (!orderSearchQ.trim()) return true;
+                      const q = orderSearchQ.toLowerCase();
+                      return order.studentName?.toLowerCase().includes(q) || order.phone?.includes(q) || order.paymentRef?.toLowerCase().includes(q) || order.payerName?.toLowerCase().includes(q);
+                    }).map(order => {
+                      const statusColor = order.paid ? '#10b981' : (order.amountPaid > 0 ? '#f59e0b' : '#ef4444');
+                      const statusBg = order.paid ? '#d1fae5' : (order.amountPaid > 0 ? '#fef3c7' : '#fff');
+                      const statusText = order.paid ? 'PAID' : (order.amountPaid > 0 ? `${order.amountPaid.toLocaleString()}/${order.amount.toLocaleString()}` : 'UNPAID');
+                      return (
+                      <div key={order.id} style={{background:'#fff',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                          {/* Paid toggle */}
+                          <button onClick={()=>toggleOrderPaid(viewingCollection.id,order.id,order.paid,order.amount)} style={{width:'36px',height:'36px',borderRadius:'50%',border:`2px solid ${statusColor}`,background:statusBg,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px',flexShrink:0}}>
+                            {order.paid ? '✓' : order.amountPaid > 0 ? '◐' : ''}
+                          </button>
+                          
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:'14px',fontWeight:'600',color:statusColor}}>{order.studentName}</div>
+                            <div style={{fontSize:'12px',color:'#8a9bb0',lineHeight:1.6}}>
+                              {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
+                              {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
+                              {order.phone && <span>{order.phone} • </span>}
+                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>}
+                            </div>
+                          </div>
+                          
+                          <div style={{fontSize:'11px',fontWeight:'600',color:statusColor,flexShrink:0,textAlign:'right'}}>
+                            {statusText}
                           </div>
                         </div>
-                        
-                        <div style={{fontSize:'12px',fontWeight:'600',color:order.paid?'#10b981':'#ef4444',flexShrink:0}}>
-                          {order.paid ? 'PAID' : 'UNPAID'}
-                        </div>
+                        {/* Partial payment bar */}
+                        {order.amountPaid > 0 && !order.paid && (
+                          <div style={{marginTop:'8px',marginLeft:'48px'}}>
+                            <div style={{height:'4px',background:'#f4f6f8',borderRadius:'2px',overflow:'hidden'}}>
+                              <div style={{height:'100%',width:`${Math.min(100,Math.round((order.amountPaid/order.amount)*100))}%`,background:'#f59e0b',borderRadius:'2px'}}/>
+                            </div>
+                            <div style={{fontSize:'10px',color:'#8a9bb0',marginTop:'2px'}}>{Math.round((order.amountPaid/order.amount)*100)}% paid — {(order.amount-order.amountPaid).toLocaleString()} TSh remaining</div>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -3430,7 +3546,7 @@ return (
                       let msg = `📋 *${viewingCollection.title}*\n\n`;
                       msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
                       if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
-                      if (viewingCollection.mpesaNumber) msg += `\n📱 Pay to: ${viewingCollection.mpesaNumber}${viewingCollection.mpesaName ? ' ('+viewingCollection.mpesaName+')' : ''}\n`;
+                      if (viewingCollection.payNumber) msg += `\n📱 Pay to: ${viewingCollection.payNumber}${viewingCollection.payName ? ' ('+viewingCollection.payName+')' : ''}\n`;
                       msg += `\nOrder on Kampasika: https://kampasika.netlify.app`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     } else {
@@ -3441,7 +3557,7 @@ return (
                       if (unpaid.length > 0) {
                         msg += `⚠️ *Not yet paid:*\n`;
                         unpaid.forEach(o => { msg += `- ${o.studentName}${o.selectedOption ? ' ('+o.selectedOption+')' : ''}\n`; });
-                        msg += `\nPlease send ${viewingCollection.price.toLocaleString()} TSh to ${viewingCollection.mpesaNumber || 'the rep'}`;
+                        msg += `\nPlease send ${viewingCollection.price.toLocaleString()} TSh to ${viewingCollection.payNumber || 'the rep'}`;
                       } else {
                         msg += `🎉 Everyone has paid!`;
                       }
