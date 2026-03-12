@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
@@ -27,6 +27,12 @@ const UNIVERSITIES = [
 ];
 
 const DEFAULT_UNI = UNIVERSITIES[0];
+
+// ========== FEATURE FLAGS ==========
+// Set to true to enable these features when ready
+const ENABLE_ROOMS = false;       // Rooms & Housing feature
+const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+// ====================================
 
 const SERVICE_TAGS = [
   { id: "phone_repair", label: "Phone Repair", icon: "📱" },
@@ -71,6 +77,24 @@ const SERVICE_CATEGORIES = [
   { id: "other_service", name: "Other", icon: "🔧", desc: "Tutoring, printing, tech help" },
 ];
 
+const ROOM_TYPES = [
+  { id: "all", name: "All Types", icon: "🏠" },
+  { id: "single", name: "Single Room", icon: "🚪", sw: "Chumba Kimoja" },
+  { id: "master", name: "Master", icon: "🛏️", sw: "Master (na choo)" },
+  { id: "apartment", name: "Apartment 1BR+", icon: "🏢", sw: "Nyumba" },
+];
+
+const ROOM_AMENITIES = [
+  { id: "electricity", label: "Umeme (Electricity)", icon: "⚡" },
+  { id: "water", label: "Maji (Water)", icon: "💧" },
+  { id: "wifi", label: "WiFi", icon: "📶" },
+  { id: "toilet_inside", label: "Choo ndani", icon: "🚿" },
+  { id: "toilet_shared", label: "Choo nje (shared)", icon: "🚻" },
+  { id: "furnished", label: "Na samani", icon: "🪑" },
+  { id: "parking", label: "Parking", icon: "🅿️" },
+  { id: "security", label: "Ulinzi (Security)", icon: "🔒" },
+];
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -90,6 +114,10 @@ function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [page, setPage] = useState("home");
+  const [homeTab, setHomeTab] = useState("goods");
+  const [tabIconsVisible, setTabIconsVisible] = useState(false);
+  const homeScrollRef = useRef(null);
+  const lastScrollY = useRef(0);
   const [profileTab, setProfileTab] = useState("listings");
   const [activeCat, setActiveCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
@@ -142,6 +170,21 @@ function App() {
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
   const [orderSearchQ, setOrderSearchQ] = useState("");
   const [editingCollection, setEditingCollection] = useState(false);
+  // Rooms & Housing state
+  const [rooms, setRooms] = useState([]);
+  const [roomSearchQ, setRoomSearchQ] = useState("");
+  const [roomFilterType, setRoomFilterType] = useState("all");
+  const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
+  const [viewingRoom, setViewingRoom] = useState(null);
+  const [roommateSearchQ, setRoommateSearchQ] = useState("");
+  const [roommatePosts, setRoommatePosts] = useState([]);
+  const [createRoomData, setCreateRoomData] = useState({
+    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null
+  });
+  const [createRoommateData, setCreateRoommateData] = useState({
+    budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: ""
+  });
+  const [showCreateRoomSuccess, setShowCreateRoomSuccess] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTarget, setReportTarget] = useState(null);
   const [reportReason, setReportReason] = useState("");
@@ -436,6 +479,148 @@ function App() {
     }
   }, []);
 
+  // ============ ROOMS & HOUSING ============
+  const loadRooms = useCallback(async () => {
+    try {
+      let q = query(collection(db, "rooms"), where("available", "==", true), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setRooms(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    } catch (err) {
+      try {
+        let q2 = query(collection(db, "rooms"), where("available", "==", true));
+        const snap2 = await getDocs(q2);
+        setRooms(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      } catch (err2) { console.error("Error loading rooms:", err2); }
+    }
+  }, []);
+
+  const loadRoommatePosts = useCallback(async () => {
+    try {
+      let q = query(collection(db, "roommatePosts"), where("active", "==", true), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setRoommatePosts(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    } catch (err) {
+      try {
+        let q2 = query(collection(db, "roommatePosts"), where("active", "==", true));
+        const snap2 = await getDocs(q2);
+        setRoommatePosts(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      } catch (err2) { console.error("Error loading roommate posts:", err2); }
+    }
+  }, []);
+
+  const handleCreateRoom = async () => {
+    if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || !createRoomData.price || !createRoomData.location.trim()) {
+      setError("Please fill in name, phone, room type, price, and location"); return;
+    }
+    try {
+      setUploading(true);
+      const photoUrls = [];
+      if (createRoomData.photoFiles.length > 0) {
+        for (let i = 0; i < createRoomData.photoFiles.length; i++) {
+          const file = createRoomData.photoFiles[i];
+          const storageRef = ref(storage, `rooms/${Date.now()}_${i}.jpg`);
+          const snapshot = await uploadBytes(storageRef, file);
+          photoUrls.push(await getDownloadURL(snapshot.ref));
+        }
+      }
+      let videoUrl = null;
+      if (createRoomData.videoFile) {
+        const vRef = ref(storage, `rooms/vid_${Date.now()}.mp4`);
+        const vSnap = await uploadBytes(vRef, createRoomData.videoFile);
+        videoUrl = await getDownloadURL(vSnap.ref);
+      }
+      await addDoc(collection(db, "rooms"), {
+        landlordName: createRoomData.landlordName.trim(),
+        landlordPhone: createRoomData.landlordPhone.trim(),
+        roomType: createRoomData.roomType,
+        price: parseInt(createRoomData.price),
+        location: createRoomData.location.trim(),
+        nearUni: createRoomData.nearUni || "ARU",
+        description: createRoomData.desc.trim(),
+        amenities: createRoomData.amenities || [],
+        photoUrl: photoUrls[0] || null,
+        photos: photoUrls,
+        videoUrl: videoUrl,
+        available: true,
+        views: 0,
+        listedBy: user ? user.uid : "anonymous",
+        listedByName: user ? userName : createRoomData.landlordName.trim(),
+        createdAt: serverTimestamp()
+      });
+      setShowCreateRoomSuccess(true);
+      setSuccess("Room listed successfully!");
+      setCreateRoomData({ landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null });
+      await loadRooms();
+    } catch (err) {
+      console.error("Error listing room:", err);
+      setError("Failed to list room: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  const handleCreateRoommatePost = async () => {
+    if (!user) { requireAuth("post", () => {}); return; }
+    if (!createRoommateData.budget || !createRoommateData.preferredArea.trim()) {
+      setError("Please fill in budget and preferred area"); return;
+    }
+    try {
+      setUploading(true);
+      await addDoc(collection(db, "roommatePosts"), {
+        userId: user.uid,
+        userName: userName,
+        userAvatar: userAvatar,
+        universityName: selectedUni.short,
+        budget: parseInt(createRoommateData.budget),
+        preferredArea: createRoommateData.preferredArea.trim(),
+        roomType: createRoommateData.roomType || "",
+        gender: createRoommateData.gender || "",
+        description: createRoommateData.desc.trim(),
+        moveDate: createRoommateData.moveDate || "",
+        active: true,
+        createdAt: serverTimestamp()
+      });
+      setSuccess("Roommate post created!");
+      setCreateRoommateData({ budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: "" });
+      await loadRoommatePosts();
+    } catch (err) {
+      console.error("Error creating roommate post:", err);
+      setError("Failed to post: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  const handleRoomPhotoSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) { setError("Must be an image"); return; }
+      if (file.size > 5 * 1024 * 1024) { setError("Max 5MB per photo"); return; }
+    }
+    const existing = createRoomData.photoFiles || [];
+    const existingP = createRoomData.photoPreviews || [];
+    const combined = [...existing, ...files].slice(0, 5);
+    const newPreviews = [...existingP];
+    let count = 0;
+    files.forEach((file, i) => {
+      if (existing.length + i >= 5) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        newPreviews.push(ev.target.result);
+        count++;
+        if (count === Math.min(files.length, 5 - existing.length)) {
+          setCreateRoomData({ ...createRoomData, photoFiles: combined, photoPreviews: newPreviews });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRoomVideoSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) { setError("Must be a video file"); return; }
+    if (file.size > 50 * 1024 * 1024) { setError("Video must be under 50MB"); return; }
+    setCreateRoomData({ ...createRoomData, videoFile: file, videoPreview: URL.createObjectURL(file) });
+  };
+
  const checkVerificationStatus = useCallback(async (userId) => {
   try {
     // Check if user already has a verification request
@@ -546,6 +731,59 @@ const requestNotificationPermission = async (currentUser) => {
   }, [user]);
 
   // Realtime conversation listener for instant notification updates
+  // Scroll handler for Airbnb-style tab bar
+  // Airbnb behavior: text-only at rest/top, icons appear when scrolled down, 
+  // scroll back up = icons disappear back to text-only, stable with delta threshold
+  const scrollDelta = useRef(0);
+  const tabLocked = useRef(false);
+
+  useEffect(() => {
+    const el = homeScrollRef.current;
+    if (!el || page !== "home") return;
+    const handleScroll = () => {
+      if (tabLocked.current) return;
+      const y = el.scrollTop;
+      const diff = y - lastScrollY.current;
+      
+      // Near top — always show text-only
+      if (y <= 20) {
+        setTabIconsVisible(false);
+        scrollDelta.current = 0;
+        lastScrollY.current = y;
+        return;
+      }
+      
+      // Reset delta on direction change
+      if ((diff > 0 && scrollDelta.current < 0) || (diff < 0 && scrollDelta.current > 0)) {
+        scrollDelta.current = 0;
+      }
+      scrollDelta.current += diff;
+      
+      // Scrolling DOWN past threshold → show icons
+      if (scrollDelta.current > 60) {
+        setTabIconsVisible(true);
+      }
+      // Scrolling UP past threshold → hide icons (back to text-only)
+      else if (scrollDelta.current < -40) {
+        setTabIconsVisible(false);
+      }
+      
+      lastScrollY.current = y;
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [page]);
+
+  // When a tab is tapped, show icons and lock scroll briefly
+  const handleTabTap = (tabId) => {
+    setHomeTab(tabId);
+    setTabIconsVisible(true);
+    scrollDelta.current = 0;
+    tabLocked.current = true;
+    if (homeScrollRef.current) homeScrollRef.current.scrollTop = 0;
+    setTimeout(() => { tabLocked.current = false; }, 800);
+  };
+
   useEffect(() => {
     if (!user) return;
     const unsubs = [];
@@ -710,6 +948,7 @@ const requestNotificationPermission = async (currentUser) => {
     loadListings();
     loadServices();
     loadCollections();
+    if (ENABLE_ROOMS) { loadRooms(); loadRoommatePosts(); }
     
     // Check URL for /seller/ route (public seller profiles)
     const path = window.location.pathname;
@@ -749,6 +988,8 @@ const requestNotificationPermission = async (currentUser) => {
         await loadListings();
         await loadServices();
         await loadCollections();
+        await loadRooms();
+        await loadRoommatePosts();
         await loadConversations();
       } else {
         setUser(null);
@@ -758,7 +999,7 @@ const requestNotificationPermission = async (currentUser) => {
       setLoading(false);
     });
     return () => { unsubscribe(); window.removeEventListener('popstate', handlePopState); };
-  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadConversations, loadPublicSellerProfile]);
+  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile]);
 
   const [tokenRequested, setTokenRequested] = useState(false);
 
@@ -1821,12 +2062,24 @@ return (
         from { width: 100%; }
         to { width: 0%; }
       }
+
+      /* Hide scrollbar for tab bars */
+      *::-webkit-scrollbar { width: 0; height: 0; }
+      * { scrollbar-width: none; }
+      
+      /* Smooth press feedback */
+      button:active { transform: scale(0.97); }
+      
+      /* Card hover effect for touch */
+      @media (hover: hover) {
+        .listing-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important; }
+      }
     `}</style>
     {/* ⭐ END OF STYLE TAG */}
 
   <div className="app-container" style={{
-  fontFamily:'system-ui',
-  background:'#f4f6f8',
+  fontFamily:'-apple-system,BlinkMacSystemFont,system-ui,sans-serif',
+  background:'#f5f5f7',
   width:'100%',
   height:'calc(100vh - env(safe-area-inset-bottom))',
   maxWidth:'100vw',
@@ -1909,13 +2162,15 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
           else if (page==="createService") setPage("services");
           else if (page==="createCollection") setPage("collections");
           else if (page==="collectionDetail") { setViewingCollection(null); setCollectionOrders([]); setPage("collections"); }
+          else if (page==="createRoom") setPage("rooms");
+          else if (page==="roommates") setPage("rooms");
           else setPage("home");
         }}
         style={{
@@ -1951,29 +2206,32 @@ return (
         minWidth:0,
         display:'flex',
         alignItems:'center',
-        background:'#f4f6f8',
-        borderRadius:'20px',
-        padding:'6px 12px',
-        marginLeft:'8px'
+        background:'#fff',
+        borderRadius:'24px',
+        padding:'8px 14px',
+        marginLeft:'8px',
+        border:'1.5px solid #e2e6ea',
+        boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
+        transition:'box-shadow 0.2s ease'
       }}>
+        <span style={{fontSize:'14px',marginRight:'8px',flexShrink:0,opacity:0.5}}>🔍</span>
         <input
           type="text"
-          placeholder="Search listings..."
+          placeholder="Search kampasika..."
           value={searchQ}
           onChange={e=>setSearchQ(e.target.value)}
-          style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px'}}
+          style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'#0f1b2d'}}
         />
-        <span style={{fontSize:'16px',cursor:'pointer',marginLeft:'4px',flexShrink:0}}>🔍</span>
       </div>
     )}
     {!user && page === "home" && (
-      <button onClick={()=>setShowAuthModal(true)} style={{padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'20px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px'}}>Sign In</button>
+      <button onClick={()=>setShowAuthModal(true)} style={{padding:'8px 14px',background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(45,212,191,0.25)'}}>Sign In</button>
     )}
   </div>
 )}
         
         {page==="home"&&(
-       <div style={{
+       <div ref={homeScrollRef} style={{
     width:'100%',
     flex:1,
     overflowY:'auto',
@@ -2118,51 +2376,77 @@ return (
   </div>
 )}
           {showHeroBanner && (
-          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',borderRadius:'18px',padding:'24px 18px',marginBottom:'20px',margin:'0 16px 20px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative'}}>
-            <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.6)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-            <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.2}}>Trade, share &<br/><em style={{color:'#2dd4bf'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.6)',fontSize:'13px',marginTop:'10px'}}>Buy secondhand phones, sell used laptops, also find furniture, and other useful items.</p>
-            <div style={{display:'flex',gap:'8px',marginTop:'16px'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'#2dd4bf',color:'#0f1b2d',padding:'10px 20px',borderRadius:'10px',border:'none',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'transparent',color:'rgba(255,255,255,0.8)',padding:'10px 20px',borderRadius:'10px',border:'1.5px solid rgba(255,255,255,0.2)',fontSize:'16px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
+          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1e293b 50%,#0f172a 100%)',borderRadius:'20px',padding:'24px 20px',marginBottom:'20px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',top:'-30px',right:'-30px',width:'120px',height:'120px',borderRadius:'50%',background:'radial-gradient(circle,rgba(45,212,191,0.25) 0%,transparent 70%)',filter:'blur(10px)'}}/>
+            <div style={{position:'absolute',bottom:'-20px',left:'20px',width:'80px',height:'80px',borderRadius:'50%',background:'radial-gradient(circle,rgba(124,58,237,0.2) 0%,transparent 70%)',filter:'blur(8px)'}}/>
+            <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+            <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.25,position:'relative'}}>Trade, share &<br/><em style={{background:'linear-gradient(90deg,#2dd4bf,#a78bfa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>find your next deal</em><br/>— all on campus.</h1>
+            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Buy secondhand phones, sell used laptops, find furniture, and more.</p>
+            <div style={{display:'flex',gap:'8px',marginTop:'16px',position:'relative'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#0f1b2d',padding:'11px 22px',borderRadius:'12px',border:'none',fontSize:'15px',fontWeight:'700',cursor:'pointer',boxShadow:'0 4px 14px rgba(45,212,191,0.3)'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
-<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'1.5px solid #0f1b2d':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>)}</div>
+{/* ===== AIRBNB-STYLE TOP TAB BAR ===== */}
+<div style={{
+  display:'flex',
+  justifyContent:'center',
+  gap:'0',
+  borderBottom:'1px solid #e2e6ea',
+  margin:'0',
+  background:'#fff',
+  position:'sticky',
+  top:0,
+  zIndex:40,
+  transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)'
+}}>
+  {[
+    {id:'goods',label:'Goods',icon:'🛍️'},
+    {id:'services',label:'Services',icon:'⚡'},
+    ...(ENABLE_ROOMS ? [{id:'rooms',label:'Rooms',icon:'🏠'}] : [])
+  ].map(tab=>(
+    <button key={tab.id} onClick={()=>handleTabTap(tab.id)} style={{
+      flex:1,
+      display:'flex',
+      flexDirection: tabIconsVisible ? 'column' : 'row',
+      alignItems:'center',
+      justifyContent:'center',
+      gap: tabIconsVisible ? '2px' : '6px',
+      padding: tabIconsVisible ? '8px 0 6px 0' : '12px 0 10px 0',
+      background:'none',
+      border:'none',
+      borderBottom: homeTab===tab.id ? '2.5px solid #0f1b2d' : '2.5px solid transparent',
+      cursor:'pointer',
+      transition:'all 0.25s cubic-bezier(0.4,0,0.2,1)'
+    }}>
+      {tabIconsVisible && <span style={{fontSize:'20px',opacity:homeTab===tab.id?1:0.4,transition:'opacity 0.2s ease'}}>{tab.icon}</span>}
+      <span style={{
+        fontSize: tabIconsVisible ? '10px' : '13px',
+        fontWeight: homeTab===tab.id ? '700' : '500',
+        color: homeTab===tab.id ? '#0f1b2d' : '#8a9bb0',
+        letterSpacing:'0.2px',
+        transition:'all 0.2s ease'
+      }}>{tab.label}</span>
+    </button>
+  ))}
+</div>
 
-          {/* Services Quick Access Banner */}
-          <div style={{margin:'0 16px 16px 16px',background:'linear-gradient(135deg,#7c3aed 0%,#a78bfa 100%)',borderRadius:'14px',padding:'16px',cursor:'pointer'}} onClick={()=>setPage("services")}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div>
-                <div style={{fontSize:'15px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>🔥 Campus Services</div>
-                <div style={{fontSize:'12px',color:'rgba(255,255,255,0.8)'}}>Haircuts, food, photography, delivery & more</div>
-              </div>
-              <div style={{fontSize:'22px',color:'rgba(255,255,255,0.8)'}}>→</div>
-            </div>
-            {services.length > 0 && (
-              <div style={{display:'flex',gap:'6px',marginTop:'10px',overflowX:'auto'}}>
-                {services.slice(0,4).map(svc => (
-                  <div key={svc.id} style={{flexShrink:0,background:'rgba(255,255,255,0.15)',borderRadius:'10px',padding:'6px 10px',fontSize:'11px',color:'#fff',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>
-                    {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon} {svc.title.substring(0,18)}{svc.title.length>18?'...':''}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+{/* Collections & Orders compact strip */}
+{ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("collections")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+  <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+    <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'rgba(255,255,255,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}}>📋</div>
+    <div>
+      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Collections & Orders{collections.length > 0 ? ` (${collections.length})` : ''}</span>
+      <div style={{fontSize:'10px',color:'rgba(15,27,45,0.55)',marginTop:'1px'}}>Track group buys & payments</div>
+    </div>
+  </div>
+  <span style={{fontSize:'16px',color:'rgba(15,27,45,0.4)',fontWeight:'600'}}>→</span>
+</div>}
 
-          {/* Collections Quick Access */}
-            <div style={{margin:'0 16px 16px 16px',background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'14px',padding:'14px',cursor:'pointer'}} onClick={()=>setPage("collections")}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>📋 Collections & Orders{collections.length > 0 ? ` (${collections.length})` : ''}</div>
-                  <div style={{fontSize:'12px',color:'rgba(15,27,45,0.7)'}}>T-shirts, event tickets, class contributions — track payments</div>
-                </div>
-                <div style={{fontSize:'20px',color:'rgba(15,27,45,0.6)'}}>→</div>
-              </div>
-            </div>
+{/* ===== GOODS TAB CONTENT ===== */}
+{homeTab==="goods"&&(<>
+<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
         {(() => {
   const filteredListings = listings.filter(item => {
-    
-    // EXPIRY DISABLED FOR NOW — uncomment line below to re-enable 48hr expiry
-    // if (isExpired(item)) return false;
     if (activeCat !== "all" && item.category !== activeCat) return false;
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase();
@@ -2176,7 +2460,7 @@ return (
               <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div><div style={{fontSize:'16px',fontWeight:'600'}}>No listings yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to post in {selectedUni?.short}!</div></div>
             ):(
               filteredListings.map((item,idx)=>(
-                <div key={item.id}  style={{background:'#fff',borderBottom:idx===filteredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:idx===0?'12px 12px 0 0':idx===filteredListings.length-1?'0 0 12px 12px':'0'}}>
+                <div key={item.id}  style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:'1px solid #f0f0f0',boxShadow:'0 1px 6px rgba(0,0,0,0.04)'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
@@ -2203,7 +2487,7 @@ return (
         width:'100%',
         height:'280px',
         objectFit:'cover',
-        borderRadius:'10px',
+        borderRadius:'14px',
         cursor:'pointer'
       }}
     />
@@ -2223,7 +2507,7 @@ return (
         width:'100%',
         height:'280px',
         objectFit:'cover',
-        borderRadius:'10px',
+        borderRadius:'14px',
         cursor:'pointer'
       }}
     />
@@ -2331,6 +2615,141 @@ return (
           </div>
   );
 })()}
+</>)}
+
+{/* ===== SERVICES TAB CONTENT ===== */}
+{homeTab==="services"&&(<>
+  <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+    <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+    <span style={{fontSize:'16px'}}>🔍</span>
+  </div>
+  <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
+    {SERVICE_CATEGORIES.map(c=>(
+      <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#7c3aed':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #7c3aed':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+    ))}
+  </div>
+  <div style={{margin:'0 16px 12px 16px'}}>
+    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+  </div>
+  {(()=>{
+    const filtered = services.filter(s => {
+      if (activeServiceCat !== "all" && s.category !== activeServiceCat) return false;
+      if (serviceSearchQ.trim()) {
+        const q = serviceSearchQ.toLowerCase();
+        return s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q);
+      }
+      return true;
+    });
+    return (
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
+        {filtered.length === 0 ? (
+          <div style={{gridColumn:'1/-1',textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+            <div style={{fontSize:'40px',marginBottom:'16px'}}>🔍</div>
+            <div style={{fontSize:'16px',fontWeight:'600'}}>No services yet</div>
+            <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to offer a service!</div>
+            <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+          </div>
+        ) : (
+          filtered.map(svc => (
+            <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+              {(svc.photos && svc.photos.length > 0) ? (
+                <img src={svc.photos[0]} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
+              ) : svc.photoUrl ? (
+                <img src={svc.photoUrl} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
+              ) : (
+                <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
+                  {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
+                </div>
+              )}
+              <div style={{padding:'10px'}}>
+                <div style={{fontSize:'13px',fontWeight:'600',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
+                <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'6px'}}>
+                  <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#7c3aed':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
+                    {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
+                  </div>
+                  <span style={{fontSize:'11px',color:'#6b7280'}}>{svc.userName}</span>
+                </div>
+                <div style={{fontSize:'12px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  })()}
+</>)}
+
+{/* ===== ROOMS TAB CONTENT ===== */}
+{ENABLE_ROOMS && homeTab==="rooms"&&(<>
+  <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+    <input type="text" placeholder="Search by location, area..." value={roomSearchQ} onChange={e=>setRoomSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+    <span style={{fontSize:'14px'}}>🔍</span>
+  </div>
+  <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
+    {ROOM_TYPES.map(t=>(
+      <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
+    ))}
+  </div>
+  <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
+    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+    <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
+  </div>
+  {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
+  {roomFilterMaxPrice !== "" && (
+    <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
+      <span style={{fontSize:'12px',color:'#6b7280'}}>Max:</span>
+      <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
+      <span style={{fontSize:'12px',color:'#6b7280'}}>TSh</span>
+      <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
+    </div>
+  )}
+  {(()=>{
+    const filtered = rooms.filter(r => {
+      if (roomFilterType !== "all" && r.roomType !== roomFilterType) return false;
+      if (roomFilterMaxPrice && r.price > parseInt(roomFilterMaxPrice)) return false;
+      if (roomSearchQ.trim()) {
+        const q = roomSearchQ.toLowerCase();
+        return r.location?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.landlordName?.toLowerCase().includes(q);
+      }
+      return true;
+    });
+    return filtered.length === 0 ? (
+      <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+        <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
+        <div style={{fontSize:'16px',fontWeight:'600'}}>No rooms listed yet</div>
+        <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Know a landlord? Help them list their room!</div>
+        <button onClick={()=>setPage("createRoom")} style={{marginTop:'16px',padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+      </div>
+    ) : (
+      <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+        {filtered.map(room => (
+          <div key={room.id} onClick={()=>setViewingRoom(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+            {room.photoUrl ? (
+              <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
+            ) : (
+              <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
+            )}
+            <div style={{padding:'12px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'6px'}}>
+                <div>
+                  <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
+                  <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
+                </div>
+                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0ea5e9'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+              </div>
+              <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
+              {room.amenities && room.amenities.length > 0 && (
+                <div style={{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}}>
+                  {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  })()}
+</>)}
         </div>
       )}
       
@@ -3579,6 +3998,277 @@ return (
                     </div>
                     {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
                     {order.paymentRef && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Ref: {order.paymentRef}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ ROOMS & HOUSING ============ */}
+      {ENABLE_ROOMS && page==="rooms"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          
+          <div style={{background:'linear-gradient(135deg,#0ea5e9 0%,#38bdf8 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>🏠 Find a Room</h2>
+            <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#fff',color:'#0ea5e9',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
+            </div>
+          </div>
+
+          {/* Search & Filters */}
+          <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+            <input type="text" placeholder="Search by location, area..." value={roomSearchQ} onChange={e=>setRoomSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+            <span style={{fontSize:'14px'}}>🔍</span>
+          </div>
+          <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
+            {ROOM_TYPES.map(t=>(
+              <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
+            ))}
+          </div>
+          {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
+          {roomFilterMaxPrice !== "" && (
+            <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
+              <span style={{fontSize:'12px',color:'#6b7280'}}>Max:</span>
+              <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
+              <span style={{fontSize:'12px',color:'#6b7280'}}>TSh</span>
+              <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
+            </div>
+          )}
+
+          {/* Room Cards */}
+          {(() => {
+            const filtered = rooms.filter(r => {
+              if (roomFilterType !== "all" && r.roomType !== roomFilterType) return false;
+              if (roomFilterMaxPrice && r.price > parseInt(roomFilterMaxPrice)) return false;
+              if (roomSearchQ.trim()) {
+                const q = roomSearchQ.toLowerCase();
+                return r.location?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.landlordName?.toLowerCase().includes(q);
+              }
+              return true;
+            });
+            return filtered.length === 0 ? (
+              <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+                <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
+                <div style={{fontSize:'16px',fontWeight:'600'}}>No rooms listed yet</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Know a landlord? Help them list their room!</div>
+                <button onClick={()=>setPage("createRoom")} style={{marginTop:'16px',padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+                {filtered.map(room => (
+                  <div key={room.id} onClick={()=>setViewingRoom(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                    {room.photoUrl ? (
+                      <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
+                    ) : (
+                      <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
+                    )}
+                    <div style={{padding:'12px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'6px'}}>
+                        <div>
+                          <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
+                          <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
+                        </div>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0ea5e9'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                      </div>
+                      <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
+                      {room.amenities && room.amenities.length > 0 && (
+                        <div style={{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}}>
+                          {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ============ CREATE ROOM LISTING ============ */}
+      {ENABLE_ROOMS && page==="createRoom"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{showCreateRoomSuccess?"Room Listed!":"List a Room"}</h2>
+            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'16px'}}>No account needed — just fill in the details and students will contact you directly.</p>}
+            {showCreateRoomSuccess ? (
+              <div style={{textAlign:'center',padding:'32px 16px'}}>
+                <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and contact you</div>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+              </div>
+            ) : (
+              <>
+                {/* Photos */}
+                <input type="file" id="room-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleRoomPhotoSelect}/>
+                <label htmlFor="room-photo" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
+                  {createRoomData.photoPreviews.length > 0 ? (
+                    <div><img src={createRoomData.photoPreviews[0]} alt="" style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'12px',marginBottom:'6px'}}/>
+                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #0ea5e9',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'#0ea5e9'}}>+</span></div>}</div>
+                    </div>
+                  ) : (
+                    <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
+                      <div style={{fontSize:'40px',marginBottom:'8px'}}>📸</div>
+                      <div style={{fontSize:'14px',fontWeight:'600'}}>Add Room Photos</div>
+                      <div style={{fontSize:'12px',color:'#8a9bb0'}}>Up to 5 photos — show the room, bathroom, entrance</div>
+                    </div>
+                  )}
+                </label>
+
+                {/* Video */}
+                <input type="file" id="room-video" accept="video/*" style={{display:'none'}} onChange={handleRoomVideoSelect}/>
+                <label htmlFor="room-video" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
+                  {createRoomData.videoPreview ? (
+                    <div style={{position:'relative'}}><video src={createRoomData.videoPreview} style={{width:'100%',height:'120px',objectFit:'cover',borderRadius:'10px'}} controls/><div style={{position:'absolute',top:'6px',right:'6px',background:'rgba(0,0,0,0.6)',color:'#fff',padding:'2px 8px',borderRadius:'6px',fontSize:'11px'}}>🎥 Video added</div></div>
+                  ) : (
+                    <div style={{border:'1.5px dashed #0ea5e9',borderRadius:'10px',padding:'12px',textAlign:'center',background:'#f0f9ff'}}>
+                      <span style={{fontSize:'13px',color:'#0ea5e9',fontWeight:'600'}}>🎥 Add a Video Tour (optional, max 50MB)</span>
+                    </div>
+                  )}
+                </label>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Phone / WhatsApp *</label><input type="tel" placeholder="e.g. 0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Room Type *</label>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
+                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #0ea5e9':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'#fff',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Monthly Rent (TSh) *</label><input type="number" placeholder="e.g. 80000" value={createRoomData.price} onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label><input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {ROOM_AMENITIES.map(a=>{const sel=(createRoomData.amenities||[]).includes(a.id);return(
+                      <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #0ea5e9':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'#fff',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
+                    );})}
+                  </div>
+                </div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label><textarea placeholder="Any extra details — available date, rules, what's nearby..." value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+
+                <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"🏠 List Room"}</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============ ROOM DETAIL ============ */}
+      {ENABLE_ROOMS && viewingRoom && (
+        <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
+          <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
+            <button onClick={()=>setViewingRoom(null)} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
+            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Room Details</div>
+          </div>
+
+          {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
+            <div>
+              <img src={viewingRoom.photos[0]} alt="" onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}} style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer'}}/>
+              {viewingRoom.photos.length > 1 && (
+                <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto'}}>
+                  {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(i);}} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>)}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
+          )}
+
+          {viewingRoom.videoUrl && (
+            <div style={{padding:'0 16px',marginTop:'8px'}}><video src={viewingRoom.videoUrl} controls style={{width:'100%',borderRadius:'12px',maxHeight:'250px'}}/></div>
+          )}
+
+          <div style={{padding:'20px'}}>
+            <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
+            
+            <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#0ea5e9',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+            
+            <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
+            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
+
+            {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
+                {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
+              </div>
+            )}
+
+            {viewingRoom.description && (
+              <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>Details</h4>
+                <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
+              </div>
+            )}
+
+            <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+              <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
+              <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
+              <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
+            </div>
+          </div>
+
+          <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+            <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
+            <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ROOMMATE FINDER ============ */}
+      {ENABLE_ROOMS && page==="roommates"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{padding:'16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>🤝 Looking for Roommate</h2>
+            
+            {/* Post form */}
+            {user && (
+              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'1.5px solid #e2e6ea',marginBottom:'16px'}}>
+                <h3 style={{fontSize:'15px',fontWeight:'600',marginBottom:'12px'}}>Post that you're looking</h3>
+                <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
+                  <div style={{flex:1}}><input type="number" placeholder="Budget (TSh/mo)" value={createRoommateData.budget} onChange={e=>setCreateRoommateData({...createRoommateData,budget:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+                  <div style={{flex:1}}><input type="text" placeholder="Area e.g. Sinza" value={createRoommateData.preferredArea} onChange={e=>setCreateRoommateData({...createRoommateData,preferredArea:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+                </div>
+                <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
+                  <select value={createRoommateData.gender} onChange={e=>setCreateRoommateData({...createRoommateData,gender:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none'}}><option value="">Gender pref...</option><option value="male">Male</option><option value="female">Female</option><option value="any">Any</option></select>
+                  <input type="date" placeholder="Move date" value={createRoommateData.moveDate} onChange={e=>setCreateRoommateData({...createRoommateData,moveDate:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none'}}/>
+                </div>
+                <textarea placeholder="Anything else — habits, preferences, course..." value={createRoommateData.desc} onChange={e=>setCreateRoommateData({...createRoommateData,desc:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',minHeight:'60px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'10px'}}/>
+                <button onClick={handleCreateRoommatePost} disabled={uploading} style={{width:'100%',padding:'12px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Posting...":"Post"}</button>
+              </div>
+            )}
+
+            {/* Roommate posts */}
+            {roommatePosts.length === 0 ? (
+              <div style={{textAlign:'center',padding:'32px',background:'#fff',borderRadius:'12px',color:'#8a9bb0'}}>No roommate posts yet</div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                {roommatePosts.map(post=>(
+                  <div key={post.id} style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'1px solid #e2e6ea'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                      <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:post.userAvatar?`url(${post.userAvatar})`:'none',backgroundColor:!post.userAvatar?'#0ea5e9':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',color:'#fff'}}>{!post.userAvatar&&(post.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                      <div><div style={{fontSize:'14px',fontWeight:'600'}}>{post.userName}</div><div style={{fontSize:'11px',color:'#8a9bb0'}}>{post.universityName}</div></div>
+                    </div>
+                    <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
+                      <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'3px 10px',borderRadius:'8px',fontWeight:'500'}}>Budget: {post.budget?.toLocaleString()} TSh</span>
+                      <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>📍 {post.preferredArea}</span>
+                      {post.gender && <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>{post.gender === 'male' ? '👨' : post.gender === 'female' ? '👩' : '👤'} {post.gender}</span>}
+                      {post.moveDate && <span style={{fontSize:'12px',background:'#fef3c7',color:'#92400e',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
+                    </div>
+                    {post.description && <p style={{fontSize:'13px',color:'#4a5568',lineHeight:1.5}}>{post.description}</p>}
                   </div>
                 ))}
               </div>
@@ -4924,21 +5614,23 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   right:0,
   width:'100%',
   maxWidth:'100vw',
-  height:'68px',
-  background:'#fff',
-  borderTop:'1px solid #e2e6ea',
-  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"?'none':'flex',
+  height:'70px',
+  background:'rgba(255,255,255,0.92)',
+  backdropFilter:'blur(20px)',
+  WebkitBackdropFilter:'blur(20px)',
+  borderTop:'1px solid rgba(226,230,234,0.6)',
+  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
   boxSizing:'border-box',
-  padding:'8px 0'
+  padding:'6px 0 env(safe-area-inset-bottom, 8px) 0'
 }}>
-        <button onClick={()=>setPage("home")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"?'#2dd4bf':'#8a9bb0'}}>🏠</span><span style={{fontSize:'10px',color:page==="home"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Home</span></button>
-        <button onClick={()=>setPage("services")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="services"||page==="createService"?'#7c3aed':'#8a9bb0'}}>⚡</span><span style={{fontSize:'10px',color:page==="services"||page==="createService"?'#7c3aed':'#8a9bb0',fontWeight:'500'}}>Services</span></button>
-        <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'24px',color:'#2dd4bf'}}>＋</span><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'500'}}>Sell</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'4px',right:'4px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'1px 4px',borderRadius:'7px',minWidth:'16px',textAlign:'center'}}>{unreadCount}</span>}</button>
-        <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0'}}>👤</span><span style={{fontSize:'10px',color:page==="profile"?'#2dd4bf':'#8a9bb0',fontWeight:'500'}}>Profile</span></button>
+        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#2dd4bf':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#2dd4bf':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#2dd4bf':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#2dd4bf':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
+        <button onClick={()=>{setPage("home");handleTabTap("services");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"&&homeTab==="services"?'#7c3aed':'#8a9bb0',transition:'color 0.2s ease'}}>⚡</span><span style={{fontSize:'10px',color:page==="home"&&homeTab==="services"?'#7c3aed':'#8a9bb0',fontWeight:page==="home"&&homeTab==="services"?'700':'500',transition:'all 0.2s ease'}}>Services</span></button>
+        <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(45,212,191,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
+        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#2dd4bf':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}><span style={{fontSize:'22px',color:page==="profile"?'#2dd4bf':'#8a9bb0',transition:'color 0.2s ease'}}>👤</span><span style={{fontSize:'10px',color:page==="profile"?'#2dd4bf':'#8a9bb0',fontWeight:page==="profile"?'700':'500',transition:'all 0.2s ease'}}>Profile</span></button>
       
     </div>
   </div>
