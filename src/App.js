@@ -990,6 +990,7 @@ const requestNotificationPermission = async (currentUser) => {
     return () => { unsubscribe(); clearTimeout(safetyTimer); window.removeEventListener('popstate', handlePopState); };
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile]);
 
+  //eslint-disable-next-line
   const [tokenRequested, setTokenRequested] = useState(false);
 
 // Notification permission is now deferred in onAuthStateChanged above
