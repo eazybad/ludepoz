@@ -176,6 +176,7 @@ function App() {
   const [roomFilterType, setRoomFilterType] = useState("all");
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
   const [createRoomData, setCreateRoomData] = useState({
