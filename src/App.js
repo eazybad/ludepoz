@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, getDocsFromCache, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
@@ -407,75 +407,57 @@ function App() {
   };
 
   const loadListings = useCallback(async () => {
+  const q = query(collection(db, "listings"), where("sold", "==", false), orderBy("createdAt", "desc"));
+  const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+  // 1. Try cache first for instant display
   try {
-    let q = query(
-      collection(db, "listings"),
-      where("sold", "==", false),
-      orderBy("createdAt", "desc")
-    );
-    const querySnapshot = await getDocs(q);
-    const listingsData = querySnapshot.docs.map(doc => ({ 
-      id: doc.id, ...doc.data(), 
-      createdAt: doc.data().createdAt?.toDate() 
-    }));
-    setListings(listingsData);
+    const cached = await getDocsFromCache(q);
+    if (cached.docs.length > 0) setListings(parseSnap(cached));
+  } catch(_) { /* no cache yet — that's fine */ }
+  // 2. Then fetch from network to get latest
+  try {
+    const fresh = await getDocs(q);
+    setListings(parseSnap(fresh));
   } catch (err) {
     console.error("Error loading listings:", err);
     try {
-      let q2 = query(
-        collection(db, "listings"),
-        where("sold", "==", false)
-      );
-      const querySnapshot2 = await getDocs(q2);
-      const listingsData2 = querySnapshot2.docs.map(doc => ({ 
-        id: doc.id, ...doc.data(), 
-        createdAt: doc.data().createdAt?.toDate() 
-      }));
-      setListings(listingsData2);
-    } catch (err2) {
-      console.error("Error loading listings (fallback):", err2);
-    }
+      const q2 = query(collection(db, "listings"), where("sold", "==", false));
+      const fresh2 = await getDocs(q2);
+      setListings(parseSnap(fresh2));
+    } catch (err2) { console.error("Error loading listings (fallback):", err2); }
   }
 }, []);
 
   const loadServices = useCallback(async () => {
+    const q = query(collection(db, "services"), where("active", "==", true), orderBy("createdAt", "desc"));
+    const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+    try { const cached = await getDocsFromCache(q); if (cached.docs.length > 0) setServices(parseSnap(cached)); } catch(_) {}
     try {
-      let q = query(
-        collection(db, "services"),
-        where("active", "==", true),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(q);
-      setServices(snap.docs.map(d => ({
-        id: d.id, ...d.data(),
-        createdAt: d.data().createdAt?.toDate()
-      })));
+      const fresh = await getDocs(q);
+      setServices(parseSnap(fresh));
     } catch (err) {
       console.error("Error loading services:", err);
       try {
-        let q2 = query(collection(db, "services"), where("active", "==", true));
-        const snap2 = await getDocs(q2);
-        setServices(snap2.docs.map(d => ({
-          id: d.id, ...d.data(),
-          createdAt: d.data().createdAt?.toDate()
-        })));
-      } catch (err2) {
-        console.error("Error loading services (fallback):", err2);
-      }
+        const q2 = query(collection(db, "services"), where("active", "==", true));
+        const fresh2 = await getDocs(q2);
+        setServices(parseSnap(fresh2));
+      } catch (err2) { console.error("Error loading services (fallback):", err2); }
     }
   }, []);
 
   const loadCollections = useCallback(async () => {
+    const q = query(collection(db, "collections"), where("active", "==", true), orderBy("createdAt", "desc"));
+    const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+    try { const cached = await getDocsFromCache(q); if (cached.docs.length > 0) setCollections(parseSnap(cached)); } catch(_) {}
     try {
-      let q = query(collection(db, "collections"), where("active", "==", true), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
-      setCollections(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      const fresh = await getDocs(q);
+      setCollections(parseSnap(fresh));
     } catch (err) {
       console.error("Error loading collections:", err);
       try {
-        let q2 = query(collection(db, "collections"), where("active", "==", true));
-        const snap2 = await getDocs(q2);
-        setCollections(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        const q2 = query(collection(db, "collections"), where("active", "==", true));
+        const fresh2 = await getDocs(q2);
+        setCollections(parseSnap(fresh2));
       } catch (err2) { console.error("Error loading collections fallback:", err2); }
     }
   }, []);
@@ -945,17 +927,22 @@ const requestNotificationPermission = async (currentUser) => {
   };
 
   useEffect(() => {
-    // Load listings immediately for everyone (no auth required)
-    loadListings();
-    loadServices();
-    loadCollections();
-    if (ENABLE_ROOMS) { loadRooms(); loadRoommatePosts(); }
+    // Safety: show UI after 2s max even if auth/network is slow
+    const safetyTimer = setTimeout(() => setLoading(false), 2000);
+    
+    // Load public data IN PARALLEL immediately (don't await sequentially)
+    // Firestore persistentLocalCache will serve cached data instantly when offline
+    Promise.all([
+      loadListings(),
+      loadServices(),
+      loadCollections(),
+      ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts()] : [])
+    ]).catch(err => console.error("Initial load error:", err));
     
     // Check URL for /seller/ route (public seller profiles)
     const path = window.location.pathname;
     if (path.startsWith('/seller/')) {
       const slug = path.replace('/seller/', '');
-      // Find seller by slug - search all users
       (async () => {
         try {
           const usersSnap = await getDocs(collection(db, "users"));
@@ -984,33 +971,28 @@ const requestNotificationPermission = async (currentUser) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        await requestNotificationPermission(currentUser);
-        await loadUserProfile(currentUser.uid);
-        await loadListings();
-        await loadServices();
-        await loadCollections();
-        await loadRooms();
-        await loadRoommatePosts();
-        await loadConversations();
+        // Show UI immediately — don't block on these
+        setLoading(false);
+        // Load user-specific data in parallel AFTER showing UI
+        Promise.all([
+          loadUserProfile(currentUser.uid),
+          loadConversations(),
+        ]).catch(err => console.error("User data load error:", err));
+        // Defer notification permission — not critical for first paint
+        setTimeout(() => requestNotificationPermission(currentUser), 3000);
       } else {
         setUser(null);
         setUserName("");
         setUserAvatar(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => { unsubscribe(); window.removeEventListener('popstate', handlePopState); };
+    return () => { unsubscribe(); clearTimeout(safetyTimer); window.removeEventListener('popstate', handlePopState); };
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile]);
 
   const [tokenRequested, setTokenRequested] = useState(false);
 
-useEffect(() => {
-  if (!user || tokenRequested) return;
-
-  requestNotificationPermission(user);
-  setTokenRequested(true);
-
-}, [user, tokenRequested]);
+// Notification permission is now deferred in onAuthStateChanged above
 
   // PWA Install Prompt logic
   useEffect(() => {
