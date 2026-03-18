@@ -31,7 +31,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
