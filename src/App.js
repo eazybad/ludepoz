@@ -961,50 +961,16 @@ const requestNotificationPermission = async (currentUser) => {
     // Safety: show UI after 2s max even if auth/network is slow
     const safetyTimer = setTimeout(() => setLoading(false), 2000);
     
-    // Load public data IN PARALLEL immediately (don't await sequentially)
-    // Firestore persistentLocalCache will serve cached data instantly when offline
-    Promise.all([
-      loadListings(),
-      loadServices(),
-      loadCollections(),
-      ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts()] : [])
-    ]).catch(err => console.error("Initial load error:", err));
+    // Try to show cached data immediately (works offline too)
+    // This won't fail even without auth since it reads from local IndexedDB
+    try {
+      loadListings().catch(() => {});
+      loadServices().catch(() => {});
+      loadCollections().catch(() => {});
+    } catch(_) {}
     
     // Check URL for /seller/ route (public seller profiles)
     const path = window.location.pathname;
-    if (path.startsWith('/seller/')) {
-      const slug = path.replace('/seller/', '');
-      (async () => {
-        try {
-          const usersSnap = await getDocs(collection(db, "users"));
-          const match = usersSnap.docs.find(d => {
-            const data = d.data();
-            return generateSellerSlug(data.name, data.universityName) === slug;
-          });
-          if (match) {
-            loadPublicSellerProfile(match.id);
-          }
-        } catch(e) { console.error("Error resolving seller slug:", e); }
-      })();
-    }
-    
-    // Check URL for /collection/ route (direct collection links)
-    if (path.startsWith('/collection/')) {
-      const colId = path.replace('/collection/', '');
-      if (colId) {
-        (async () => {
-          try {
-            const colDoc = await getDoc(doc(db, "collections", colId));
-            if (colDoc.exists()) {
-              const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
-              setViewingCollection(colData);
-              await loadCollectionOrders(colId);
-              setPage("collectionDetail");
-            }
-          } catch(e) { console.error("Error loading shared collection:", e); }
-        })();
-      }
-    }
     
     // Push initial state so browser back works step-by-step
     window.history.replaceState({ page: 'home' }, '', window.location.pathname);
@@ -1013,7 +979,6 @@ const requestNotificationPermission = async (currentUser) => {
     const handlePopState = (e) => {
       const p = window.location.pathname;
       if (p.startsWith('/seller/') || p.startsWith('/collection/')) {
-        // On deep link pages, go to home
         setPublicSeller(null);
         setViewingCollection(null);
         setCollectionOrders([]);
@@ -1022,13 +987,11 @@ const requestNotificationPermission = async (currentUser) => {
         window.history.replaceState({ page: 'home' }, '', '/');
         document.title = 'Kampasika - Student Marketplace';
       } else {
-        // Normal back — go back one step
         if (pageHistory.current.length > 1) {
           pageHistory.current.pop();
           const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
           setPageRaw(prev);
         }
-        // Prevent app exit by pushing state back
         window.history.pushState({ page: 'app' }, '', '/');
       }
     };
@@ -1037,20 +1000,66 @@ const requestNotificationPermission = async (currentUser) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Show UI immediately — don't block on these
         setLoading(false);
-        // Load user-specific data in parallel AFTER showing UI
+        // Now auth is ready — load/refresh all data from network in parallel
         Promise.all([
           loadUserProfile(currentUser.uid),
+          loadListings(),
+          loadServices(),
+          loadCollections(),
+          ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts()] : []),
           loadConversations(),
-        ]).catch(err => console.error("User data load error:", err));
-        // Defer notification permission — not critical for first paint
+        ]).catch(err => console.error("Data load error:", err));
+        // Handle deep links after auth
+        if (path.startsWith('/seller/')) {
+          const slug = path.replace('/seller/', '');
+          try {
+            const usersSnap = await getDocs(collection(db, "users"));
+            const match = usersSnap.docs.find(d => generateSellerSlug(d.data().name, d.data().universityName) === slug);
+            if (match) loadPublicSellerProfile(match.id);
+          } catch(e) { console.error("Error resolving seller slug:", e); }
+        }
+        if (path.startsWith('/collection/')) {
+          const colId = path.replace('/collection/', '');
+          if (colId) {
+            try {
+              const colDoc = await getDoc(doc(db, "collections", colId));
+              if (colDoc.exists()) {
+                const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
+                setViewingCollection(colData);
+                await loadCollectionOrders(colId);
+                setPage("collectionDetail");
+              }
+            } catch(e) { console.error("Error loading shared collection:", e); }
+          }
+        }
         setTimeout(() => requestNotificationPermission(currentUser), 3000);
       } else {
         setUser(null);
         setUserName("");
         setUserAvatar(null);
         setLoading(false);
+        // Not logged in — still try to load public data (will work if Firestore rules allow public reads)
+        Promise.all([
+          loadListings(),
+          loadServices(),
+          loadCollections(),
+        ]).catch(() => {});
+        // Handle deep links for non-authenticated users
+        if (path.startsWith('/collection/')) {
+          const colId = path.replace('/collection/', '');
+          if (colId) {
+            try {
+              const colDoc = await getDoc(doc(db, "collections", colId));
+              if (colDoc.exists()) {
+                const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
+                setViewingCollection(colData);
+                await loadCollectionOrders(colId);
+                setPage("collectionDetail");
+              }
+            } catch(e) { console.error("Error loading shared collection:", e); }
+          }
+        }
       }
     });
     return () => { unsubscribe(); clearTimeout(safetyTimer); window.removeEventListener('popstate', handlePopState); };
