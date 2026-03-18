@@ -324,7 +324,7 @@ function App() {
       setPage("seller");
     } catch (err) { console.error("Error loading public seller:", err); }
     finally { setPublicSellerLoading(false); }
-  }, []);
+  }, [setPage]);
 
   // Open seller profile from a listing card
   const openSellerProfile = (listing) => { loadPublicSellerProfile(listing.userId); };
@@ -1054,7 +1054,7 @@ const requestNotificationPermission = async (currentUser) => {
       }
     });
     return () => { unsubscribe(); clearTimeout(safetyTimer); window.removeEventListener('popstate', handlePopState); };
-  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile]);
+  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile, setPage]);
 
   //eslint-disable-next-line
   const [tokenRequested, setTokenRequested] = useState(false);
