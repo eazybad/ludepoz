@@ -31,7 +31,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -113,7 +113,37 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [page, setPage] = useState("home");
+  const [page, setPageRaw] = useState("home");
+  const pageHistory = useRef(["home"]);
+  const isGoingBack = useRef(false);
+  
+  // Wrapper that tracks navigation history and pushes browser state
+  const setPage = useCallback((newPage) => {
+    setPageRaw(prev => {
+      if (pageHistory.current[pageHistory.current.length - 1] !== newPage) {
+        pageHistory.current.push(newPage);
+        if (pageHistory.current.length > 20) pageHistory.current.splice(0, 10);
+      }
+      // Push browser history so Android back button triggers popstate
+      if (!isGoingBack.current) {
+        window.history.pushState({ page: newPage }, '', '/');
+      }
+      return newPage;
+    });
+  }, []);
+  
+  // Go back one step in history
+  const goBack = useCallback(() => {
+    isGoingBack.current = true;
+    if (pageHistory.current.length > 1) {
+      pageHistory.current.pop();
+      const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
+      setPageRaw(prev);
+    } else {
+      setPageRaw("home");
+    }
+    setTimeout(() => { isGoingBack.current = false; }, 50);
+  }, []);
   const [homeTab, setHomeTab] = useState("goods");
   const [tabIconsVisible, setTabIconsVisible] = useState(false);
   const homeScrollRef = useRef(null);
@@ -166,6 +196,7 @@ function App() {
     title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
+  const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "" });
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
   const [orderSearchQ, setOrderSearchQ] = useState("");
@@ -957,13 +988,48 @@ const requestNotificationPermission = async (currentUser) => {
       })();
     }
     
-    // Handle browser back/forward
-    const handlePopState = () => {
+    // Check URL for /collection/ route (direct collection links)
+    if (path.startsWith('/collection/')) {
+      const colId = path.replace('/collection/', '');
+      if (colId) {
+        (async () => {
+          try {
+            const colDoc = await getDoc(doc(db, "collections", colId));
+            if (colDoc.exists()) {
+              const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
+              setViewingCollection(colData);
+              await loadCollectionOrders(colId);
+              setPage("collectionDetail");
+            }
+          } catch(e) { console.error("Error loading shared collection:", e); }
+        })();
+      }
+    }
+    
+    // Push initial state so browser back works step-by-step
+    window.history.replaceState({ page: 'home' }, '', window.location.pathname);
+    
+    // Handle browser/Android back button — go back one step instead of exiting
+    const handlePopState = (e) => {
       const p = window.location.pathname;
-      if (p === '/' || p === '') {
+      if (p.startsWith('/seller/') || p.startsWith('/collection/')) {
+        // On deep link pages, go to home
         setPublicSeller(null);
-        setPage("home");
+        setViewingCollection(null);
+        setCollectionOrders([]);
+        setPageRaw("home");
+        pageHistory.current = ["home"];
+        window.history.replaceState({ page: 'home' }, '', '/');
         document.title = 'Kampasika - Student Marketplace';
+      } else {
+        // Normal back — go back one step
+        if (pageHistory.current.length > 1) {
+          pageHistory.current.pop();
+          const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
+          setPageRaw(prev);
+        }
+        // Prevent app exit by pushing state back
+        window.history.pushState({ page: 'app' }, '', '/');
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -1530,7 +1596,7 @@ useEffect(() => {
         }
       }
       const optionsList = createCollectionData.options.split(",").map(o => o.trim()).filter(o => o);
-      await addDoc(collection(db, "collections"), {
+      const newColRef = await addDoc(collection(db, "collections"), {
         userId: user.uid,
         userName: userName,
         userAvatar: userAvatar,
@@ -1554,6 +1620,7 @@ useEffect(() => {
         totalAmount: 0,
         createdAt: serverTimestamp()
       });
+      setLastCreatedCollectionId(newColRef.id);
       setShowCreateCollectionSuccess(true);
       setSuccess("Collection created!");
       setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: [] });
@@ -2150,12 +2217,8 @@ return (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
-          else if (page==="createService") setPage("services");
-          else if (page==="createCollection") setPage("collections");
-          else if (page==="collectionDetail") { setViewingCollection(null); setCollectionOrders([]); setPage("collections"); }
-          else if (page==="createRoom") setPage("rooms");
-          else if (page==="roommates") setPage("rooms");
-          else setPage("home");
+          else if (page==="collectionDetail") { setViewingCollection(null); setCollectionOrders([]); goBack(); }
+          else goBack();
         }}
         style={{
           width:'36px',
@@ -3687,7 +3750,14 @@ return (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Collection created!</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Share the link with your class or group</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
+                {lastCreatedCollectionId && (
+                  <button onClick={()=>{
+                    const link = `https://kampasika.netlify.app/collection/${lastCreatedCollectionId}`;
+                    const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+                  }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
+                )}
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("collections");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Collections</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
@@ -3950,7 +4020,7 @@ return (
                       msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
                       if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
                       if (viewingCollection.payNumber) msg += `\n📱 Pay to: ${viewingCollection.payNumber}${viewingCollection.payName ? ' ('+viewingCollection.payName+')' : ''}\n`;
-                      msg += `\nOrder on Kampasika: https://kampasika.netlify.app`;
+                      msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     } else {
                       const unpaid = collectionOrders.filter(o=>!o.paid);
