@@ -198,6 +198,8 @@ function App() {
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "" });
+  const [myOrderId, setMyOrderId] = useState(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
   const [orderSearchQ, setOrderSearchQ] = useState("");
   const [editingCollection, setEditingCollection] = useState(false);
@@ -1640,40 +1642,74 @@ useEffect(() => {
     } finally { setUploading(false); }
   };
 
+  // Place order — just registers name, phone, option (no payment)
   const placeOrder = async (collectionItem) => {
     if (!user) { requireAuth("order", () => {}); return; }
     if (!orderFormData.studentName.trim()) { setError("Please enter your name"); return; }
-    const amountPaid = orderFormData.amountPaid ? parseInt(orderFormData.amountPaid) : 0;
+    if (collectionItem.options?.length > 0 && !orderFormData.selectedOption) { setError("Please select an option"); return; }
     try {
       setUploading(true);
-      // eslint-disable-next-line no-unused-vars
       const orderRef = await addDoc(collection(db, "collections", collectionItem.id, "orders"), {
         userId: user.uid,
         studentName: orderFormData.studentName.trim(),
         phone: orderFormData.phone.trim(),
-        payerName: (orderFormData.payerName || "").trim(),
+        payerName: "",
         selectedOption: orderFormData.selectedOption || "",
-        paymentRef: orderFormData.paymentRef.trim(),
+        paymentRef: "",
         amount: collectionItem.price,
-        amountPaid: amountPaid,
-        paid: amountPaid >= collectionItem.price,
-        status: amountPaid >= collectionItem.price ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
+        amountPaid: 0,
+        paid: false,
+        status: "unpaid",
         createdAt: serverTimestamp()
       });
       await updateDoc(doc(db, "collections", collectionItem.id), {
         totalOrders: increment(1),
         totalAmount: increment(collectionItem.price),
-        ...(amountPaid >= collectionItem.price ? { totalPaid: increment(1) } : {}),
-        totalCollected: increment(amountPaid)
       });
-      setSuccess("Order placed!" + (collectionItem.payNumber ? " Send payment to " + collectionItem.payNumber + " (" + (collectionItem.payNetwork||"Mobile Money") + ")" : ""));
-      setOrderFormData({ selectedOption: "", paymentRef: "", studentName: userName, phone: "", amountPaid: "", payerName: "" });
+      setMyOrderId(orderRef.id);
+      setSuccess("Order placed!" + (collectionItem.payNumber ? " Now send " + collectionItem.price.toLocaleString() + " TSh to " + collectionItem.payNumber + " (" + (collectionItem.payNetwork||"Mobile Money") + ") and confirm below." : ""));
       await loadCollectionOrders(collectionItem.id);
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
     } catch (err) {
       console.error("Error placing order:", err);
       setError("Failed to place order: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  // Confirm payment — updates an existing order with payment details
+  const confirmPayment = async (collectionItem) => {
+    if (!myOrderId) { setError("Place your order first"); return; }
+    if (!orderFormData.amountPaid) { setError("Please enter amount paid"); return; }
+    const amountPaid = parseInt(orderFormData.amountPaid) || 0;
+    try {
+      setUploading(true);
+      await updateDoc(doc(db, "collections", collectionItem.id, "orders", myOrderId), {
+        amountPaid: amountPaid,
+        payerName: (orderFormData.payerName || "").trim(),
+        paymentRef: orderFormData.paymentRef.trim(),
+        paid: amountPaid >= collectionItem.price,
+        status: amountPaid >= collectionItem.price ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
+      });
+      if (amountPaid >= collectionItem.price) {
+        await updateDoc(doc(db, "collections", collectionItem.id), {
+          totalPaid: increment(1),
+          totalCollected: increment(amountPaid)
+        });
+      } else {
+        await updateDoc(doc(db, "collections", collectionItem.id), {
+          totalCollected: increment(amountPaid)
+        });
+      }
+      setSuccess("Payment confirmed! The rep can now verify your transaction.");
+      setOrderFormData({ ...orderFormData, amountPaid: "", payerName: "", paymentRef: "" });
+      setPaymentConfirmed(true);
+      await loadCollectionOrders(collectionItem.id);
+      const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
+      if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
+    } catch (err) {
+      console.error("Error confirming payment:", err);
+      setError("Failed to confirm payment: " + err.message);
     } finally { setUploading(false); }
   };
 
@@ -3714,7 +3750,7 @@ return (
                 // eslint-disable-next-line no-unused-vars
                 const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
                 return (
-                  <div key={col.id} onClick={async()=>{setViewingCollection(col);await loadCollectionOrders(col.id);setOrderFormData({...orderFormData,studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);await loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
                       {col.photoUrl ? (
                         <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
@@ -3918,42 +3954,76 @@ return (
               </div>
             )}
 
-            {/* ORDER FORM — for students (including creator if they want to add themselves) */}
+            {/* ORDER FORM — for students */}
             {user && viewingCollection.active && (
-              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'16px'}}>
-                <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>📝 {user.uid === viewingCollection.userId ? 'Add Yourself to This Collection' : 'Place Your Order'}</h3>
-                <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Required amount: <strong>{viewingCollection.price?.toLocaleString()} TSh</strong></div>
-                
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Your Name *</label><input type="text" value={orderFormData.studentName} onChange={e=>setOrderFormData({...orderFormData,studentName:e.target.value})} placeholder="Full name" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
+              <div style={{marginBottom:'16px'}}>
 
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Phone (optional)</label><input type="tel" value={orderFormData.phone} onChange={e=>setOrderFormData({...orderFormData,phone:e.target.value})} placeholder="0712345678" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
+                {/* STEP 1: Place Order — collapses after placed */}
+                {!myOrderId ? (
+                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'12px'}}>
+                    <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>📝 Place Your Order</h3>
+                    <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Required amount: <strong>{viewingCollection.price?.toLocaleString()} TSh</strong></div>
+                    
+                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Your Name *</label><input type="text" value={orderFormData.studentName} onChange={e=>setOrderFormData({...orderFormData,studentName:e.target.value})} placeholder="Full name" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
 
-                {viewingCollection.options && viewingCollection.options.length > 0 && (
-                  <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Select Option *</label>
-                    <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                      {viewingCollection.options.map((opt,i)=>(
-                        <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'8px 16px',borderRadius:'8px',border:orderFormData.selectedOption===opt?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'14px',fontWeight:'500',cursor:'pointer'}}>{opt}</button>
-                      ))}
+                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Phone (optional)</label><input type="tel" value={orderFormData.phone} onChange={e=>setOrderFormData({...orderFormData,phone:e.target.value})} placeholder="0712345678" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
+
+                    {viewingCollection.options && viewingCollection.options.length > 0 && (
+                      <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Select Option *</label>
+                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                          {viewingCollection.options.map((opt,i)=>(
+                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'8px 16px',borderRadius:'8px',border:orderFormData.selectedOption===opt?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'14px',fontWeight:'500',cursor:'pointer'}}>{opt}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Placing...":"✓ Place Order"}</button>
+                  </div>
+                ) : (
+                  <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0',marginBottom:'12px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
+                      <span style={{fontSize:'20px'}}>✅</span>
+                      <span style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>Order Placed!</span>
                     </div>
+                    <div style={{fontSize:'13px',color:'#166534',marginBottom:'10px'}}>
+                      {viewingCollection.payNumber ? 
+                        <>Now send <strong>{viewingCollection.price?.toLocaleString()} TSh</strong> to <strong>{viewingCollection.payNumber}</strong> ({viewingCollection.payNetwork || 'Mobile Money'}) and confirm payment below.</> 
+                        : 'Your order has been registered. Confirm your payment below when ready.'
+                      }
+                    </div>
+                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:""});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ Place Another Order</button>
                   </div>
                 )}
 
-                <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginBottom:'16px'}}>{uploading?"Placing...":"✓ Place Order"}</button>
+                {/* STEP 2: Confirm Payment — only shows after order is placed */}
+                {myOrderId && !paymentConfirmed && (
+                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #10b981'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'16px'}}>💰</span><span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>Confirm Payment</span></div>
+                    <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Already sent the money? Fill in your payment details so the rep can verify</div>
+                    
+                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh) *</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}</div>
 
-                <div style={{borderTop:'1.5px dashed #e2e6ea',paddingTop:'16px'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'14px'}}>💰</span><span style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>PAYMENT DETAILS</span></div>
-                  <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'12px'}}>Already paid? Fill in below to confirm your payment</div>
-                  
-                  <div style={{background:'#f9fafb',borderRadius:'10px',padding:'12px'}}>
-                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh)</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`Full amount: ${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}{!orderFormData.amountPaid && <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Leave empty if you haven't paid yet — you can update later</div>}</div>
+                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Name on {viewingCollection.payNetwork || 'Mobile Money'} account</label><input type="text" value={orderFormData.payerName} onChange={e=>setOrderFormData({...orderFormData,payerName:e.target.value})} placeholder="e.g. AMINA JUMA (as on M-Pesa)" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>So the rep can match your payment</div></div>
 
-                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Name on the {viewingCollection.payNetwork || 'Mobile Money'} account</label><input type="text" value={orderFormData.payerName} onChange={e=>setOrderFormData({...orderFormData,payerName:e.target.value})} placeholder="e.g. AMINA JUMA (as it appears on M-Pesa)" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The name the rep will see on their payment notification</div></div>
+                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Transaction Code</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>From your payment SMS</div></div>
 
-                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Transaction Code</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The code from your payment SMS so the rep can verify</div></div>
-
-                    <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'12px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Confirming...":"✅ Already Paid — Confirm Payment"}</button>
+                    <button onClick={()=>confirmPayment(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Confirming...":"✅ Confirm Payment"}</button>
                   </div>
-                </div>
+                )}
+
+                {/* Payment confirmed success */}
+                {paymentConfirmed && (
+                  <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <span style={{fontSize:'20px'}}>🎉</span>
+                      <div>
+                        <div style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>Payment Confirmed!</div>
+                        <div style={{fontSize:'12px',color:'#15803d',marginTop:'2px'}}>The rep can now verify your transaction</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
