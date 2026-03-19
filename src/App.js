@@ -32,6 +32,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
 const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+const SHOW_COMING_SOON = true; // change to false when ready
 // ====================================
 
 const SERVICE_TAGS = [
@@ -2473,7 +2474,7 @@ return (
             <div style={{position:'absolute',bottom:'-20px',left:'20px',width:'80px',height:'80px',borderRadius:'50%',background:'radial-gradient(circle,rgba(124,58,237,0.2) 0%,transparent 70%)',filter:'blur(8px)'}}/>
             <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.25,position:'relative'}}>Trade, share &<br/><em style={{background:'linear-gradient(90deg,#2dd4bf,#a78bfa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Buy secondhand phones, sell used laptops, find furniture, and more.</p>
+            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Get cheap ,safe items and reliable deals on campus.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px',position:'relative'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#0f1b2d',padding:'11px 22px',borderRadius:'12px',border:'none',fontSize:'15px',fontWeight:'700',cursor:'pointer',boxShadow:'0 4px 14px rgba(45,212,191,0.3)'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
@@ -2534,7 +2535,8 @@ return (
 </div>}
 
 {/* ===== GOODS TAB CONTENT ===== */}
-{homeTab==="goods"&&(<>
+{homeTab==="goods"&&(
+  <div style={{position:'relative'}}>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
         {(() => {
@@ -2707,10 +2709,42 @@ return (
           </div>
   );
 })()}
-</>)}
+    {/* COMING SOON OVERLAY */}
+    {SHOW_COMING_SOON && (
+      <div style={{
+        position:'absolute',
+        top:0,
+        left:0,
+        width:'100%',
+        height:'100%',
+        background:'rgba(255,255,255,0.85)',
+        display:'flex',
+        justifyContent:'center',
+        alignItems:'center',
+        zIndex:50,
+        borderRadius:'12px'
+      }}>
+        <div style={{
+          textAlign:'center',
+          background:'#fff',
+          padding:'24px',
+          borderRadius:'14px',
+          boxShadow:'0 8px 30px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{fontSize:'28px',marginBottom:'10px'}}>🚧</div>
+          <div style={{fontSize:'18px',fontWeight:'700'}}>Coming Soon</div>
+          <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>
+            Goods are being prepared
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
 {/* ===== SERVICES TAB CONTENT ===== */}
-{homeTab==="services"&&(<>
+{homeTab==="services"&&(
+  <div style={{position:'relative'}}>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
     <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
     <span style={{fontSize:'16px'}}>🔍</span>
@@ -2769,7 +2803,37 @@ return (
       </div>
     );
   })()}
-</>)}
+    {SHOW_COMING_SOON && (
+      <div style={{
+        position:'absolute',
+        top:0,
+        left:0,
+        width:'100%',
+        height:'100%',
+        background:'rgba(255,255,255,0.85)',
+        display:'flex',
+        justifyContent:'center',
+        alignItems:'center',
+        zIndex:50,
+        borderRadius:'12px'
+      }}>
+        <div style={{
+          textAlign:'center',
+          background:'#fff',
+          padding:'24px',
+          borderRadius:'14px',
+          boxShadow:'0 8px 30px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{fontSize:'28px',marginBottom:'10px'}}>⚡</div>
+          <div style={{fontSize:'18px',fontWeight:'700'}}>Coming Soon</div>
+          <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>
+            Services are being prepared
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
 {/* ===== ROOMS TAB CONTENT ===== */}
 {ENABLE_ROOMS && homeTab==="rooms"&&(<>
