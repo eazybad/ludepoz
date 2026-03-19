@@ -278,7 +278,7 @@ function App() {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
     const locationStr = item.location ? `📍 ${item.location}` : "";
-    const appUrl = "https://kampasika.netlify.app";
+    const appUrl = "https://kampasika.org";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -2435,7 +2435,7 @@ return (
       
       <button 
         onClick={() => {
-          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.netlify.app`;
+          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.org`;
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }}
         style={{
@@ -2932,7 +2932,7 @@ return (
                     if (lastCreatedListing) {
                       const priceStr = lastCreatedListing.price ? `TSh ${lastCreatedListing.price.toLocaleString()}` : "";
                       const locationStr = lastCreatedListing.location ? `📍 ${lastCreatedListing.location}` : "";
-                      const appUrl = "https://kampasika.netlify.app";
+                      const appUrl = "https://kampasika.org";
                       const msg = `I just listed something on Kampasika!\n\n` +
                         `*${lastCreatedListing.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
                         `${lastCreatedListing.description ? lastCreatedListing.description.substring(0, 80) + (lastCreatedListing.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -3862,7 +3862,7 @@ return (
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
                   <button onClick={()=>{
-                    const link = `https://kampasika.netlify.app/collection/${lastCreatedCollectionId}`;
+                    const link = `https://kampasika.org/collection/${lastCreatedCollectionId}`;
                     const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
                     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                   }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
@@ -4168,7 +4168,7 @@ return (
                       msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
                       if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
                       if (viewingCollection.payNumber) msg += `\n📱 Pay to: ${viewingCollection.payNumber}${viewingCollection.payName ? ' ('+viewingCollection.payName+')' : ''}\n`;
-                      msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
+                      msg += `\nOrder here: https://kampasika.org/collection/${viewingCollection.id}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     } else {
                       const unpaid = collectionOrders.filter(o=>!o.paid);
@@ -4532,7 +4532,7 @@ return (
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                const profileUrl = `https://kampasika.org/seller/${slug}`;
                 const msg = `Check out ${publicSeller.name}'s listings on Kampasika (${publicSeller.universityName || 'student'} seller)!\n\n${profileUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
               }} style={{padding:'10px 20px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
@@ -4540,7 +4540,7 @@ return (
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                const profileUrl = `https://kampasika.org/seller/${slug}`;
                 navigator.clipboard?.writeText(profileUrl).then(()=>{setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000);}).catch(()=>{});
               }} style={{padding:'10px 20px',background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
                 🔗 Copy Link
