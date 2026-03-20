@@ -32,7 +32,6 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
 const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
-const SHOW_COMING_SOON = true; // change to false when ready
 // ====================================
 
 const SERVICE_TAGS = [
@@ -194,7 +193,7 @@ function App() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
-    title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: []
+    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [{ network: "M-Pesa", number: "", name: "" }], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
@@ -278,7 +277,7 @@ function App() {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
     const locationStr = item.location ? `📍 ${item.location}` : "";
-    const appUrl = "https://kampasika.org";
+    const appUrl = "https://kampasika.netlify.app";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -1619,9 +1618,13 @@ useEffect(() => {
         price: parseInt(createCollectionData.price),
         expectedPeople: createCollectionData.expectedPeople ? parseInt(createCollectionData.expectedPeople) : 0,
         options: optionsList,
-        payNumber: createCollectionData.payNumber.trim(),
-        payName: createCollectionData.payName.trim(),
-        payNetwork: createCollectionData.payNetwork || "M-Pesa",
+        paymentMethods: createCollectionData.paymentMethods.filter(pm => pm.number.trim()).map(pm => ({ network: pm.network, number: pm.number.trim(), name: pm.name.trim() })),
+        // Keep legacy fields for backwards compat
+        payNumber: createCollectionData.paymentMethods[0]?.number?.trim() || "",
+        payName: createCollectionData.paymentMethods[0]?.name?.trim() || "",
+        payNetwork: createCollectionData.paymentMethods[0]?.network || "M-Pesa",
+        adminEmails: createCollectionData.adminEmails.split(",").map(e => e.trim().toLowerCase()).filter(e => e),
+        adminUserIds: [],
         deadline: createCollectionData.deadline || null,
         photoUrl: photoUrls[0] || null,
         photos: photoUrls,
@@ -1635,7 +1638,7 @@ useEffect(() => {
       setLastCreatedCollectionId(newColRef.id);
       setShowCreateCollectionSuccess(true);
       setSuccess("Collection created!");
-      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", payNumber: "", payName: "", payNetwork: "M-Pesa", deadline: "", photoFiles: [], photoPreviews: [] });
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [{ network: "M-Pesa", number: "", name: "" }], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: [] });
       await loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
@@ -1668,7 +1671,9 @@ useEffect(() => {
         totalAmount: increment(collectionItem.price),
       });
       setMyOrderId(orderRef.id);
-      setSuccess("Order placed!" + (collectionItem.payNumber ? " Now send " + collectionItem.price.toLocaleString() + " TSh to " + collectionItem.payNumber + " (" + (collectionItem.payNetwork||"Mobile Money") + ") and confirm below." : ""));
+      const methods = collectionItem.paymentMethods || (collectionItem.payNumber ? [{ network: collectionItem.payNetwork || "Mobile Money", number: collectionItem.payNumber, name: collectionItem.payName }] : []);
+      const payMsg = methods.length > 0 ? " Send " + collectionItem.price.toLocaleString() + " TSh to: " + methods.map(m => m.number + " (" + m.network + ")").join(" or ") + " and confirm below." : "";
+      setSuccess("Order placed!" + payMsg);
       await loadCollectionOrders(collectionItem.id);
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
@@ -2435,7 +2440,7 @@ return (
       
       <button 
         onClick={() => {
-          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.org`;
+          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.netlify.app`;
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }}
         style={{
@@ -2474,7 +2479,7 @@ return (
             <div style={{position:'absolute',bottom:'-20px',left:'20px',width:'80px',height:'80px',borderRadius:'50%',background:'radial-gradient(circle,rgba(124,58,237,0.2) 0%,transparent 70%)',filter:'blur(8px)'}}/>
             <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.25,position:'relative'}}>Trade, share &<br/><em style={{background:'linear-gradient(90deg,#2dd4bf,#a78bfa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Get cheap ,safe items and reliable deals on campus.</p>
+            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Buy secondhand phones, sell used laptops, find furniture, and more.</p>
             <div style={{display:'flex',gap:'8px',marginTop:'16px',position:'relative'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#0f1b2d',padding:'11px 22px',borderRadius:'12px',border:'none',fontSize:'15px',fontWeight:'700',cursor:'pointer',boxShadow:'0 4px 14px rgba(45,212,191,0.3)'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
           </div>
           )}
@@ -2535,8 +2540,7 @@ return (
 </div>}
 
 {/* ===== GOODS TAB CONTENT ===== */}
-{homeTab==="goods"&&(
-  <div style={{position:'relative'}}>
+{homeTab==="goods"&&(<>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
         {(() => {
@@ -2709,42 +2713,10 @@ return (
           </div>
   );
 })()}
-    {/* COMING SOON OVERLAY */}
-    {SHOW_COMING_SOON && (
-      <div style={{
-        position:'absolute',
-        top:0,
-        left:0,
-        width:'100%',
-        height:'100%',
-        background:'rgba(255,255,255,0.85)',
-        display:'flex',
-        justifyContent:'center',
-        alignItems:'center',
-        zIndex:50,
-        borderRadius:'12px'
-      }}>
-        <div style={{
-          textAlign:'center',
-          background:'#fff',
-          padding:'24px',
-          borderRadius:'14px',
-          boxShadow:'0 8px 30px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{fontSize:'28px',marginBottom:'10px'}}>🚧</div>
-          <div style={{fontSize:'18px',fontWeight:'700'}}>Coming Soon</div>
-          <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>
-            Goods are being prepared
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
-)}
+</>)}
 
 {/* ===== SERVICES TAB CONTENT ===== */}
-{homeTab==="services"&&(
-  <div style={{position:'relative'}}>
+{homeTab==="services"&&(<>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
     <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
     <span style={{fontSize:'16px'}}>🔍</span>
@@ -2803,37 +2775,7 @@ return (
       </div>
     );
   })()}
-    {SHOW_COMING_SOON && (
-      <div style={{
-        position:'absolute',
-        top:0,
-        left:0,
-        width:'100%',
-        height:'100%',
-        background:'rgba(255,255,255,0.85)',
-        display:'flex',
-        justifyContent:'center',
-        alignItems:'center',
-        zIndex:50,
-        borderRadius:'12px'
-      }}>
-        <div style={{
-          textAlign:'center',
-          background:'#fff',
-          padding:'24px',
-          borderRadius:'14px',
-          boxShadow:'0 8px 30px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{fontSize:'28px',marginBottom:'10px'}}>⚡</div>
-          <div style={{fontSize:'18px',fontWeight:'700'}}>Coming Soon</div>
-          <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>
-            Services are being prepared
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
-)}
+</>)}
 
 {/* ===== ROOMS TAB CONTENT ===== */}
 {ENABLE_ROOMS && homeTab==="rooms"&&(<>
@@ -2932,7 +2874,7 @@ return (
                     if (lastCreatedListing) {
                       const priceStr = lastCreatedListing.price ? `TSh ${lastCreatedListing.price.toLocaleString()}` : "";
                       const locationStr = lastCreatedListing.location ? `📍 ${lastCreatedListing.location}` : "";
-                      const appUrl = "https://kampasika.org";
+                      const appUrl = "https://kampasika.netlify.app";
                       const msg = `I just listed something on Kampasika!\n\n` +
                         `*${lastCreatedListing.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
                         `${lastCreatedListing.description ? lastCreatedListing.description.substring(0, 80) + (lastCreatedListing.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -3862,7 +3804,7 @@ return (
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
                   <button onClick={()=>{
-                    const link = `https://kampasika.org/collection/${lastCreatedCollectionId}`;
+                    const link = `https://kampasika.netlify.app/collection/${lastCreatedCollectionId}`;
                     const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
                     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                   }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
@@ -3899,17 +3841,30 @@ return (
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Options (comma separated, optional)</label><input type="text" placeholder="e.g. Size S, Size M, Size L, Size XL" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Sizes, colors, quantities — anything students need to pick</div></div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Payment Network</label>
-                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
-                    {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa"].map(net=>(
-                      <button key={net} onClick={()=>setCreateCollectionData({...createCollectionData,payNetwork:net})} style={{padding:'6px 14px',borderRadius:'8px',border:createCollectionData.payNetwork===net?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:createCollectionData.payNetwork===net?'#fef3c7':'#fff',fontSize:'13px',cursor:'pointer',fontWeight:createCollectionData.payNetwork===net?'600':'400'}}>{net}</button>
-                    ))}
-                  </div>
+                {/* PAYMENT METHODS — multiple */}
+                <div style={{marginBottom:'16px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>💰 Payment Methods</label>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'10px'}}>Add all the ways students can pay (M-Pesa, bank, etc.)</div>
+                  {createCollectionData.paymentMethods.map((pm, idx) => (
+                    <div key={idx} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1px solid #e2e6ea'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                        <span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx + 1}</span>
+                        {createCollectionData.paymentMethods.length > 1 && <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Remove</button>}
+                      </div>
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
+                        {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","MixxbyYAS","CRDB","NMB","NBC","Selcom","Other"].map(net=>(
+                          <button key={net} onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], network: net}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>
+                        ))}
+                      </div>
+                      <input type="tel" placeholder="Number / Account" value={pm.number} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], number: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
+                      <input type="text" placeholder="Account name (e.g. JOHN MWANGI)" value={pm.name} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], name: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
+                    </div>
+                  ))}
+                  <button onClick={()=>setCreateCollectionData({...createCollectionData, paymentMethods: [...createCollectionData.paymentMethods, { network: "M-Pesa", number: "", name: "" }]})} style={{padding:'8px 16px',background:'#fff',color:'#f59e0b',border:'1.5px dashed #f59e0b',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
                 </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Number to pay to</label><input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.payNumber} onChange={e=>setCreateCollectionData({...createCollectionData,payNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>The {createCollectionData.payNetwork} number students will send money to</div></div>
-
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Name on the account</label><input type="text" placeholder="e.g. JOHN MWANGI" value={createCollectionData.payName} onChange={e=>setCreateCollectionData({...createCollectionData,payName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>So students can verify they're sending to the right person</div></div>
+                {/* ADMIN EMAILS */}
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>👥 Co-admins (optional)</label><input type="text" placeholder="e.g. john@gmail.com, amina@gmail.com" value={createCollectionData.adminEmails} onChange={e=>setCreateCollectionData({...createCollectionData,adminEmails:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Comma-separated emails of other SRC members who can view orders and mark payments. They must have a Kampasika account with the same email.</div></div>
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
@@ -3975,26 +3930,27 @@ return (
               )}
             </div>
 
-            {/* Payment info (visible to buyers) */}
-            {viewingCollection.payNumber && user?.uid !== viewingCollection.userId && (
-              <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:'1px solid #bbf7d0'}}>
-                <div style={{fontSize:'14px',fontWeight:'600',color:'#166534',marginBottom:'6px'}}>💰 How to Pay</div>
-                <div style={{fontSize:'15px',color:'#0f1b2d',fontWeight:'600'}}>{viewingCollection.payNetwork || "Mobile Money"}: {viewingCollection.payNumber}</div>
-                {viewingCollection.payName && <div style={{fontSize:'13px',color:'#6b7280'}}>Account Name: {viewingCollection.payName}</div>}
-                <div style={{fontSize:'12px',color:'#6b7280',marginTop:'6px'}}>After sending, fill in your details below so the rep can verify your payment</div>
-              </div>
-            )}
-
-            {/* Payment info also visible to creator */}
-            {viewingCollection.payNumber && user?.uid === viewingCollection.userId && (
-              <div style={{background:'#eff6ff',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:'1px solid #bfdbfe',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <div style={{fontSize:'12px',color:'#1e40af',fontWeight:'600'}}>Collecting via {viewingCollection.payNetwork || "Mobile Money"}</div>
-                  <div style={{fontSize:'14px',color:'#0f1b2d',fontWeight:'600'}}>{viewingCollection.payNumber} {viewingCollection.payName ? '• '+viewingCollection.payName : ''}</div>
+            {/* Payment info (visible to buyers) — shows all payment methods */}
+            {(()=>{
+              const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber, name: viewingCollection.payName }] : []);
+              const isAdmin = user?.uid === viewingCollection.userId || (viewingCollection.adminEmails || []).includes(user?.email?.toLowerCase());
+              if (methods.length === 0) return null;
+              return (
+                <div style={{background: isAdmin ? '#eff6ff' : '#f0fdf4',borderRadius:'12px',padding:'14px',marginBottom:'16px',border: isAdmin ? '1px solid #bfdbfe' : '1px solid #bbf7d0'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                    <div style={{fontSize:'14px',fontWeight:'600',color: isAdmin ? '#1e40af' : '#166534'}}>💰 {isAdmin ? 'Collecting via' : 'How to Pay'}</div>
+                    {isAdmin && <button onClick={()=>setEditingCollection(!editingCollection)} style={{padding:'6px 12px',background: isAdmin ? '#dbeafe' : '#dcfce7',color: isAdmin ? '#1e40af' : '#166534',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✏️ Edit</button>}
+                  </div>
+                  {methods.map((m, i) => (
+                    <div key={i} style={{padding:'8px 0',borderTop: i > 0 ? '1px solid rgba(0,0,0,0.06)' : 'none'}}>
+                      <div style={{fontSize:'14px',color:'#0f1b2d',fontWeight:'600'}}>{m.network}: {m.number}</div>
+                      {m.name && <div style={{fontSize:'12px',color:'#6b7280'}}>Account: {m.name}</div>}
+                    </div>
+                  ))}
+                  {!isAdmin && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'6px'}}>After sending, confirm your payment below</div>}
                 </div>
-                <button onClick={()=>setEditingCollection(!editingCollection)} style={{padding:'6px 12px',background:'#dbeafe',color:'#1e40af',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✏️ Edit</button>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Edit Collection (for creator) */}
             {editingCollection && user?.uid === viewingCollection.userId && (
@@ -4017,6 +3973,22 @@ return (
                 </div>
               </div>
             )}
+
+            {/* SHARE BUTTON — always visible */}
+            <button onClick={()=>{
+              const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber, name: viewingCollection.payName }] : []);
+              let msg = `📋 *${viewingCollection.title}*\n\n`;
+              msg += `💰 ${viewingCollection.price?.toLocaleString()} TSh per person\n`;
+              if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
+              if (methods.length > 0) {
+                msg += `\n📱 Pay to:\n`;
+                methods.forEach(m => { msg += `• ${m.network}: ${m.number}${m.name ? ' ('+m.name+')' : ''}\n`; });
+              }
+              msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+            }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
+              📲 Share Collection on WhatsApp
+            </button>
 
             {/* ORDER FORM — for students */}
             {user && viewingCollection.active && (
@@ -4051,10 +4023,12 @@ return (
                       <span style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>Order Placed!</span>
                     </div>
                     <div style={{fontSize:'13px',color:'#166534',marginBottom:'10px'}}>
-                      {viewingCollection.payNumber ? 
-                        <>Now send <strong>{viewingCollection.price?.toLocaleString()} TSh</strong> to <strong>{viewingCollection.payNumber}</strong> ({viewingCollection.payNetwork || 'Mobile Money'}) and confirm payment below.</> 
-                        : 'Your order has been registered. Confirm your payment below when ready.'
-                      }
+                      {(()=>{
+                        const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber }] : []);
+                        return methods.length > 0 ? (
+                          <>Send <strong>{viewingCollection.price?.toLocaleString()} TSh</strong> to any of these and confirm below:<br/>{methods.map((m,i)=><span key={i} style={{display:'block',marginTop:'4px'}}>• <strong>{m.network}:</strong> {m.number}{m.name ? ` (${m.name})` : ''}</span>)}</>
+                        ) : 'Your order has been registered. Confirm your payment below when ready.';
+                      })()}
                     </div>
                     <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:""});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ Place Another Order</button>
                   </div>
@@ -4095,8 +4069,8 @@ return (
               <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'16px'}}>Sign in to Order</button>
             )}
 
-            {/* ORDERS LIST — visible to collection creator (the rep) */}
-            {user && user.uid === viewingCollection.userId && (
+            {/* ORDERS LIST — visible to collection creator AND admins */}
+            {user && (user.uid === viewingCollection.userId || (viewingCollection.adminEmails || []).includes(user.email?.toLowerCase())) && (
               <div style={{marginBottom:'16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
                   <h3 style={{fontSize:'16px',fontWeight:'700'}}>Orders ({collectionOrders.length})</h3>
@@ -4168,7 +4142,7 @@ return (
                       msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
                       if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
                       if (viewingCollection.payNumber) msg += `\n📱 Pay to: ${viewingCollection.payNumber}${viewingCollection.payName ? ' ('+viewingCollection.payName+')' : ''}\n`;
-                      msg += `\nOrder here: https://kampasika.org/collection/${viewingCollection.id}`;
+                      msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     } else {
                       const unpaid = collectionOrders.filter(o=>!o.paid);
@@ -4532,7 +4506,7 @@ return (
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.org/seller/${slug}`;
+                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
                 const msg = `Check out ${publicSeller.name}'s listings on Kampasika (${publicSeller.universityName || 'student'} seller)!\n\n${profileUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
               }} style={{padding:'10px 20px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
@@ -4540,7 +4514,7 @@ return (
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.org/seller/${slug}`;
+                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
                 navigator.clipboard?.writeText(profileUrl).then(()=>{setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000);}).catch(()=>{});
               }} style={{padding:'10px 20px',background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
                 🔗 Copy Link
