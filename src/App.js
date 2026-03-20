@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, getDocsFromCache, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
@@ -176,7 +176,6 @@ function App() {
   // eslint-disable-next-line no-unused-vars
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
-  const [showHeroBanner, setShowHeroBanner] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
   // Services state
   const [services, setServices] = useState([]);
@@ -265,6 +264,15 @@ function App() {
   if (!user) return false;
   return true;
 };
+
+  // Check if current user is creator or co-admin of a collection
+  const isCollectionAdmin = (col) => {
+    if (!user || !col) return false;
+    if (user.uid === col.userId) return true;
+    const adminList = col.adminEmails || [];
+    const myEmail = user.email?.toLowerCase();
+    return myEmail && adminList.includes(myEmail);
+  };
 
   // Require auth - shows modal if not logged in
   const requireAuth = (action, callback) => {
@@ -365,7 +373,7 @@ function App() {
         expiresAt: newExpiry,
         renewedAt: serverTimestamp()
       });
-      await loadListings();
+      loadListings();
       setSuccess("Listing renewed for 48 hours!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -378,7 +386,7 @@ function App() {
     if (!window.confirm("Delete this listing permanently?")) return;
     try {
       await deleteDoc(doc(db, "listings", listingId));
-      await loadListings();
+      loadListings();
       setSuccess("Listing deleted!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -439,60 +447,57 @@ function App() {
     }
   };
 
-  const loadListings = useCallback(async () => {
-  const q = query(collection(db, "listings"), where("sold", "==", false), orderBy("createdAt", "desc"));
-  const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
-  // 1. Try cache first for instant display
+  // Real-time listeners — stored so we can unsubscribe
+  const unsubListings = useRef(null);
+  const unsubServices = useRef(null);
+  const unsubCollections = useRef(null);
+  const unsubCollectionOrders = useRef(null);
+
+  const loadListings = useCallback(() => {
+  if (unsubListings.current) unsubListings.current();
   try {
-    const cached = await getDocsFromCache(q);
-    if (cached.docs.length > 0) setListings(parseSnap(cached));
-  } catch(_) { /* no cache yet — that's fine */ }
-  // 2. Then fetch from network to get latest
-  try {
-    const fresh = await getDocs(q);
-    setListings(parseSnap(fresh));
-  } catch (err) {
-    console.error("Error loading listings:", err);
-    try {
+    const q = query(collection(db, "listings"), where("sold", "==", false), orderBy("createdAt", "desc"));
+    unsubListings.current = onSnapshot(q, (snap) => {
+      setListings(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+    }, (err) => {
+      console.error("Listings listener error:", err);
+      // Fallback without orderBy
       const q2 = query(collection(db, "listings"), where("sold", "==", false));
-      const fresh2 = await getDocs(q2);
-      setListings(parseSnap(fresh2));
-    } catch (err2) { console.error("Error loading listings (fallback):", err2); }
-  }
+      unsubListings.current = onSnapshot(q2, (snap) => {
+        setListings(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      }, (err2) => console.error("Listings fallback error:", err2));
+    });
+  } catch(e) { console.error("Error setting up listings listener:", e); }
 }, []);
 
-  const loadServices = useCallback(async () => {
-    const q = query(collection(db, "services"), where("active", "==", true), orderBy("createdAt", "desc"));
-    const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
-    try { const cached = await getDocsFromCache(q); if (cached.docs.length > 0) setServices(parseSnap(cached)); } catch(_) {}
+  const loadServices = useCallback(() => {
+    if (unsubServices.current) unsubServices.current();
     try {
-      const fresh = await getDocs(q);
-      setServices(parseSnap(fresh));
-    } catch (err) {
-      console.error("Error loading services:", err);
-      try {
+      const q = query(collection(db, "services"), where("active", "==", true), orderBy("createdAt", "desc"));
+      unsubServices.current = onSnapshot(q, (snap) => {
+        setServices(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      }, (err) => {
         const q2 = query(collection(db, "services"), where("active", "==", true));
-        const fresh2 = await getDocs(q2);
-        setServices(parseSnap(fresh2));
-      } catch (err2) { console.error("Error loading services (fallback):", err2); }
-    }
+        unsubServices.current = onSnapshot(q2, (snap) => {
+          setServices(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        }, (err2) => console.error("Services fallback error:", err2));
+      });
+    } catch(e) { console.error("Error setting up services listener:", e); }
   }, []);
 
-  const loadCollections = useCallback(async () => {
-    const q = query(collection(db, "collections"), where("active", "==", true), orderBy("createdAt", "desc"));
-    const parseSnap = (snap) => snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
-    try { const cached = await getDocsFromCache(q); if (cached.docs.length > 0) setCollections(parseSnap(cached)); } catch(_) {}
+  const loadCollections = useCallback(() => {
+    if (unsubCollections.current) unsubCollections.current();
     try {
-      const fresh = await getDocs(q);
-      setCollections(parseSnap(fresh));
-    } catch (err) {
-      console.error("Error loading collections:", err);
-      try {
+      const q = query(collection(db, "collections"), where("active", "==", true), orderBy("createdAt", "desc"));
+      unsubCollections.current = onSnapshot(q, (snap) => {
+        setCollections(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      }, (err) => {
         const q2 = query(collection(db, "collections"), where("active", "==", true));
-        const fresh2 = await getDocs(q2);
-        setCollections(parseSnap(fresh2));
-      } catch (err2) { console.error("Error loading collections fallback:", err2); }
-    }
+        unsubCollections.current = onSnapshot(q2, (snap) => {
+          setCollections(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        }, (err2) => console.error("Collections fallback error:", err2));
+      });
+    } catch(e) { console.error("Error setting up collections listener:", e); }
   }, []);
 
   // ============ ROOMS & HOUSING ============
@@ -1029,7 +1034,7 @@ const requestNotificationPermission = async (currentUser) => {
               if (colDoc.exists()) {
                 const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
                 setViewingCollection(colData);
-                await loadCollectionOrders(colId);
+                loadCollectionOrders(colId);
                 setPage("collectionDetail");
               }
             } catch(e) { console.error("Error loading shared collection:", e); }
@@ -1056,7 +1061,7 @@ const requestNotificationPermission = async (currentUser) => {
               if (colDoc.exists()) {
                 const colData = { id: colDoc.id, ...colDoc.data(), createdAt: colDoc.data().createdAt?.toDate() };
                 setViewingCollection(colData);
-                await loadCollectionOrders(colId);
+                loadCollectionOrders(colId);
                 setPage("collectionDetail");
               }
             } catch(e) { console.error("Error loading shared collection:", e); }
@@ -1064,7 +1069,15 @@ const requestNotificationPermission = async (currentUser) => {
         }
       }
     });
-    return () => { unsubscribe(); clearTimeout(safetyTimer); window.removeEventListener('popstate', handlePopState); };
+    return () => { 
+      unsubscribe(); 
+      clearTimeout(safetyTimer); 
+      window.removeEventListener('popstate', handlePopState);
+      if (unsubListings.current) unsubListings.current();
+      if (unsubServices.current) unsubServices.current();
+      if (unsubCollections.current) unsubCollections.current();
+      if (unsubCollectionOrders.current) unsubCollectionOrders.current();
+    };
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile, setPage]);
 
   //eslint-disable-next-line
@@ -1468,7 +1481,7 @@ useEffect(() => {
       photoFiles: [],      // Reset to empty array
       photoPreviews: []    // Reset to empty array
     });
-    await loadListings();
+    loadListings();
     // Don't auto-redirect — let user choose to share or go home
   } catch (err) {
     console.error("Error creating listing:", err);
@@ -1525,7 +1538,7 @@ useEffect(() => {
         category: "", title: "", desc: "", price: "", priceType: "fixed",
         whatsapp: "", location: "", photoFiles: [], photoPreviews: []
       });
-      await loadServices();
+      loadServices();
     } catch (err) {
       console.error("Error creating service:", err);
       setError("Failed to create service: " + err.message);
@@ -1538,7 +1551,7 @@ useEffect(() => {
     if (!window.confirm("Remove this service listing?")) return;
     try {
       await deleteDoc(doc(db, "services", serviceId));
-      await loadServices();
+      loadServices();
       setSuccess("Service removed!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -1577,17 +1590,20 @@ useEffect(() => {
     });
   };
 
-  const loadCollectionOrders = async (collectionId) => {
+  const loadCollectionOrders = (collectionId) => {
+    if (unsubCollectionOrders.current) unsubCollectionOrders.current();
     try {
       const q = query(collection(db, "collections", collectionId, "orders"), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
-      setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
-    } catch (err) {
-      console.error("Error loading orders:", err);
-      const q2 = query(collection(db, "collections", collectionId, "orders"));
-      const snap2 = await getDocs(q2);
-      setCollectionOrders(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
-    }
+      unsubCollectionOrders.current = onSnapshot(q, (snap) => {
+        setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      }, (err) => {
+        console.error("Orders listener error:", err);
+        const q2 = query(collection(db, "collections", collectionId, "orders"));
+        unsubCollectionOrders.current = onSnapshot(q2, (snap) => {
+          setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        });
+      });
+    } catch(e) { console.error("Error setting up orders listener:", e); }
   };
 
   const handleCreateCollection = async () => {
@@ -1639,7 +1655,7 @@ useEffect(() => {
       setShowCreateCollectionSuccess(true);
       setSuccess("Collection created!");
       setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [{ network: "M-Pesa", number: "", name: "" }], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: [] });
-      await loadCollections();
+      loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
       setError("Failed to create collection: " + err.message);
@@ -1674,7 +1690,7 @@ useEffect(() => {
       const methods = collectionItem.paymentMethods || (collectionItem.payNumber ? [{ network: collectionItem.payNetwork || "Mobile Money", number: collectionItem.payNumber, name: collectionItem.payName }] : []);
       const payMsg = methods.length > 0 ? " Send " + collectionItem.price.toLocaleString() + " TSh to: " + methods.map(m => m.number + " (" + m.network + ")").join(" or ") + " and confirm below." : "";
       setSuccess("Order placed!" + payMsg);
-      await loadCollectionOrders(collectionItem.id);
+      loadCollectionOrders(collectionItem.id);
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
     } catch (err) {
@@ -1710,7 +1726,7 @@ useEffect(() => {
       setSuccess("Payment confirmed! The rep can now verify your transaction.");
       setOrderFormData({ ...orderFormData, amountPaid: "", payerName: "", paymentRef: "" });
       setPaymentConfirmed(true);
-      await loadCollectionOrders(collectionItem.id);
+      loadCollectionOrders(collectionItem.id);
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
     } catch (err) {
@@ -1730,7 +1746,7 @@ useEffect(() => {
       await updateDoc(doc(db, "collections", collectionId), {
         totalPaid: increment(currentlyPaid ? -1 : 1)
       });
-      await loadCollectionOrders(collectionId);
+      loadCollectionOrders(collectionId);
       const updatedDoc = await getDoc(doc(db, "collections", collectionId));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
     } catch (err) {
@@ -1745,7 +1761,7 @@ useEffect(() => {
       const updatedDoc = await getDoc(doc(db, "collections", collectionId));
       if (updatedDoc.exists()) setViewingCollection({ id: updatedDoc.id, ...updatedDoc.data() });
       setSuccess("Collection updated!");
-      await loadCollections();
+      loadCollections();
     } catch (err) { setError("Failed to update: " + err.message); }
   };
 
@@ -1753,7 +1769,7 @@ useEffect(() => {
     if (!window.confirm("Close this collection? No new orders will be accepted.")) return;
     try {
       await updateDoc(doc(db, "collections", collectionId), { active: false });
-      await loadCollections();
+      loadCollections();
       setViewingCollection(null);
       setSuccess("Collection closed!");
     } catch (err) { setError("Failed to close collection"); }
@@ -1861,7 +1877,7 @@ useEffect(() => {
     setSuccess("Profile updated everywhere!");
     
     // Reload to reflect changes
-    await loadListings();
+    loadListings();
     await loadConversations();
     
     setTimeout(() => setSuccess(""), 3000);
@@ -1950,7 +1966,7 @@ useEffect(() => {
         sold: true, 
         soldAt: serverTimestamp() 
       });
-      await loadListings();
+      loadListings();
       setSuccess("Marked as sold!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -2007,7 +2023,7 @@ useEffect(() => {
     } catch (err) {
       console.error("Error updating saves:", err);
     }
-    await loadListings();
+    loadListings();
   }
 };
 
@@ -2268,7 +2284,7 @@ return (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
-          else if (page==="collectionDetail") { setViewingCollection(null); setCollectionOrders([]); goBack(); }
+          else if (page==="collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); goBack(); }
           else goBack();
         }}
         style={{
@@ -2473,16 +2489,6 @@ return (
     </div>
   </div>
 )}
-          {showHeroBanner && (
-          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1e293b 50%,#0f172a 100%)',borderRadius:'20px',padding:'24px 20px',marginBottom:'20px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:'-30px',right:'-30px',width:'120px',height:'120px',borderRadius:'50%',background:'radial-gradient(circle,rgba(45,212,191,0.25) 0%,transparent 70%)',filter:'blur(10px)'}}/>
-            <div style={{position:'absolute',bottom:'-20px',left:'20px',width:'80px',height:'80px',borderRadius:'50%',background:'radial-gradient(circle,rgba(124,58,237,0.2) 0%,transparent 70%)',filter:'blur(8px)'}}/>
-            <button onClick={()=>setShowHeroBanner(false)} style={{position:'absolute',top:'12px',right:'12px',background:'rgba(255,255,255,0.1)',backdropFilter:'blur(10px)',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'16px',cursor:'pointer',width:'28px',height:'28px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-            <h1 style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',lineHeight:1.25,position:'relative'}}>Trade, share &<br/><em style={{background:'linear-gradient(90deg,#2dd4bf,#a78bfa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>find your next deal</em><br/>— all on campus.</h1>
-            <p style={{color:'rgba(255,255,255,0.5)',fontSize:'13px',marginTop:'10px',lineHeight:1.5,position:'relative'}}>Buy secondhand phones, sell used laptops, find furniture, and more.</p>
-            <div style={{display:'flex',gap:'8px',marginTop:'16px',position:'relative'}}><button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#0f1b2d',padding:'11px 22px',borderRadius:'12px',border:'none',fontSize:'15px',fontWeight:'700',cursor:'pointer',boxShadow:'0 4px 14px rgba(45,212,191,0.3)'}}>+ Sell</button>{user ? <button onClick={()=>setPage("profile")} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Profile</button> : <button onClick={()=>setShowAuthModal(true)} style={{background:'rgba(255,255,255,0.08)',backdropFilter:'blur(10px)',color:'rgba(255,255,255,0.85)',padding:'11px 22px',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.12)',fontSize:'15px',fontWeight:'500',cursor:'pointer'}}>Join Now</button>}</div>
-          </div>
-          )}
 {/* ===== AIRBNB-STYLE TOP TAB BAR ===== */}
 <div style={{
   display:'flex',
@@ -3756,7 +3762,7 @@ return (
                 // eslint-disable-next-line no-unused-vars
                 const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
                 return (
-                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);await loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
                       {col.photoUrl ? (
                         <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
@@ -3884,7 +3890,15 @@ return (
           
           <div style={{padding:'16px'}}>
             <h2 style={{fontSize:'22px',fontWeight:'700',marginBottom:'4px'}}>{viewingCollection.title}</h2>
-            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'8px'}}>by {viewingCollection.userName} • {viewingCollection.universityName}</div>
+            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'8px'}}>
+              by {viewingCollection.userName} • {viewingCollection.universityName}
+              {isCollectionAdmin(viewingCollection) && user?.uid !== viewingCollection.userId && (
+                <span style={{marginLeft:'8px',fontSize:'11px',background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👥 Co-admin</span>
+              )}
+              {user?.uid === viewingCollection.userId && (
+                <span style={{marginLeft:'8px',fontSize:'11px',background:'#fef3c7',color:'#92400e',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
+              )}
+            </div>
             
             <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
 
@@ -3933,7 +3947,7 @@ return (
             {/* Payment info (visible to buyers) — shows all payment methods */}
             {(()=>{
               const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber, name: viewingCollection.payName }] : []);
-              const isAdmin = user?.uid === viewingCollection.userId || (viewingCollection.adminEmails || []).includes(user?.email?.toLowerCase());
+              const isAdmin = isCollectionAdmin(viewingCollection);
               if (methods.length === 0) return null;
               return (
                 <div style={{background: isAdmin ? '#eff6ff' : '#f0fdf4',borderRadius:'12px',padding:'14px',marginBottom:'16px',border: isAdmin ? '1px solid #bfdbfe' : '1px solid #bbf7d0'}}>
@@ -3953,7 +3967,7 @@ return (
             })()}
 
             {/* Edit Collection (for creator) */}
-            {editingCollection && user?.uid === viewingCollection.userId && (
+            {editingCollection && isCollectionAdmin(viewingCollection) && (
               <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #3b82f6',marginBottom:'16px'}}>
                 <h3 style={{fontSize:'15px',fontWeight:'700',marginBottom:'12px'}}>Edit Collection</h3>
                 <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Title</label><input type="text" defaultValue={viewingCollection.title} id="edit-col-title" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginTop:'4px'}}/></div>
@@ -4069,8 +4083,8 @@ return (
               <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'16px'}}>Sign in to Order</button>
             )}
 
-            {/* ORDERS LIST — visible to collection creator AND admins */}
-            {user && (user.uid === viewingCollection.userId || (viewingCollection.adminEmails || []).includes(user.email?.toLowerCase())) && (
+            {/* ORDERS LIST — visible to collection creator AND co-admins */}
+            {isCollectionAdmin(viewingCollection) && (
               <div style={{marginBottom:'16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
                   <h3 style={{fontSize:'16px',fontWeight:'700'}}>Orders ({collectionOrders.length})</h3>
@@ -4164,8 +4178,8 @@ return (
               </div>
             )}
 
-            {/* Check own order status — for students */}
-            {user && user.uid !== viewingCollection.userId && collectionOrders.length > 0 && (
+            {/* Check own order status — for students (not admins) */}
+            {user && !isCollectionAdmin(viewingCollection) && collectionOrders.length > 0 && (
               <div style={{marginBottom:'16px'}}>
                 {collectionOrders.filter(o=>o.userId===user.uid).map(order=>(
                   <div key={order.id} style={{background:order.paid?'#d1fae5':'#fef3c7',borderRadius:'12px',padding:'14px',border:order.paid?'1px solid #6ee7b7':'1px solid #fde68a'}}>
