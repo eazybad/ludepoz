@@ -192,7 +192,7 @@ function App() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
-    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [{ network: "M-Pesa", number: "", name: "" }], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: []
+    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
@@ -1654,7 +1654,7 @@ useEffect(() => {
       setLastCreatedCollectionId(newColRef.id);
       setShowCreateCollectionSuccess(true);
       setSuccess("Collection created!");
-      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [{ network: "M-Pesa", number: "", name: "" }], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: [] });
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: [] });
       loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
@@ -3851,22 +3851,46 @@ return (
                 <div style={{marginBottom:'16px'}}>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>💰 Payment Methods</label>
                   <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'10px'}}>Add all the ways students can pay (M-Pesa, bank, etc.)</div>
+                  
                   {createCollectionData.paymentMethods.map((pm, idx) => (
-                    <div key={idx} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1px solid #e2e6ea'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
-                        <span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx + 1}</span>
-                        {createCollectionData.paymentMethods.length > 1 && <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Remove</button>}
+                    pm.saved ? (
+                      <div key={idx} style={{background:'#f0fdf4',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1px solid #bbf7d0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div>
+                          <div style={{fontSize:'14px',fontWeight:'600',color:'#166534'}}>✅ {pm.network}: {pm.number}</div>
+                          {pm.name && <div style={{fontSize:'12px',color:'#6b7280'}}>{pm.name}</div>}
+                        </div>
+                        <div style={{display:'flex',gap:'8px'}}>
+                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], saved: false}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#3b82f6',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>Edit</button>
+                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕</button>
+                        </div>
                       </div>
-                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
-                        {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","MixxbyYAS","CRDB","NMB","NBC","Selcom","Other"].map(net=>(
-                          <button key={net} onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], network: net}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>
-                        ))}
+                    ) : (
+                      <div key={idx} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #f59e0b'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                          <span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx + 1}</span>
+                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Cancel</button>
+                        </div>
+                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
+                          {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","MixxbyYAS","CRDB","NMB","NBC","Selcom","Other"].map(net=>(
+                            <button key={net} onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], network: net}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>
+                          ))}
+                        </div>
+                        <input type="tel" placeholder="Number / Account" value={pm.number} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], number: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
+                        <input type="text" placeholder="Account name (e.g. JOHN MWANGI)" value={pm.name} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], name: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
+                        <button onClick={()=>{
+                          if (!pm.number.trim()) { setError("Please enter a payment number"); return; }
+                          const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], saved: true}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});
+                        }} style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save Payment Method</button>
                       </div>
-                      <input type="tel" placeholder="Number / Account" value={pm.number} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], number: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
-                      <input type="text" placeholder="Account name (e.g. JOHN MWANGI)" value={pm.name} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], name: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
-                    </div>
+                    )
                   ))}
-                  <button onClick={()=>setCreateCollectionData({...createCollectionData, paymentMethods: [...createCollectionData.paymentMethods, { network: "M-Pesa", number: "", name: "" }]})} style={{padding:'8px 16px',background:'#fff',color:'#f59e0b',border:'1.5px dashed #f59e0b',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
+                  
+                  {/* Show Add button only when no unsaved method is open */}
+                  {(createCollectionData.paymentMethods.length === 0 || createCollectionData.paymentMethods.every(pm => pm.saved)) && (
+                    <button onClick={()=>setCreateCollectionData({...createCollectionData, paymentMethods: [...createCollectionData.paymentMethods, { network: "M-Pesa", number: "", name: "", saved: false }]})} style={{padding:'10px 16px',background:createCollectionData.paymentMethods.length===0?'#f59e0b':'#fff',color:createCollectionData.paymentMethods.length===0?'#0f1b2d':'#f59e0b',border:createCollectionData.paymentMethods.length===0?'none':'1.5px dashed #f59e0b',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',width:'100%'}}>
+                      {createCollectionData.paymentMethods.length === 0 ? '+ Add Payment Method' : '+ Add Another Payment Method'}
+                    </button>
+                  )}
                 </div>
 
                 {/* ADMIN EMAILS */}
