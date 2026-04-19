@@ -5,6 +5,21 @@ import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, 
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
+import {
+  useKampasikaSearch,
+  filterListings,
+  filterServices,
+  filterRooms,
+  filterCollections,
+  AISearchBadge,
+} from './kampasikaSearch';
+import {
+  compressImage,
+  COMPRESSION_PRESETS,
+  validateVideo,
+} from './imageCompression';
+import { computePriceSignal, PriceSignalBadge } from './priceSignal';
+
 const firebaseConfig = {
   apiKey: "AIzaSyANHZKNAfYFlEFAQ0lwG50PMOv2OBrEXEY",
   authDomain: "ludepoz.firebaseapp.com",
@@ -57,6 +72,17 @@ const generateSellerSlug = (name, uni) => {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 };
+
+const SEARCH_EXAMPLES = [
+  "Nini unatafuta leo?",
+  "Try: iphone 11 chini ya 400k",
+  "Try: tutor wa math",
+  "Try: chumba master karibu na ARU",
+  "Try: notes za calculus",
+  "Try: calculator ya engineering",
+  "Try: barber Kijitonyama",
+  "Try: laptop chini ya 600k",
+];
 
 const CATEGORIES = [
   { id: "all", name: "All", icon: "◻" },
@@ -115,8 +141,8 @@ function App() {
   const [success, setSuccess] = useState("");
   const [page, setPageRaw] = useState("home");
   const pageHistory = useRef(["home"]);
-  const isGoingBack = useRef(false);
-  
+  const isGoingBack = useRef(false)
+
   // Wrapper that tracks navigation history and pushes browser state
   const setPage = useCallback((newPage) => {
     setPageRaw(prev => {
@@ -194,6 +220,22 @@ function App() {
   const [createCollectionData, setCreateCollectionData] = useState({
     title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: []
   });
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+
+useEffect(() => {
+  if (searchQ) return;
+  const interval = setInterval(() => {
+    setPlaceholderIdx(i => (i + 1) % SEARCH_EXAMPLES.length);
+  }, 3500);
+  return () => clearInterval(interval);
+}, [searchQ]);
+  const {
+  parsed: aiParsed,
+  isAIActive,
+  isSearching: aiSearching,
+  search: runAISearch,
+  clear: clearAISearch,
+} = useKampasikaSearch(app);
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "" });
@@ -538,7 +580,8 @@ function App() {
       const photoUrls = [];
       if (createRoomData.photoFiles.length > 0) {
         for (let i = 0; i < createRoomData.photoFiles.length; i++) {
-          const file = createRoomData.photoFiles[i];
+          const original = createRoomData.photoFiles[i];
+          const { file } = await compressImage(original, COMPRESSION_PRESETS.room);
           const storageRef = ref(storage, `rooms/${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           photoUrls.push(await getDownloadURL(snapshot.ref));
@@ -546,6 +589,12 @@ function App() {
       }
       let videoUrl = null;
       if (createRoomData.videoFile) {
+        const vCheck = await validateVideo(createRoomData.videoFile);
+        if (!vCheck.ok) {
+          setError(vCheck.reason);
+          setUploading(false);
+          return;
+        }
         const vRef = ref(storage, `rooms/vid_${Date.now()}.mp4`);
         const vSnap = await uploadBytes(vRef, createRoomData.videoFile);
         videoUrl = await getDownloadURL(vSnap.ref);
@@ -1423,11 +1472,12 @@ useEffect(() => {
     setError("");
     setUploading(true);
     
-    // Upload multiple photos
+    // Upload multiple photos (compressed on-device first to save data + storage)
     const photoUrls = [];
     if (createData.photoFiles.length > 0) {
       for (let i = 0; i < createData.photoFiles.length; i++) {
-        const file = createData.photoFiles[i];
+        const original = createData.photoFiles[i];
+        const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
         const storageRef = ref(storage, `listings/${user.uid}_${Date.now()}_${i}.jpg`);
         const snapshot = await uploadBytes(storageRef, file);
         const url = await getDownloadURL(snapshot.ref);
@@ -1504,7 +1554,8 @@ useEffect(() => {
       const photoUrls = [];
       if (createServiceData.photoFiles.length > 0) {
         for (let i = 0; i < createServiceData.photoFiles.length; i++) {
-          const file = createServiceData.photoFiles[i];
+          const original = createServiceData.photoFiles[i];
+          const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `services/${user.uid}_${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           const url = await getDownloadURL(snapshot.ref);
@@ -1616,7 +1667,8 @@ useEffect(() => {
       const photoUrls = [];
       if (createCollectionData.photoFiles.length > 0) {
         for (let i = 0; i < createCollectionData.photoFiles.length; i++) {
-          const file = createCollectionData.photoFiles[i];
+          const original = createCollectionData.photoFiles[i];
+          const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           photoUrls.push(await getDownloadURL(snapshot.ref));
@@ -1810,8 +1862,9 @@ useEffect(() => {
     
     let avatarUrl = userAvatar;
     if (editProfileData.avatarFile) {
+      const { file: compressedAvatar } = await compressImage(editProfileData.avatarFile, COMPRESSION_PRESETS.avatar);
       const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
-      const snapshot = await uploadBytes(storageRef, editProfileData.avatarFile);
+      const snapshot = await uploadBytes(storageRef, compressedAvatar);
       avatarUrl = await getDownloadURL(snapshot.ref);
     }
 
@@ -1924,9 +1977,10 @@ useEffect(() => {
       // If rejected, allow resubmission (continue with upload)
     }
     
-    // Upload student ID
+    // Upload student ID (compressed — receipt preset preserves legibility)
+    const { file: compressedId } = await compressImage(studentIdFile, COMPRESSION_PRESETS.receipt);
     const storageRef = ref(storage, `verification/${user.uid}/${Date.now()}.jpg`);
-    const snapshot = await uploadBytes(storageRef, studentIdFile);
+    const snapshot = await uploadBytes(storageRef, compressedId);
     const idUrl = await getDownloadURL(snapshot.ref);
     
     console.log("Upload successful!", snapshot);
@@ -2320,26 +2374,38 @@ return (
         minWidth:0,
         display:'flex',
         alignItems:'center',
-        background:'#fff',
-        borderRadius:'24px',
-        padding:'8px 14px',
+        gap:'10px',
+        background:'#f7f8fa',
+        borderRadius:'26px',
+        padding:'9px 14px 9px 6px',
         marginLeft:'8px',
-        border:'1.5px solid #e2e6ea',
-        boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
-        transition:'box-shadow 0.2s ease'
+        border:'1px solid transparent',
+        transition:'all 0.2s ease'
       }}>
-        <span style={{fontSize:'14px',marginRight:'8px',flexShrink:0,opacity:0.5}}>🔍</span>
+        <div style={{
+          width:'28px',height:'28px',borderRadius:'50%',
+          background:'linear-gradient(135deg,#0f766e,#0d9488)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          color:'#fff',fontSize:'13px',fontWeight:'700',flexShrink:0,
+          letterSpacing:'-0.3px'
+        }}>K</div>
         <input
           type="text"
-          placeholder="Search kampasika..."
+          placeholder={SEARCH_EXAMPLES[placeholderIdx]}
           value={searchQ}
-          onChange={e=>setSearchQ(e.target.value)}
+onChange={e => {
+  setSearchQ(e.target.value);
+  if (!e.target.value.trim()) clearAISearch();
+}}
+onKeyDown={e => { if (e.key === 'Enter') runAISearch(searchQ); }}
+onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
           style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'#0f1b2d'}}
         />
       </div>
+      
     )}
     {!user && page === "home" && (
-      <button onClick={()=>setShowAuthModal(true)} style={{padding:'8px 14px',background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(45,212,191,0.25)'}}>Sign In</button>
+      <button onClick={()=>setShowAuthModal(true)} style={{padding:'8px 14px',background:'linear-gradient(135deg,#0f766e,#0d9488)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(15,118,110,0.25)'}}>Sign In</button>
     )}
   </div>
 )}
@@ -2532,7 +2598,16 @@ return (
     </button>
   ))}
 </div>
-
+<AISearchBadge
+  parsed={aiParsed}
+  isAIActive={isAIActive}
+  onClear={() => { clearAISearch(); setSearchQ(""); }}
+/>
+{aiSearching && (
+  <div style={{padding:'8px 16px',fontSize:'12px',color:'#0f766e'}}>
+    ✨ AI is thinking...
+  </div>
+)}
 {/* Collections & Orders compact strip */}
 {ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("collections")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
   <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
@@ -2549,15 +2624,20 @@ return (
 {homeTab==="goods"&&(<>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
-        {(() => {
-  const filteredListings = listings.filter(item => {
-    if (activeCat !== "all" && item.category !== activeCat) return false;
-    if (searchQ.trim()) {
-      const q = searchQ.toLowerCase();
-      return item.title.toLowerCase().includes(q) || item.description?.toLowerCase().includes(q);
-    }
-    return true;
-  });
+    {(() => {
+  let filteredListings = listings;
+  if (activeCat !== "all") {
+    filteredListings = filteredListings.filter(item => item.category === activeCat);
+  }
+  if (aiParsed && searchQ.trim()) {
+    filteredListings = filterListings(filteredListings, aiParsed);
+  } else if (searchQ.trim()) {
+    const q = searchQ.toLowerCase();
+    filteredListings = filteredListings.filter(item =>
+      item.title.toLowerCase().includes(q) ||
+      item.description?.toLowerCase().includes(q)
+    );
+  }
   return (
 <div style={{display:'flex',flexDirection:'column',margin:'0 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             {filteredListings.length===0?(
@@ -2618,7 +2698,10 @@ return (
   </div>
 ) : null}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
+                      <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
+                      <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />
+                    </div>
                     {openListingId === item.id && (
   <div style={{
     marginTop:'10px',
@@ -2724,9 +2807,18 @@ return (
 {/* ===== SERVICES TAB CONTENT ===== */}
 {homeTab==="services"&&(<>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-    <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+    <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
+      onChange={e => {
+        setServiceSearchQ(e.target.value);
+        if (!e.target.value.trim()) clearAISearch();
+      }}
+      onKeyDown={e => { if (e.key === 'Enter') runAISearch(serviceSearchQ); }}
+      onBlur={() => { if (serviceSearchQ.trim()) runAISearch(serviceSearchQ); }}
+      style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
     <span style={{fontSize:'16px'}}>🔍</span>
   </div>
+  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); }} />
+  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
     {SERVICE_CATEGORIES.map(c=>(
       <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#7c3aed':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #7c3aed':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
@@ -2736,14 +2828,18 @@ return (
     <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
   </div>
   {(()=>{
-    const filtered = services.filter(s => {
-      if (activeServiceCat !== "all" && s.category !== activeServiceCat) return false;
-      if (serviceSearchQ.trim()) {
-        const q = serviceSearchQ.toLowerCase();
-        return s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q);
-      }
-      return true;
-    });
+    let filtered = services;
+    if (activeServiceCat !== "all") {
+      filtered = filtered.filter(s => s.category === activeServiceCat);
+    }
+    if (aiParsed && serviceSearchQ.trim()) {
+      filtered = filterServices(filtered, aiParsed);
+    } else if (serviceSearchQ.trim()) {
+      const q = serviceSearchQ.toLowerCase();
+      filtered = filtered.filter(s =>
+        s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
+      );
+    }
     return (
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
         {filtered.length === 0 ? (
@@ -2786,9 +2882,18 @@ return (
 {/* ===== ROOMS TAB CONTENT ===== */}
 {ENABLE_ROOMS && homeTab==="rooms"&&(<>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-    <input type="text" placeholder="Search by location, area..." value={roomSearchQ} onChange={e=>setRoomSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+    <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
+      onChange={e => {
+        setRoomSearchQ(e.target.value);
+        if (!e.target.value.trim()) clearAISearch();
+      }}
+      onKeyDown={e => { if (e.key === 'Enter') runAISearch(roomSearchQ); }}
+      onBlur={() => { if (roomSearchQ.trim()) runAISearch(roomSearchQ); }}
+      style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
     <span style={{fontSize:'14px'}}>🔍</span>
   </div>
+  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); }} />
+  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
     {ROOM_TYPES.map(t=>(
       <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
@@ -2808,15 +2913,23 @@ return (
     </div>
   )}
   {(()=>{
-    const filtered = rooms.filter(r => {
-      if (roomFilterType !== "all" && r.roomType !== roomFilterType) return false;
-      if (roomFilterMaxPrice && r.price > parseInt(roomFilterMaxPrice)) return false;
-      if (roomSearchQ.trim()) {
-        const q = roomSearchQ.toLowerCase();
-        return r.location?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.landlordName?.toLowerCase().includes(q);
-      }
-      return true;
-    });
+    let filtered = rooms;
+    if (roomFilterType !== "all") {
+      filtered = filtered.filter(r => r.roomType === roomFilterType);
+    }
+    if (roomFilterMaxPrice) {
+      filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
+    }
+    if (aiParsed && roomSearchQ.trim()) {
+      filtered = filterRooms(filtered, aiParsed);
+    } else if (roomSearchQ.trim()) {
+      const q = roomSearchQ.toLowerCase();
+      filtered = filtered.filter(r =>
+        r.location?.toLowerCase().includes(q) ||
+        r.description?.toLowerCase().includes(q) ||
+        r.landlordName?.toLowerCase().includes(q)
+      );
+    }
     return filtered.length === 0 ? (
       <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
         <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
@@ -3490,9 +3603,18 @@ return (
 
           {/* Search */}
           <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-            <input type="text" placeholder="Search services..." value={serviceSearchQ} onChange={e=>setServiceSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+            <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
+              onChange={e => {
+                setServiceSearchQ(e.target.value);
+                if (!e.target.value.trim()) clearAISearch();
+              }}
+              onKeyDown={e => { if (e.key === 'Enter') runAISearch(serviceSearchQ); }}
+              onBlur={() => { if (serviceSearchQ.trim()) runAISearch(serviceSearchQ); }}
+              style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
             <span style={{fontSize:'16px'}}>🔍</span>
           </div>
+          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); }} />
+          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
 
           {/* Category Filter */}
           <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px'}}>
@@ -3503,14 +3625,18 @@ return (
 
           {/* Services Grid */}
           {(() => {
-            const filtered = services.filter(s => {
-              if (activeServiceCat !== "all" && s.category !== activeServiceCat) return false;
-              if (serviceSearchQ.trim()) {
-                const q = serviceSearchQ.toLowerCase();
-                return s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q);
-              }
-              return true;
-            });
+            let filtered = services;
+            if (activeServiceCat !== "all") {
+              filtered = filtered.filter(s => s.category === activeServiceCat);
+            }
+            if (aiParsed && serviceSearchQ.trim()) {
+              filtered = filterServices(filtered, aiParsed);
+            } else if (serviceSearchQ.trim()) {
+              const q = serviceSearchQ.toLowerCase();
+              filtered = filtered.filter(s =>
+                s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
+              );
+            }
             return (
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
                 {filtered.length === 0 ? (
@@ -3738,10 +3864,21 @@ return (
 
           {/* Search collections */}
           {collections.length > 2 && (
-            <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-              <input type="text" placeholder="Search collections..." value={collectionSearchQ} onChange={e=>setCollectionSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-              <span style={{fontSize:'14px'}}>🔍</span>
-            </div>
+            <>
+              <div style={{margin:'0 16px 8px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+                <input type="text" placeholder="Tafuta collection..." value={collectionSearchQ}
+                  onChange={e => {
+                    setCollectionSearchQ(e.target.value);
+                    if (!e.target.value.trim()) clearAISearch();
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') runAISearch(collectionSearchQ); }}
+                  onBlur={() => { if (collectionSearchQ.trim()) runAISearch(collectionSearchQ); }}
+                  style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+                <span style={{fontSize:'14px'}}>🔍</span>
+              </div>
+              <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); }} />
+              {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+            </>
           )}
 
           {collections.length === 0 ? (
@@ -3752,11 +3889,14 @@ return (
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {collections.filter(col => {
-                if (!collectionSearchQ.trim()) return true;
-                const q = collectionSearchQ.toLowerCase();
-                return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q);
-              }).map(col => {
+              {(aiParsed && collectionSearchQ.trim()
+                ? filterCollections(collections, aiParsed)
+                : collections.filter(col => {
+                    if (!collectionSearchQ.trim()) return true;
+                    const q = collectionSearchQ.toLowerCase();
+                    return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q);
+                  })
+              ).map(col => {
                 const target = col.expectedPeople || col.totalOrders || 0;
                 const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
                 // eslint-disable-next-line no-unused-vars
@@ -4235,9 +4375,18 @@ return (
 
           {/* Search & Filters */}
           <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-            <input type="text" placeholder="Search by location, area..." value={roomSearchQ} onChange={e=>setRoomSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+            <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
+              onChange={e => {
+                setRoomSearchQ(e.target.value);
+                if (!e.target.value.trim()) clearAISearch();
+              }}
+              onKeyDown={e => { if (e.key === 'Enter') runAISearch(roomSearchQ); }}
+              onBlur={() => { if (roomSearchQ.trim()) runAISearch(roomSearchQ); }}
+              style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
             <span style={{fontSize:'14px'}}>🔍</span>
           </div>
+          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); }} />
+          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
           <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
             {ROOM_TYPES.map(t=>(
               <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
@@ -4255,15 +4404,23 @@ return (
 
           {/* Room Cards */}
           {(() => {
-            const filtered = rooms.filter(r => {
-              if (roomFilterType !== "all" && r.roomType !== roomFilterType) return false;
-              if (roomFilterMaxPrice && r.price > parseInt(roomFilterMaxPrice)) return false;
-              if (roomSearchQ.trim()) {
-                const q = roomSearchQ.toLowerCase();
-                return r.location?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.landlordName?.toLowerCase().includes(q);
-              }
-              return true;
-            });
+            let filtered = rooms;
+            if (roomFilterType !== "all") {
+              filtered = filtered.filter(r => r.roomType === roomFilterType);
+            }
+            if (roomFilterMaxPrice) {
+              filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
+            }
+            if (aiParsed && roomSearchQ.trim()) {
+              filtered = filterRooms(filtered, aiParsed);
+            } else if (roomSearchQ.trim()) {
+              const q = roomSearchQ.toLowerCase();
+              filtered = filtered.filter(r =>
+                r.location?.toLowerCase().includes(q) ||
+                r.description?.toLowerCase().includes(q) ||
+                r.landlordName?.toLowerCase().includes(q)
+              );
+            }
             return filtered.length === 0 ? (
               <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
                 <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
@@ -4411,6 +4568,8 @@ return (
             <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
             
             <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#0ea5e9',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+            
+            <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />
             
             <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
             <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
