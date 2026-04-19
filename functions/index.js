@@ -148,3 +148,4 @@ exports.sendNewListingNotification = onDocumentCreated(
     }
   }
 );
+exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
