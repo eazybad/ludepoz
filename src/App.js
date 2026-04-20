@@ -80,8 +80,8 @@ const SEARCH_EXAMPLES = [
   "Try: chumba master karibu na ARU",
   "Try: notes za calculus",
   "Try: calculator ya engineering",
-  "Try: barber Kijitonyama",
-  "Try: laptop chini ya 600k",
+  "Try: barber survey",
+  "Try: laptop chini ya 300k",
 ];
 
 const CATEGORIES = [
@@ -134,7 +134,6 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
-  const [regNumber, setRegNumber] = useState("");
   const [signupUni, setSignupUni] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
