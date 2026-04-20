@@ -1318,10 +1318,6 @@ useEffect(() => {
       setError("Please select your university");
       return;
     }
-    if (!email.endsWith('@gmail.com')) {
-      setError("Please use a Gmail address (@gmail.com)");
-      return;
-    }
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
       return;
