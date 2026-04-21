@@ -134,7 +134,8 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
-  const [signupUni, setSignupUni] = useState("");
+  const [isStudent, setIsStudent] = useState(true);
+  const [signupLocation, setSignupLocation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -1313,38 +1314,45 @@ useEffect(() => {
       setError("Please fill in all required fields");
       return;
     }
-    if (!signupUni) {
-      setError("Please select your university");
-      return;
-    }
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
       return;
     }
-    const chosenUni = UNIVERSITIES.find(u => u.id === parseInt(signupUni));
-    if (!chosenUni) {
-      setError("Please select a valid university");
+    // Providers must give a location so buyers know where they are
+    if (!isStudent && !signupLocation.trim()) {
+      setError("Please tell us where you operate (e.g. Survey, Mlimani)");
       return;
     }
+    const chosenUni = DEFAULT_UNI;
     try {
       setError("");
       setLoading(true);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      await setDoc(doc(db, "users", userCredential.user.uid), {
+
+      const userDoc = {
         name: signupName.trim(),
         email: email,
-        universityId: chosenUni.id,
-        universityName: chosenUni.short,
+        accountType: isStudent ? "student" : "provider",
         avatarUrl: null,
         bio: "",
         services: [],
         createdAt: serverTimestamp()
-      });
-      
+      };
+
+      if (isStudent) {
+        userDoc.universityId = chosenUni.id;
+        userDoc.universityName = chosenUni.short;
+      } else {
+        userDoc.location = signupLocation.trim();
+      }
+
+      await setDoc(doc(db, "users", userCredential.user.uid), userDoc);
+
       setUserName(signupName.trim());
-      setSelectedUni(chosenUni);
-      setSuccess("Account created! Welcome to Kampasika 🎉");
+      setSelectedUni(chosenUni); // still default selected — search still works by uni filter
+      setSuccess(isStudent
+        ? "Account created! Welcome to Kampasika 🎉"
+        : "Akaunti yako imeundwa! Sasa wanafunzi wanaweza kukupata.");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
       setPage("home");
@@ -5882,7 +5890,50 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account to sell, message sellers, and save items</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email address</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>University *</label><select value={signupUni} onChange={e=>setSignupUni(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'#fff',color:signupUni?'#0f1b2d':'#8a9bb0'}}><option value="">Select your university...</option>{UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name} ({u.short})</option>)}</select></div>
+                <div style={{marginBottom:'12px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Are you a student?</label>
+                  <div style={{display:'flex',gap:'8px'}}>
+                    <button type="button" onClick={()=>setIsStudent(true)} style={{
+                      flex:1,
+                      padding:'12px',
+                      background: isStudent ? '#0f1b2d' : '#fff',
+                      color: isStudent ? '#fff' : '#0f1b2d',
+                      border: isStudent ? '1.5px solid #0f1b2d' : '1.5px solid #e2e6ea',
+                      borderRadius:'10px',
+                      fontSize:'14px',
+                      fontWeight:'600',
+                      cursor:'pointer',
+                      transition:'all 0.15s ease'
+                    }}>🎓 Yes, student</button>
+                    <button type="button" onClick={()=>setIsStudent(false)} style={{
+                      flex:1,
+                      padding:'12px',
+                      background: !isStudent ? '#0f1b2d' : '#fff',
+                      color: !isStudent ? '#fff' : '#0f1b2d',
+                      border: !isStudent ? '1.5px solid #0f1b2d' : '1.5px solid #e2e6ea',
+                      borderRadius:'10px',
+                      fontSize:'14px',
+                      fontWeight:'600',
+                      cursor:'pointer',
+                      transition:'all 0.15s ease'
+                    }}>💼 No, provider</button>
+                  </div>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'6px',lineHeight:1.4}}>
+                    {isStudent
+                      ? 'Students at ARU can sell goods, offer services, find rooms.'
+                      : 'Providers (barbers, tailors, landlords, vendors) can list services near campus.'}
+                  </div>
+                </div>
+
+                {!isStudent && (
+                  <div style={{marginBottom:'12px'}}>
+                    <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Your location / area *</label>
+                    <input type="text" placeholder="e.g. Kijitonyama, Mlimani, Ubungo" value={signupLocation} onChange={e=>setSignupLocation(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                    <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>
+                      So students can find you. Use the area name your customers know you by.
+                    </div>
+                  </div>
+                )}
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"Create Account"}</button>
                 <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
