@@ -128,6 +128,8 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [userName, setUserName] = useState("");
   const [userAvatar, setUserAvatar] = useState(null);
+  const [userAccountType, setUserAccountType] = useState("student");
+  const [userProviderLocation, setUserProviderLocation] = useState("");
   const [userBio, setUserBio] = useState("");
   const [userServices, setUserServices] = useState([]);
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
@@ -286,6 +288,7 @@ useEffect(() => {
   // Public seller profile state
   const [publicSeller, setPublicSeller] = useState(null);
   const [publicSellerListings, setPublicSellerListings] = useState([]);
+  const [publicSellerServices, setPublicSellerServices] = useState([]);
   const [publicSellerStats, setPublicSellerStats] = useState(null);
   const [publicSellerLoading, setPublicSellerLoading] = useState(false);
 
@@ -373,6 +376,20 @@ useEffect(() => {
       const soldSnap = await getDocs(soldQ);
       setPublicSellerStats({ sold: soldSnap.size });
 
+      // Load active services (portfolio)
+      try {
+        const svcQ = query(collection(db, "services"), where("userId", "==", userId), orderBy("createdAt", "desc"));
+        const svcSnap = await getDocs(svcQ);
+        setPublicSellerServices(svcSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      } catch(e) {
+        // Fallback if no orderBy index yet
+        try {
+          const svcQ2 = query(collection(db, "services"), where("userId", "==", userId));
+          const svcSnap2 = await getDocs(svcQ2);
+          setPublicSellerServices(svcSnap2.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch(e2) { setPublicSellerServices([]); }
+      }
+
       setPage("seller");
     } catch (err) { console.error("Error loading public seller:", err); }
     finally { setPublicSellerLoading(false); }
@@ -385,6 +402,7 @@ useEffect(() => {
   const closeSellerProfile = () => {
     setPublicSeller(null);
     setPublicSellerListings([]);
+    setPublicSellerServices([]);
     setPublicSellerStats(null);
     window.history.pushState({}, '', '/');
     document.title = 'Kampasika - Student Marketplace';
@@ -754,6 +772,8 @@ const requestNotificationPermission = async (currentUser) => {
       setUserAvatar(userData.avatarUrl || null);
       setUserBio(userData.bio || "");
       setUserServices(userData.services || []);
+      setUserAccountType(userData.accountType || "student");
+      setUserProviderLocation(userData.location || "");
       setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
       setIsVerified(userData.verified || false);
       
@@ -1569,6 +1589,8 @@ useEffect(() => {
         userId: user.uid,
         userName: userName,
         userAvatar: userAvatar,
+        accountType: userAccountType || "student",
+        providerLocation: userAccountType === "provider" ? (userProviderLocation || "") : "",
         universityId: selectedUni.id,
         universityName: selectedUni.short,
         category: createServiceData.category,
@@ -2865,12 +2887,17 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
               )}
               <div style={{padding:'10px'}}>
                 <div style={{fontSize:'13px',fontWeight:'600',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
-                <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'6px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px'}}>
                   <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#7c3aed':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
                     {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
                   </div>
                   <span style={{fontSize:'11px',color:'#6b7280'}}>{svc.userName}</span>
                 </div>
+                {svc.accountType === "provider" ? (
+                  <div style={{fontSize:'10px',color:'#6b7280',marginBottom:'4px'}}>💼 Near campus{svc.providerLocation ? ` · ${svc.providerLocation}` : ''}</div>
+                ) : (
+                  <div style={{fontSize:'10px',color:'#0f766e',fontWeight:'600',marginBottom:'4px'}}>🎓 {svc.universityName || 'ARU'} Student</div>
+                )}
                 <div style={{fontSize:'12px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
               </div>
             </div>
@@ -4666,7 +4693,20 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
               {!publicSeller.avatarUrl&&publicSeller.name.split(" ").map(n=>n[0]).join("")}
             </div>
             <h1 style={{fontFamily:'serif',fontSize:'24px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{publicSeller.name}</h1>
-            {publicSeller.universityName && <div style={{fontSize:'13px',color:'#2dd4bf',marginBottom:'8px'}}>{publicSeller.universityName} Student</div>}
+            
+            {/* Account type badge — student gets brand color, provider gets neutral */}
+            {publicSeller.accountType === "provider" ? (
+              <div style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'rgba(255,255,255,0.12)',padding:'4px 12px',borderRadius:'14px',fontSize:'12px',color:'rgba(255,255,255,0.85)',fontWeight:'500',marginBottom:'8px'}}>
+                <span>💼</span>
+                <span>Near campus</span>
+                {publicSeller.location && <span style={{opacity:0.75}}>· {publicSeller.location}</span>}
+              </div>
+            ) : (
+              <div style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'rgba(45,212,191,0.18)',padding:'4px 12px',borderRadius:'14px',fontSize:'12px',color:'#2dd4bf',fontWeight:'600',marginBottom:'8px'}}>
+                <span>🎓</span>
+                <span>{publicSeller.universityName || 'ARU'} Student</span>
+              </div>
+            )}
             
             {/* Bio — HIDDEN FOR NOW, uncomment to re-enable */}
             {/* {publicSeller.bio && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.75)',marginBottom:'12px',lineHeight:'1.5',maxWidth:'320px',margin:'0 auto 12px'}}>{publicSeller.bio}</div>} */}
@@ -4682,12 +4722,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             )}
             
             {/* Stats row */}
-            <div style={{display:'flex',justifyContent:'center',gap:'24px',marginBottom:'16px'}}>
+            <div style={{display:'flex',justifyContent:'center',gap:'20px',marginBottom:'16px'}}>
               <div style={{textAlign:'center'}}>
                 <div style={{fontSize:'20px',fontWeight:'700',color:'#fff'}}>{publicSellerListings.length}</div>
-                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Active</div>
+                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Goods</div>
               </div>
-              {publicSellerStats && (
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:'20px',fontWeight:'700',color:'#fff'}}>{publicSellerServices.length}</div>
+                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Services</div>
+              </div>
+              {publicSellerStats && publicSellerStats.sold > 0 && (
                 <div style={{textAlign:'center'}}>
                   <div style={{fontSize:'20px',fontWeight:'700',color:'#2dd4bf'}}>{publicSellerStats.sold}</div>
                   <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Sold</div>
@@ -4724,14 +4768,18 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
           {/* Seller's Listings */}
           <div style={{padding:'16px'}}>
             <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'12px'}}>
-              {publicSellerListings.length > 0 ? `${publicSeller.name}'s Listings` : 'No Active Listings'}
+              {publicSellerListings.length > 0
+                ? `${publicSeller.name}'s ${publicSeller.accountType === "provider" ? "Items" : "Listings"}`
+                : (publicSellerServices.length > 0 ? '' : 'No active listings or services')}
             </h3>
             
             {publicSellerListings.length === 0 ? (
-              <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
-                <div style={{fontSize:'40px',marginBottom:'12px'}}>📭</div>
-                <div style={{fontSize:'14px',color:'#8a9bb0'}}>This seller has no active listings right now</div>
-              </div>
+              publicSellerServices.length === 0 ? (
+                <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
+                  <div style={{fontSize:'40px',marginBottom:'12px'}}>📭</div>
+                  <div style={{fontSize:'14px',color:'#8a9bb0'}}>Nothing active right now</div>
+                </div>
+              ) : null
             ) : (
               <div style={{display:'flex',flexDirection:'column'}}>
                 {publicSellerListings.map((item, idx) => (
@@ -4756,6 +4804,40 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
               </div>
             )}
           </div>
+
+          {/* Services Portfolio */}
+          {publicSellerServices.length > 0 && (
+            <div style={{padding:'0 16px 16px'}}>
+              <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'12px',color:'#0f1b2d'}}>
+                Services offered
+              </h3>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'10px'}}>
+                {publicSellerServices.map((svc) => {
+                  const cat = SERVICE_CATEGORIES.find(c=>c.id===svc.category);
+                  const cover = (svc.photos && svc.photos[0]) || svc.photoUrl;
+                  return (
+                    <div key={svc.id} onClick={()=>{closeSellerProfile();setTimeout(()=>setViewingService(svc),100);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                      {cover ? (
+                        <img src={cover} alt={svc.title} style={{width:'100%',height:'110px',objectFit:'cover'}}/>
+                      ) : (
+                        <div style={{width:'100%',height:'110px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'36px'}}>
+                          {cat?.icon || '⚡'}
+                        </div>
+                      )}
+                      <div style={{padding:'10px'}}>
+                        <div style={{fontSize:'12px',color:'#7c3aed',fontWeight:'600',marginBottom:'2px'}}>{cat?.name}</div>
+                        <div style={{fontSize:'13px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
+                        <div style={{fontSize:'13px',fontWeight:'700',color:'#7c3aed'}}>
+                          {svc.priceType==="starting"?"From ":""}{svc.price?.toLocaleString()} TSh
+                          {svc.priceType==="negotiable" && <span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'400'}}> · negotiable</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* SEO-friendly footer text */}
           <div style={{padding:'16px',textAlign:'center',fontSize:'12px',color:'#8a9bb0',lineHeight:'1.6'}}>
