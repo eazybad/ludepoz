@@ -212,7 +212,7 @@ function App() {
   const [viewingService, setViewingService] = useState(null);
   const [createServiceData, setCreateServiceData] = useState({
     category: "", title: "", desc: "", price: "", priceType: "fixed",
-    whatsapp: "", location: "", photoFiles: [], photoPreviews: []
+    whatsapp: "", location: "", availability: "", photoFiles: [], photoPreviews: []
   });
   const [showCreateServiceSuccess, setShowCreateServiceSuccess] = useState(false);
   // Collections/Orders tracker state
@@ -1599,6 +1599,7 @@ useEffect(() => {
         price: parseInt(createServiceData.price),
         priceType: createServiceData.priceType || "fixed",
         location: (createServiceData.location || "").trim(),
+        availability: (createServiceData.availability || "").trim(),
         whatsapp: (createServiceData.whatsapp || "").trim(),
         photoUrl: photoUrls[0] || null,
         photos: photoUrls,
@@ -1611,7 +1612,7 @@ useEffect(() => {
       setSuccess("Service listed successfully!");
       setCreateServiceData({
         category: "", title: "", desc: "", price: "", priceType: "fixed",
-        whatsapp: "", location: "", photoFiles: [], photoPreviews: []
+        whatsapp: "", location: "", availability: "", photoFiles: [], photoPreviews: []
       });
       loadServices();
     } catch (err) {
@@ -3766,6 +3767,8 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Where? (optional)</label><input type="text" placeholder="e.g. Room 23 Block B, Campus Gate" value={createServiceData.location} onChange={e=>setCreateServiceData({...createServiceData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>🕐 Working hours (optional)</label><input type="text" placeholder="e.g. Mon–Sat, 9am–7pm" value={createServiceData.availability} onChange={e=>setCreateServiceData({...createServiceData,availability:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>When are customers welcome to reach out?</div></div>
+
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createServiceData.whatsapp} onChange={e=>setCreateServiceData({...createServiceData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let customers contact you directly on WhatsApp</div></div>
 
                 <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
@@ -3820,6 +3823,7 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
               <span style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'20px',color:'#6b7280'}}>🎓 {viewingService.universityName}</span>
               {viewingService.location && <span style={{fontSize:'12px',background:'#f0fdfa',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
+              {viewingService.availability && <span style={{fontSize:'12px',background:'#fef3c7',padding:'6px 12px',borderRadius:'20px',color:'#92400e',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
             </div>
 
             {/* Description */}
