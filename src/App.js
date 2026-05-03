@@ -179,6 +179,7 @@ function App() {
   const [profileTab, setProfileTab] = useState("listings");
   const [activeCat, setActiveCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
+  const [committedSearchQ, setCommittedSearchQ] = useState("");
   const [listings, setListings] = useState([]);
   const [cart, setCart] = useState([]);
   const [createData, setCreateData] = useState({ 
@@ -209,6 +210,7 @@ function App() {
   const [services, setServices] = useState([]);
   const [activeServiceCat, setActiveServiceCat] = useState("all");
   const [serviceSearchQ, setServiceSearchQ] = useState("");
+  const [committedServiceSearchQ, setCommittedServiceSearchQ] = useState("");
   const [viewingService, setViewingService] = useState(null);
   const [createServiceData, setCreateServiceData] = useState({
     category: "", title: "", desc: "", price: "", priceType: "fixed",
@@ -244,11 +246,13 @@ useEffect(() => {
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
+  const [committedCollectionSearchQ, setCommittedCollectionSearchQ] = useState("");
   const [orderSearchQ, setOrderSearchQ] = useState("");
   const [editingCollection, setEditingCollection] = useState(false);
   // Rooms & Housing state
   const [rooms, setRooms] = useState([]);
   const [roomSearchQ, setRoomSearchQ] = useState("");
+  const [committedRoomSearchQ, setCommittedRoomSearchQ] = useState("");
   const [roomFilterType, setRoomFilterType] = useState("all");
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
@@ -297,6 +301,10 @@ useEffect(() => {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+
+  // Saved search alerts — track which queries the user has already subscribed to in this session
+  const [savedAlerts, setSavedAlerts] = useState(new Set());
+  const [savingAlert, setSavingAlert] = useState(false);
   
   // eslint-disable-next-line no-unused-vars
   const isExpired = (listing) => {
@@ -398,6 +406,30 @@ useEffect(() => {
   // Open seller profile from a listing card
   const openSellerProfile = (listing) => { loadPublicSellerProfile(listing.userId); };
 
+  // ─── Search commit helpers ───
+  // Commit a search: lock in the query so filters use it, then run AI if needed.
+  // Used by Enter key and the search icon click. Typing alone does NOT commit.
+  const commitListingsSearch = (q) => {
+    setCommittedSearchQ(q);
+    if (q && q.trim()) runAISearch(q);
+    else clearAISearch();
+  };
+  const commitServicesSearch = (q) => {
+    setCommittedServiceSearchQ(q);
+    if (q && q.trim()) runAISearch(q);
+    else clearAISearch();
+  };
+  const commitRoomsSearch = (q) => {
+    setCommittedRoomSearchQ(q);
+    if (q && q.trim()) runAISearch(q);
+    else clearAISearch();
+  };
+  const commitCollectionsSearch = (q) => {
+    setCommittedCollectionSearchQ(q);
+    if (q && q.trim()) runAISearch(q);
+    else clearAISearch();
+  };
+
   // Close seller profile and restore URL
   const closeSellerProfile = () => {
     setPublicSeller(null);
@@ -408,6 +440,95 @@ useEffect(() => {
     document.title = 'Kampasika - Student Marketplace';
     setPage("home");
   };
+
+  // ─── Saved-search alerts ───
+  // When a user searches for something we don't have, they can tap "Notify me"
+  // and we save the query. This data is gold — it tells you exactly what supply
+  // you should be recruiting. View it in Firestore → searchAlerts collection.
+  const saveSearchAlert = async (kind, query, parsedFilters) => {
+    if (!user) {
+      requireAuth("save_alert", () => saveSearchAlert(kind, query, parsedFilters));
+      return;
+    }
+    if (!query || !query.trim()) return;
+    const alertKey = `${kind}:${query.toLowerCase().trim()}`;
+    if (savedAlerts.has(alertKey)) return; // already saved this session
+
+    setSavingAlert(true);
+    try {
+      await addDoc(collection(db, "searchAlerts"), {
+        userId: user.uid,
+        userName: userName || "",
+        userEmail: user.email || "",
+        kind, // "listing" | "service" | "room" | "collection"
+        query: query.trim(),
+        parsedFilters: parsedFilters || null,
+        universityId: selectedUni?.id || null,
+        notified: false,
+        createdAt: serverTimestamp(),
+      });
+      setSavedAlerts(new Set([...savedAlerts, alertKey]));
+      setSuccess("✓ Sawa! Tutakutaarifu kupitia app utakapoonekana.");
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      console.error("Save alert failed:", err);
+      setError("Imeshindwa kuhifadhi. Jaribu tena.");
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
+  // Reusable empty-results component for any tab.
+  // Shows a friendly message when search returned nothing,
+  // and a "Notify me" button if there was an actual query the user typed.
+  const EmptyResults = ({ kind, query, parsedFilters, fallbackTitle, fallbackHint }) => {
+    const hasQuery = query && query.trim().length > 0;
+    const alertKey = hasQuery ? `${kind}:${query.toLowerCase().trim()}` : null;
+    const alreadySaved = alertKey && savedAlerts.has(alertKey);
+
+    if (!hasQuery) {
+      // No active search — just an empty list. Use the original fallback.
+      return (
+        <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+          <div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div>
+          <div style={{fontSize:'16px',fontWeight:'600'}}>{fallbackTitle || 'Hakuna kitu hapa bado'}</div>
+          {fallbackHint && <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>{fallbackHint}</div>}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
+        <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
+        <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
+          Hakuna matokeo sasa hivi
+        </div>
+        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
+          Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
+        </div>
+        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
+          (We'll notify you when something matching is listed)
+        </div>
+        <button
+          onClick={() => saveSearchAlert(kind, query, parsedFilters)}
+          disabled={alreadySaved || savingAlert}
+          style={{
+            padding:'12px 24px',
+            background: alreadySaved ? '#e5e7eb' : 'linear-gradient(135deg,#0f766e,#0d9488)',
+            color: alreadySaved ? '#6b7280' : '#fff',
+            border:'none',
+            borderRadius:'24px',
+            fontSize:'14px',
+            fontWeight:'700',
+            cursor: alreadySaved ? 'default' : 'pointer',
+            boxShadow: alreadySaved ? 'none' : '0 2px 10px rgba(15,118,110,0.2)',
+          }}>
+          {savingAlert ? '...' : alreadySaved ? '✓ Imehifadhiwa' : '🔔 Niarifu kikipatikana'}
+        </button>
+      </div>
+    );
+  };
+
 
   const getTimeUntilExpiry = (listing) => {
     if (!listing.expiresAt) return "";
@@ -2418,14 +2539,29 @@ return (
           type="text"
           placeholder={SEARCH_EXAMPLES[placeholderIdx]}
           value={searchQ}
-onChange={e => {
-  setSearchQ(e.target.value);
-  if (!e.target.value.trim()) clearAISearch();
-}}
-onKeyDown={e => { if (e.key === 'Enter') runAISearch(searchQ); }}
-onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
+          onChange={e => {
+            setSearchQ(e.target.value);
+            // If user clears the box, clear any committed search & AI state too
+            if (!e.target.value.trim()) {
+              setCommittedSearchQ("");
+              clearAISearch();
+            }
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') commitListingsSearch(searchQ); }}
           style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'#0f1b2d'}}
         />
+        <button
+          type="button"
+          onClick={() => commitListingsSearch(searchQ)}
+          aria-label="Search"
+          style={{
+            width:'30px',height:'30px',borderRadius:'50%',
+            background:'transparent',border:'none',cursor:'pointer',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            flexShrink:0,padding:0,color:'#6b7280'
+          }}>
+          🔍
+        </button>
       </div>
       
     )}
@@ -2626,7 +2762,7 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
 <AISearchBadge
   parsed={aiParsed}
   isAIActive={isAIActive}
-  onClear={() => { clearAISearch(); setSearchQ(""); }}
+  onClear={() => { clearAISearch(); setSearchQ(""); setCommittedSearchQ(""); }}
 />
 {aiSearching && (
   <div style={{padding:'8px 16px',fontSize:'12px',color:'#0f766e'}}>
@@ -2654,10 +2790,10 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
   if (activeCat !== "all") {
     filteredListings = filteredListings.filter(item => item.category === activeCat);
   }
-  if (aiParsed && searchQ.trim()) {
+  if (aiParsed && committedSearchQ.trim()) {
     filteredListings = filterListings(filteredListings, aiParsed);
-  } else if (searchQ.trim()) {
-    const q = searchQ.toLowerCase();
+  } else if (committedSearchQ.trim()) {
+    const q = committedSearchQ.toLowerCase();
     filteredListings = filteredListings.filter(item =>
       item.title.toLowerCase().includes(q) ||
       item.description?.toLowerCase().includes(q)
@@ -2666,7 +2802,8 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
   return (
 <div style={{display:'flex',flexDirection:'column',margin:'0 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             {filteredListings.length===0?(
-              <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div><div style={{fontSize:'16px',fontWeight:'600'}}>No listings yet</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to post in {selectedUni?.short}!</div></div>
+              <EmptyResults kind="listing" query={committedSearchQ} parsedFilters={aiParsed?.filters}
+                fallbackTitle="No listings yet" fallbackHint={`Be the first to post in ${selectedUni?.short}!`} />
             ):(
               filteredListings.map((item,idx)=>(
                 <div key={item.id}  style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:'1px solid #f0f0f0',boxShadow:'0 1px 6px rgba(0,0,0,0.04)'}}>
@@ -2835,14 +2972,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
     <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
       onChange={e => {
         setServiceSearchQ(e.target.value);
-        if (!e.target.value.trim()) clearAISearch();
+        if (!e.target.value.trim()) {
+          setCommittedServiceSearchQ("");
+          clearAISearch();
+        }
       }}
-      onKeyDown={e => { if (e.key === 'Enter') runAISearch(serviceSearchQ); }}
-      onBlur={() => { if (serviceSearchQ.trim()) runAISearch(serviceSearchQ); }}
+      onKeyDown={e => { if (e.key === 'Enter') commitServicesSearch(serviceSearchQ); }}
       style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-    <span style={{fontSize:'16px'}}>🔍</span>
+    <button type="button" onClick={() => commitServicesSearch(serviceSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'16px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
   </div>
-  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); }} />
+  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
     {SERVICE_CATEGORIES.map(c=>(
@@ -2857,10 +2996,10 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
     if (activeServiceCat !== "all") {
       filtered = filtered.filter(s => s.category === activeServiceCat);
     }
-    if (aiParsed && serviceSearchQ.trim()) {
+    if (aiParsed && committedServiceSearchQ.trim()) {
       filtered = filterServices(filtered, aiParsed);
-    } else if (serviceSearchQ.trim()) {
-      const q = serviceSearchQ.toLowerCase();
+    } else if (committedServiceSearchQ.trim()) {
+      const q = committedServiceSearchQ.toLowerCase();
       filtered = filtered.filter(s =>
         s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
       );
@@ -2868,11 +3007,14 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
     return (
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
         {filtered.length === 0 ? (
-          <div style={{gridColumn:'1/-1',textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
-            <div style={{fontSize:'40px',marginBottom:'16px'}}>🔍</div>
-            <div style={{fontSize:'16px',fontWeight:'600'}}>No services yet</div>
-            <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to offer a service!</div>
-            <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+          <div style={{gridColumn:'1/-1'}}>
+            <EmptyResults kind="service" query={committedServiceSearchQ} parsedFilters={aiParsed?.filters}
+              fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
+            {!committedServiceSearchQ?.trim() && (
+              <div style={{textAlign:'center',marginTop:'12px'}}>
+                <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+              </div>
+            )}
           </div>
         ) : (
           filtered.map(svc => (
@@ -2915,14 +3057,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
     <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
       onChange={e => {
         setRoomSearchQ(e.target.value);
-        if (!e.target.value.trim()) clearAISearch();
+        if (!e.target.value.trim()) {
+          setCommittedRoomSearchQ("");
+          clearAISearch();
+        }
       }}
-      onKeyDown={e => { if (e.key === 'Enter') runAISearch(roomSearchQ); }}
-      onBlur={() => { if (roomSearchQ.trim()) runAISearch(roomSearchQ); }}
+      onKeyDown={e => { if (e.key === 'Enter') commitRoomsSearch(roomSearchQ); }}
       style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-    <span style={{fontSize:'14px'}}>🔍</span>
+    <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
   </div>
-  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); }} />
+  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
     {ROOM_TYPES.map(t=>(
@@ -2950,10 +3094,10 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
     if (roomFilterMaxPrice) {
       filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
     }
-    if (aiParsed && roomSearchQ.trim()) {
+    if (aiParsed && committedRoomSearchQ.trim()) {
       filtered = filterRooms(filtered, aiParsed);
-    } else if (roomSearchQ.trim()) {
-      const q = roomSearchQ.toLowerCase();
+    } else if (committedRoomSearchQ.trim()) {
+      const q = committedRoomSearchQ.toLowerCase();
       filtered = filtered.filter(r =>
         r.location?.toLowerCase().includes(q) ||
         r.description?.toLowerCase().includes(q) ||
@@ -2961,11 +3105,14 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
       );
     }
     return filtered.length === 0 ? (
-      <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
-        <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
-        <div style={{fontSize:'16px',fontWeight:'600'}}>No rooms listed yet</div>
-        <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Know a landlord? Help them list their room!</div>
-        <button onClick={()=>setPage("createRoom")} style={{marginTop:'16px',padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+      <div style={{margin:'0 16px'}}>
+        <EmptyResults kind="room" query={committedRoomSearchQ} parsedFilters={aiParsed?.filters}
+          fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
+        {!committedRoomSearchQ?.trim() && (
+          <div style={{textAlign:'center',marginTop:'12px'}}>
+            <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+          </div>
+        )}
       </div>
     ) : (
       <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -3636,14 +3783,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
               onChange={e => {
                 setServiceSearchQ(e.target.value);
-                if (!e.target.value.trim()) clearAISearch();
+                if (!e.target.value.trim()) {
+                  setCommittedServiceSearchQ("");
+                  clearAISearch();
+                }
               }}
-              onKeyDown={e => { if (e.key === 'Enter') runAISearch(serviceSearchQ); }}
-              onBlur={() => { if (serviceSearchQ.trim()) runAISearch(serviceSearchQ); }}
+              onKeyDown={e => { if (e.key === 'Enter') commitServicesSearch(serviceSearchQ); }}
               style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-            <span style={{fontSize:'16px'}}>🔍</span>
+            <button type="button" onClick={() => commitServicesSearch(serviceSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'16px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
           </div>
-          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); }} />
+          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
           {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
 
           {/* Category Filter */}
@@ -3659,10 +3808,10 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             if (activeServiceCat !== "all") {
               filtered = filtered.filter(s => s.category === activeServiceCat);
             }
-            if (aiParsed && serviceSearchQ.trim()) {
+            if (aiParsed && committedServiceSearchQ.trim()) {
               filtered = filterServices(filtered, aiParsed);
-            } else if (serviceSearchQ.trim()) {
-              const q = serviceSearchQ.toLowerCase();
+            } else if (committedServiceSearchQ.trim()) {
+              const q = committedServiceSearchQ.toLowerCase();
               filtered = filtered.filter(s =>
                 s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
               );
@@ -3670,11 +3819,14 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             return (
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
                 {filtered.length === 0 ? (
-                  <div style={{gridColumn:'1/-1',textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
-                    <div style={{fontSize:'40px',marginBottom:'16px'}}>🔍</div>
-                    <div style={{fontSize:'16px',fontWeight:'600'}}>No services yet</div>
-                    <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Be the first to offer a service!</div>
-                    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                  <div style={{gridColumn:'1/-1'}}>
+                    <EmptyResults kind="service" query={committedServiceSearchQ} parsedFilters={aiParsed?.filters}
+                      fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
+                    {!committedServiceSearchQ?.trim() && (
+                      <div style={{textAlign:'center',marginTop:'12px'}}>
+                        <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   filtered.map(svc => (
@@ -3902,14 +4054,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
                 <input type="text" placeholder="Tafuta collection..." value={collectionSearchQ}
                   onChange={e => {
                     setCollectionSearchQ(e.target.value);
-                    if (!e.target.value.trim()) clearAISearch();
+                    if (!e.target.value.trim()) {
+                      setCommittedCollectionSearchQ("");
+                      clearAISearch();
+                    }
                   }}
-                  onKeyDown={e => { if (e.key === 'Enter') runAISearch(collectionSearchQ); }}
-                  onBlur={() => { if (collectionSearchQ.trim()) runAISearch(collectionSearchQ); }}
+                  onKeyDown={e => { if (e.key === 'Enter') commitCollectionsSearch(collectionSearchQ); }}
                   style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-                <span style={{fontSize:'14px'}}>🔍</span>
+                <button type="button" onClick={() => commitCollectionsSearch(collectionSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
               </div>
-              <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); }} />
+              <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }} />
               {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
             </>
           )}
@@ -3922,11 +4076,11 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {(aiParsed && collectionSearchQ.trim()
+              {(aiParsed && committedCollectionSearchQ.trim()
                 ? filterCollections(collections, aiParsed)
                 : collections.filter(col => {
-                    if (!collectionSearchQ.trim()) return true;
-                    const q = collectionSearchQ.toLowerCase();
+                    if (!committedCollectionSearchQ.trim()) return true;
+                    const q = committedCollectionSearchQ.toLowerCase();
                     return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q);
                   })
               ).map(col => {
@@ -4411,14 +4565,16 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
               onChange={e => {
                 setRoomSearchQ(e.target.value);
-                if (!e.target.value.trim()) clearAISearch();
+                if (!e.target.value.trim()) {
+                  setCommittedRoomSearchQ("");
+                  clearAISearch();
+                }
               }}
-              onKeyDown={e => { if (e.key === 'Enter') runAISearch(roomSearchQ); }}
-              onBlur={() => { if (roomSearchQ.trim()) runAISearch(roomSearchQ); }}
+              onKeyDown={e => { if (e.key === 'Enter') commitRoomsSearch(roomSearchQ); }}
               style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-            <span style={{fontSize:'14px'}}>🔍</span>
+            <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
           </div>
-          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); }} />
+          <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
           {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
           <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
             {ROOM_TYPES.map(t=>(
@@ -4444,10 +4600,10 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
             if (roomFilterMaxPrice) {
               filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
             }
-            if (aiParsed && roomSearchQ.trim()) {
+            if (aiParsed && committedRoomSearchQ.trim()) {
               filtered = filterRooms(filtered, aiParsed);
-            } else if (roomSearchQ.trim()) {
-              const q = roomSearchQ.toLowerCase();
+            } else if (committedRoomSearchQ.trim()) {
+              const q = committedRoomSearchQ.toLowerCase();
               filtered = filtered.filter(r =>
                 r.location?.toLowerCase().includes(q) ||
                 r.description?.toLowerCase().includes(q) ||
@@ -4455,11 +4611,14 @@ onBlur={() => { if (searchQ.trim()) runAISearch(searchQ); }}
               );
             }
             return filtered.length === 0 ? (
-              <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
-                <div style={{fontSize:'40px',marginBottom:'16px'}}>🏠</div>
-                <div style={{fontSize:'16px',fontWeight:'600'}}>No rooms listed yet</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Know a landlord? Help them list their room!</div>
-                <button onClick={()=>setPage("createRoom")} style={{marginTop:'16px',padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <div style={{margin:'0 16px'}}>
+                <EmptyResults kind="room" query={committedRoomSearchQ} parsedFilters={aiParsed?.filters}
+                  fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
+                {!committedRoomSearchQ?.trim() && (
+                  <div style={{textAlign:'center',marginTop:'12px'}}>
+                    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
