@@ -121,6 +121,25 @@ const ROOM_AMENITIES = [
   { id: "security", label: "Ulinzi (Security)", icon: "🔒" },
 ];
 
+// ─── Feature flags ───
+// Toggle for the price-signal badges — disabled while inventory is sparse.
+// Re-enable when each category has 30+ listings (otherwise medians are noise).
+const SHOW_PRICE_SIGNAL = false;
+
+// Resilient compression wrapper. If compression fails (HEIC images, very large
+// files, browser memory limits), fall back to the ORIGINAL file so the upload
+// still succeeds. The user gets their listing/photo posted; they just don't
+// get the size benefit on that one image.
+async function safeCompress(file, preset) {
+  try {
+    const { file: compressed } = await compressImage(file, preset);
+    return { file: compressed, fallback: false };
+  } catch (err) {
+    console.warn("Compression failed, uploading original:", err.message);
+    return { file, fallback: true };
+  }
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -720,7 +739,7 @@ useEffect(() => {
       if (createRoomData.photoFiles.length > 0) {
         for (let i = 0; i < createRoomData.photoFiles.length; i++) {
           const original = createRoomData.photoFiles[i];
-          const { file } = await compressImage(original, COMPRESSION_PRESETS.room);
+          const { file } = await safeCompress(original, COMPRESSION_PRESETS.room);
           const storageRef = ref(storage, `rooms/${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           photoUrls.push(await getDownloadURL(snapshot.ref));
@@ -1620,7 +1639,7 @@ useEffect(() => {
     if (createData.photoFiles.length > 0) {
       for (let i = 0; i < createData.photoFiles.length; i++) {
         const original = createData.photoFiles[i];
-        const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
+        const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
         const storageRef = ref(storage, `listings/${user.uid}_${Date.now()}_${i}.jpg`);
         const snapshot = await uploadBytes(storageRef, file);
         const url = await getDownloadURL(snapshot.ref);
@@ -1698,7 +1717,7 @@ useEffect(() => {
       if (createServiceData.photoFiles.length > 0) {
         for (let i = 0; i < createServiceData.photoFiles.length; i++) {
           const original = createServiceData.photoFiles[i];
-          const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
+          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `services/${user.uid}_${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           const url = await getDownloadURL(snapshot.ref);
@@ -1814,7 +1833,7 @@ useEffect(() => {
       if (createCollectionData.photoFiles.length > 0) {
         for (let i = 0; i < createCollectionData.photoFiles.length; i++) {
           const original = createCollectionData.photoFiles[i];
-          const { file } = await compressImage(original, COMPRESSION_PRESETS.listing);
+          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
           const snapshot = await uploadBytes(storageRef, file);
           photoUrls.push(await getDownloadURL(snapshot.ref));
@@ -2008,7 +2027,7 @@ useEffect(() => {
     
     let avatarUrl = userAvatar;
     if (editProfileData.avatarFile) {
-      const { file: compressedAvatar } = await compressImage(editProfileData.avatarFile, COMPRESSION_PRESETS.avatar);
+      const { file: compressedAvatar } = await safeCompress(editProfileData.avatarFile, COMPRESSION_PRESETS.avatar);
       const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
       const snapshot = await uploadBytes(storageRef, compressedAvatar);
       avatarUrl = await getDownloadURL(snapshot.ref);
@@ -2124,7 +2143,7 @@ useEffect(() => {
     }
     
     // Upload student ID (compressed — receipt preset preserves legibility)
-    const { file: compressedId } = await compressImage(studentIdFile, COMPRESSION_PRESETS.receipt);
+    const { file: compressedId } = await safeCompress(studentIdFile, COMPRESSION_PRESETS.receipt);
     const storageRef = ref(storage, `verification/${user.uid}/${Date.now()}.jpg`);
     const snapshot = await uploadBytes(storageRef, compressedId);
     const idUrl = await getDownloadURL(snapshot.ref);
@@ -2862,7 +2881,7 @@ return (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
                       <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                      <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />
+                      {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />}
                     </div>
                     {openListingId === item.id && (
   <div style={{
@@ -4761,7 +4780,7 @@ return (
             
             <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#0ea5e9',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
             
-            <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />
+            {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
             
             <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
             <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
