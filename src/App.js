@@ -45,7 +45,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
-const ENABLE_ROOMS = true;       // Rooms & Housing feature
+const ENABLE_ROOMS = false;       // Rooms & Housing feature
 const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
 // ====================================
 
@@ -270,6 +270,9 @@ useEffect(() => {
   const [editingCollection, setEditingCollection] = useState(false);
   // Rooms & Housing state
   const [rooms, setRooms] = useState([]);
+  // All rooms owned by the current user, INCLUDING unavailable/rented ones.
+  // Public feed shows only available; this lets the owner manage everything.
+  const [myAllRooms, setMyAllRooms] = useState([]);
   const [roomSearchQ, setRoomSearchQ] = useState("");
   const [committedRoomSearchQ, setCommittedRoomSearchQ] = useState("");
   const [roomFilterType, setRoomFilterType] = useState("all");
@@ -779,6 +782,7 @@ useEffect(() => {
       setSuccess("Room listed successfully!");
       setCreateRoomData({ landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null });
       await loadRooms();
+      loadMyAllRooms();
     } catch (err) {
       console.error("Error listing room:", err);
       setError("Failed to list room: " + err.message);
@@ -924,6 +928,66 @@ const requestNotificationPermission = async (currentUser) => {
     console.error("Error loading profile:", err);
   }
 }, [checkVerificationStatus]); // ⭐ ADD DEPENDENCY
+
+  // ─── Landlord room management ───
+  // Loads ALL rooms owned by the current user, regardless of availability.
+  // The public feed (loadRooms) filters by available==true, but the owner
+  // needs to see rented rooms too in order to toggle them back on later.
+  const loadMyAllRooms = useCallback(async () => {
+    if (!user) { setMyAllRooms([]); return; }
+    try {
+      const q = query(collection(db, "rooms"), where("userId", "==", user.uid));
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+      // Sort newest first (in JS to avoid a composite index requirement)
+      list.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+      setMyAllRooms(list);
+    } catch (err) {
+      console.error("Error loading my rooms:", err);
+    }
+  }, [user]);
+
+  // Flip a room between KIPO WAZI (available) and KIMEPANGISHWA (rented).
+  // Optimistic update: change UI immediately, then write to Firestore.
+  // If Firestore fails, we re-load to get true state back.
+  const toggleRoomAvailability = async (room) => {
+    if (!user || room.userId !== user.uid) return;
+    const newAvailable = !room.available;
+    // Optimistic local update
+    setMyAllRooms(prev => prev.map(r => r.id === room.id ? { ...r, available: newAvailable } : r));
+    try {
+      await updateDoc(doc(db, "rooms", room.id), { available: newAvailable });
+      // Refresh the public rooms list so this change reflects elsewhere
+      loadRooms();
+      setSuccess(newAvailable ? "✓ Chumba kimerudi kwenye listings" : "✓ Chumba kimewekwa kuwa Kimepangishwa");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Imeshindwa. Jaribu tena.");
+      loadMyAllRooms(); // revert by re-loading
+    }
+  };
+
+  // Permanently delete a room. Used for test posts or wrong listings.
+  // Two-step confirmation to prevent accidents.
+  const deleteMyRoom = async (room) => {
+    if (!user || room.userId !== user.uid) return;
+    const confirmed = window.confirm(
+      `Una uhakika unataka kufuta "${room.location || 'chumba hiki'}" kabisa?\n\nHaitarudi tena.`
+    );
+    if (!confirmed) return;
+    try {
+      await deleteDoc(doc(db, "rooms", room.id));
+      setMyAllRooms(prev => prev.filter(r => r.id !== room.id));
+      loadRooms();
+      setSuccess("✓ Chumba kimefutwa");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      setError("Imeshindwa kufuta. Jaribu tena.");
+    }
+  };
+
 
  
   const loadConversations = useCallback(async () => {
@@ -1223,7 +1287,7 @@ const requestNotificationPermission = async (currentUser) => {
           loadListings(),
           loadServices(),
           loadCollections(),
-          ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts()] : []),
+          ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts(), loadMyAllRooms()] : []),
           loadConversations(),
         ]).catch(err => console.error("Data load error:", err));
         // Handle deep links after auth
@@ -1287,7 +1351,7 @@ const requestNotificationPermission = async (currentUser) => {
       if (unsubCollections.current) unsubCollections.current();
       if (unsubCollectionOrders.current) unsubCollectionOrders.current();
     };
-  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadConversations, loadPublicSellerProfile, setPage]);
+  }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadMyAllRooms, loadConversations, loadPublicSellerProfile, setPage]);
 
   //eslint-disable-next-line
   const [tokenRequested, setTokenRequested] = useState(false);
@@ -5077,10 +5141,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
           )}
           
-          <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px'}}>
-            <button onClick={()=>setProfileTab("listings")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Listings</button>
-            <button onClick={()=>setProfileTab("myServices")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="myServices"?'#7c3aed':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>My Services</button>
-            <button onClick={()=>setProfileTab("saved")} style={{flex:1,padding:'8px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px'}}>Saved ({cart.length})</button>
+          <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
+            <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>
+            <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#7c3aed':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>
+            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#0ea5e9':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
+            <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>Saved ({cart.length})</button>
           </div>
           
           {profileTab==="listings"&&(
@@ -5164,6 +5229,90 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   ))}
                   <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
                 </>
+              )}
+            </div>
+          )}
+
+          {ENABLE_ROOMS && profileTab==="myRooms" && (
+            <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>
+                  My Rooms ({myAllRooms.length})
+                </h3>
+                <button onClick={()=>setPage("createRoom")} style={{padding:'8px 14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
+              </div>
+
+              {myAllRooms.length === 0 ? (
+                <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
+                  <div style={{fontSize:'40px',marginBottom:'10px'}}>🏠</div>
+                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Hauna chumba kilichoorodheshwa bado</div>
+                  <div style={{fontSize:'12px',color:'#8a9bb0'}}>Bonyeza "Add room" hapo juu kuanza.</div>
+                </div>
+              ) : (
+                myAllRooms.map(room => {
+                  const isAvailable = room.available !== false;
+                  return (
+                    <div key={room.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea',display:'flex',gap:'12px',alignItems:'stretch'}}>
+                      {/* Photo or placeholder */}
+                      {(room.photos && room.photos[0]) ? (
+                        <img src={room.photos[0]} alt={room.location||'Chumba'} style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
+                      ) : (
+                        <div style={{width:'80px',height:'80px',borderRadius:'10px',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0}}>🏠</div>
+                      )}
+                      {/* Info + buttons */}
+                      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',minWidth:0}}>
+                        <div>
+                          <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {room.location || 'Chumba'}
+                          </div>
+                          <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'2px'}}>
+                            {room.roomType ? `${room.roomType} · ` : ''}{room.price?.toLocaleString()} TSh/mwezi
+                          </div>
+                          <div style={{
+                            display:'inline-block',
+                            fontSize:'10px',fontWeight:'600',
+                            color: isAvailable ? '#0f766e' : '#9ca3af',
+                            background: isAvailable ? '#f0fdfa' : '#f3f4f6',
+                            padding:'2px 8px',borderRadius:'10px',marginTop:'2px'
+                          }}>
+                            {isAvailable ? '● KIPO WAZI' : '● KIMEPANGISHWA'}
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+                          <button
+                            onClick={()=>toggleRoomAvailability(room)}
+                            style={{
+                              flex:1,
+                              padding:'7px 8px',
+                              fontSize:'11px',
+                              fontWeight:'600',
+                              borderRadius:'8px',
+                              border:'none',
+                              cursor:'pointer',
+                              background: isAvailable ? '#0ea5e9' : '#10b981',
+                              color:'#fff'
+                            }}>
+                            {isAvailable ? 'Weka Kimepangishwa' : 'Rudisha Kipo Wazi'}
+                          </button>
+                          <button
+                            onClick={()=>deleteMyRoom(room)}
+                            style={{
+                              padding:'7px 10px',
+                              fontSize:'11px',
+                              fontWeight:'600',
+                              borderRadius:'8px',
+                              border:'1px solid #fecaca',
+                              cursor:'pointer',
+                              background:'#fff',
+                              color:'#ef4444'
+                            }}>
+                            🗑
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
