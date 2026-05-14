@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -252,6 +252,21 @@ useEffect(() => {
   }, 3500);
   return () => clearInterval(interval);
 }, [searchQ]);
+
+// ─── Upload watchdog ───
+// Mobile browsers can suspend JS during a long upload (when the user backgrounds
+// the app or the screen sleeps). When that happens, our `finally { setUploading(false) }`
+// may never run, leaving the button stuck on "Uploading...". This watchdog
+// force-resets the uploading state after 90 seconds and shows a clear error.
+useEffect(() => {
+  if (!uploading) return;
+  const timeout = setTimeout(() => {
+    setUploading(false);
+    setError("Imeshindwa kupakia. Jaribu tena. (Hakikisha mtandao uko vizuri.)");
+    setTimeout(() => setError(""), 5000);
+  }, 90000);
+  return () => clearTimeout(timeout);
+}, [uploading]);
   const {
   parsed: aiParsed,
   isAIActive,
@@ -336,7 +351,17 @@ useEffect(() => {
   };
   
  const canPerformAction = (action = "default") => {
-  if (!user) return false;
+  if (loading) {
+    setError("Inakaribia... subiri sekunde chache na ujaribu tena.");
+    setTimeout(() => setError(""), 3000);
+    return false;
+  }
+  if (!user) {
+    setError("Tafadhali ingia kwenye akaunti yako kwanza.");
+    setTimeout(() => setError(""), 3000);
+    setShowAuthModal(true);
+    return false;
+  }
   return true;
 };
 
@@ -1691,7 +1716,8 @@ useEffect(() => {
     if (!canPerformAction()) return;
 
   if (!createData.cat || !createData.title.trim() || !createData.price || !createData.location.trim() || !user) {
-    setError("Please fill in all required fields (category, title, price, location)");
+    setError("Tafadhali jaza sehemu zote: aina, kichwa, bei, na eneo.");
+    setTimeout(() => setError(""), 4000);
     return;
   }
   try {
