@@ -62,11 +62,25 @@ export async function parseWithAI(app, query) {
 // ─────────────────────────────────────────────────────────────────────
 // Turn any query into a normalized parsed shape (AI or local)
 // ─────────────────────────────────────────────────────────────────────
+// Filler words that carry no search meaning. We strip these from keyword sets
+// so that searching "tutor wa math" doesn't substring-match listings containing "wa".
+const STOPWORDS = new Set([
+  // Swahili connectors / fillers
+  "wa", "ya", "za", "la", "cha", "vya", "kwa", "na", "au", "ni", "kwenye", "katika",
+  "moja", "mbili", "tatu", "hii", "hili", "huu", "huyu", "hizi", "hawa",
+  "kati", "chini", "juu", "ndani", "nje", "karibu", "mbele", "nyuma",
+  // English fillers
+  "the", "a", "an", "is", "are", "for", "of", "in", "on", "at", "to", "from",
+  "and", "or", "with", "without", "this", "that", "these", "those",
+]);
+
 export function localParse(query) {
   const q = (query || "").trim().toLowerCase();
   return {
     intent: "any",
-    keywords: q.split(/\s+/).filter((w) => w.length > 1),
+    keywords: q.split(/\s+/)
+      .filter((w) => w.length > 1)
+      .filter((w) => !STOPWORDS.has(w)),
     filters: {
       maxPrice: null, minPrice: null, category: null,
       serviceCategory: null, roomType: null, amenities: [],

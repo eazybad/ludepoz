@@ -174,6 +174,10 @@ function App() {
   const pageHistory = useRef(["home"]);
   const isGoingBack = useRef(false)
 
+  // Tracks whether any home-tab search is active. The back-button handler
+  // reads this to decide whether to clear search first vs. navigate pages.
+  const activeSearchRef = useRef({ kind: null, query: "" });
+
   // Wrapper that tracks navigation history and pushes browser state
   const setPage = useCallback((newPage) => {
     setPageRaw(prev => {
@@ -308,6 +312,25 @@ useEffect(() => {
   const [myAllRooms, setMyAllRooms] = useState([]);
   const [roomSearchQ, setRoomSearchQ] = useState("");
   const [committedRoomSearchQ, setCommittedRoomSearchQ] = useState("");
+
+  // Keep activeSearchRef in sync with whichever home-tab search is active.
+  // Read by the back-button handler in the main popstate effect.
+  useEffect(() => {
+    if (page !== "home") {
+      activeSearchRef.current = { kind: null, query: "" };
+      return;
+    }
+    if (homeTab === "goods" && committedSearchQ.trim()) {
+      activeSearchRef.current = { kind: "listing", query: committedSearchQ };
+    } else if (homeTab === "services" && committedServiceSearchQ.trim()) {
+      activeSearchRef.current = { kind: "service", query: committedServiceSearchQ };
+    } else if (homeTab === "rooms" && committedRoomSearchQ.trim()) {
+      activeSearchRef.current = { kind: "room", query: committedRoomSearchQ };
+    } else {
+      activeSearchRef.current = { kind: null, query: "" };
+    }
+  }, [page, homeTab, committedSearchQ, committedServiceSearchQ, committedRoomSearchQ]);
+
   const [roomFilterType, setRoomFilterType] = useState("all");
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
@@ -675,6 +698,46 @@ useEffect(() => {
   };
 
 
+  // Compute matches in OTHER categories besides the current `kind`.
+  // Used to show a "found 3 in Services, switch?" hint when the user searches
+  // on the wrong tab and the AI correctly classified intent elsewhere.
+  const computeCrossCategoryHint = (currentKind, query) => {
+    if (!query || !query.trim() || !aiParsed) return [];
+    const hints = [];
+
+    // Check listings
+    if (currentKind !== "listing") {
+      const matches = filterListings(listings, aiParsed);
+      if (matches.length > 0) hints.push({ kind: "listing", count: matches.length, label: "Goods" });
+    }
+    // Check services
+    if (currentKind !== "service") {
+      const matches = filterServices(services, aiParsed);
+      if (matches.length > 0) hints.push({ kind: "service", count: matches.length, label: "Services" });
+    }
+    // Check rooms
+    if (currentKind !== "room") {
+      const matches = filterRooms(rooms, aiParsed);
+      if (matches.length > 0) hints.push({ kind: "room", count: matches.length, label: "Rooms" });
+    }
+    return hints;
+  };
+
+  // Switch the home tab AND copy the active query to the destination tab's search.
+  // Called from the CrossCategoryHint banner.
+  const switchToCategoryWithQuery = (newKind, query) => {
+    const tabMap = { listing: "goods", service: "services", room: "rooms" };
+    const newTab = tabMap[newKind];
+    if (!newTab) return;
+    setHomeTab(newTab);
+    // Move the query to the destination tab's search state
+    if (newKind === "listing") { setSearchQ(query); setCommittedSearchQ(query); }
+    else if (newKind === "service") { setServiceSearchQ(query); setCommittedServiceSearchQ(query); }
+    else if (newKind === "room") { setRoomSearchQ(query); setCommittedRoomSearchQ(query); }
+    // Clear the original tab's search
+    // (the cross-hint is shown FROM the original tab, so we want it cleared on return)
+  };
+
   // Reusable empty-results component for any tab.
   // Three states:
   //   1. No query yet → fallback message ("Be the first to post")
@@ -713,43 +776,100 @@ useEffect(() => {
           <div style={{fontSize:'13px',color:'#0f766e',lineHeight:1.5,marginBottom:'4px'}}>
             Utapata ujumbe "{query.length > 30 ? query.slice(0,30) + '…' : query}" itakapopatikana.
           </div>
-          <div style={{fontSize:'11px',color:'#0d9488',opacity:0.7,marginTop:'8px'}}>
+          <div style={{fontSize:'11px',color:'#0d9488',opacity:0.7,marginTop:'8px',marginBottom:'16px'}}>
             (We'll reach you when this is listed)
           </div>
+          <button
+            onClick={() => {
+              if (kind === "listing") { setSearchQ(""); setCommittedSearchQ(""); }
+              else if (kind === "service") { setServiceSearchQ(""); setCommittedServiceSearchQ(""); }
+              else if (kind === "room") { setRoomSearchQ(""); setCommittedRoomSearchQ(""); }
+              else if (kind === "collection") { setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }
+              clearAISearch();
+            }}
+            style={{
+              padding:'10px 24px',
+              background:'#fff',
+              color:'#0f766e',
+              border:'1.5px solid #99f6e4',
+              borderRadius:'20px',
+              fontSize:'13px',
+              fontWeight:'600',
+              cursor:'pointer',
+            }}>
+            ← Angalia vingine
+          </button>
         </div>
       );
     }
 
-    // Default empty state with Niarifu button
+    // Default empty state — but first, check if other categories have matches
+    const crossHints = computeCrossCategoryHint(kind, query);
+
     return (
-      <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
-        <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
-        <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
-          Hakuna matokeo sasa hivi
+      <>
+        {/* Cross-category hint banner */}
+        {crossHints.length > 0 && (
+          <div style={{background:'linear-gradient(90deg,#f0fdfa,#ecfeff)',borderRadius:'12px',border:'1px solid #99f6e4',padding:'14px 16px',marginBottom:'10px'}}>
+            <div style={{fontSize:'13px',color:'#0f766e',fontWeight:'600',marginBottom:'10px',lineHeight:1.4}}>
+              ✨ Tumepata "{query.length > 30 ? query.slice(0,30) + '…' : query}" katika sehemu nyingine:
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+              {crossHints.map(hint => (
+                <button
+                  key={hint.kind}
+                  onClick={() => switchToCategoryWithQuery(hint.kind, query)}
+                  style={{
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'space-between',
+                    padding:'10px 14px',
+                    background:'#fff',
+                    border:'1px solid #99f6e4',
+                    borderRadius:'10px',
+                    fontSize:'13px',
+                    fontWeight:'600',
+                    color:'#0f766e',
+                    cursor:'pointer',
+                    textAlign:'left',
+                  }}>
+                  <span>{hint.count} katika {hint.label}</span>
+                  <span style={{fontSize:'16px'}}>→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
+          <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
+          <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
+            Hakuna matokeo sasa hivi katika {kind === "listing" ? "Goods" : kind === "service" ? "Services" : kind === "room" ? "Rooms" : "Collections"}
+          </div>
+          <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
+            Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
+          </div>
+          <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
+            (We'll notify you when something matching is listed)
+          </div>
+          <button
+            onClick={() => saveSearchAlert(kind, query, parsedFilters)}
+            disabled={savingAlert}
+            style={{
+              padding:'12px 24px',
+              background: 'linear-gradient(135deg,#0f766e,#0d9488)',
+              color: '#fff',
+              border:'none',
+              borderRadius:'24px',
+              fontSize:'14px',
+              fontWeight:'700',
+              cursor: savingAlert ? 'wait' : 'pointer',
+              boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
+            }}>
+            {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
+          </button>
         </div>
-        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
-          Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
-        </div>
-        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
-          (We'll notify you when something matching is listed)
-        </div>
-        <button
-          onClick={() => saveSearchAlert(kind, query, parsedFilters)}
-          disabled={savingAlert}
-          style={{
-            padding:'12px 24px',
-            background: 'linear-gradient(135deg,#0f766e,#0d9488)',
-            color: '#fff',
-            border:'none',
-            borderRadius:'24px',
-            fontSize:'14px',
-            fontWeight:'700',
-            cursor: savingAlert ? 'wait' : 'pointer',
-            boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
-          }}>
-          {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
-        </button>
-      </div>
+      </>
     );
   };
 
@@ -1461,6 +1581,21 @@ const requestNotificationPermission = async (currentUser) => {
     // Handle browser/Android back button — go back one step instead of exiting
     const handlePopState = (e) => {
       const p = window.location.pathname;
+
+      // If there's an active search on the home page, clearing it is the
+      // expected back-button behavior — not navigating away.
+      const active = activeSearchRef.current;
+      if (active && active.kind) {
+        if (active.kind === "listing") { setSearchQ(""); setCommittedSearchQ(""); }
+        else if (active.kind === "service") { setServiceSearchQ(""); setCommittedServiceSearchQ(""); }
+        else if (active.kind === "room") { setRoomSearchQ(""); setCommittedRoomSearchQ(""); }
+        clearAISearch();
+        activeSearchRef.current = { kind: null, query: "" };
+        // Re-push so the next back press can still go back through pages
+        window.history.pushState({ page: 'app' }, '', '/');
+        return;
+      }
+
       if (p.startsWith('/seller/') || p.startsWith('/collection/')) {
         setPublicSeller(null);
         setViewingCollection(null);
@@ -1554,6 +1689,7 @@ const requestNotificationPermission = async (currentUser) => {
       if (unsubCollections.current) unsubCollections.current();
       if (unsubCollectionOrders.current) unsubCollectionOrders.current();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadMyAllRooms, loadConversations, loadPublicSellerProfile, setPage]);
 
   //eslint-disable-next-line
