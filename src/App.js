@@ -126,6 +126,11 @@ const ROOM_AMENITIES = [
 // Re-enable when each category has 30+ listings (otherwise medians are noise).
 const SHOW_PRICE_SIGNAL = false;
 
+// Admin UIDs — accounts with access to the /admin dashboard.
+// Read by an isAdmin check in the App component; never used for security gates
+// at the data layer (Firestore rules still enforce real permissions).
+const ADMIN_UIDS = ["LTrwUHH6utQJGiw4lcsKflzXvPR2"];
+
 // Resilient compression wrapper. If compression fails (HEIC images, very large
 // files, browser memory limits), fall back to the ORIGINAL file so the upload
 // still succeeds. The user gets their listing/photo posted; they just don't
@@ -149,6 +154,11 @@ function App() {
   const [userAvatar, setUserAvatar] = useState(null);
   const [userAccountType, setUserAccountType] = useState("student");
   const [userProviderLocation, setUserProviderLocation] = useState("");
+  const [userPhone, setUserPhone] = useState("");
+  // Phone capture modal — appears when user tries to save a search alert without a phone on file
+  const [phonePromptOpen, setPhonePromptOpen] = useState(false);
+  const [pendingAlert, setPendingAlert] = useState(null); // {kind, query, parsedFilters}
+  const [phoneInputValue, setPhoneInputValue] = useState("");
   const [userBio, setUserBio] = useState("");
   const [userServices, setUserServices] = useState([]);
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
@@ -267,6 +277,14 @@ useEffect(() => {
   }, 90000);
   return () => clearTimeout(timeout);
 }, [uploading]);
+
+// ─── Auto-load admin data when admin opens the dashboard ───
+useEffect(() => {
+  if (page === "admin" && user && ADMIN_UIDS.includes(user.uid)) {
+    loadAdminData();
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page, user]);
   const {
   parsed: aiParsed,
   isAIActive,
@@ -342,6 +360,12 @@ useEffect(() => {
   // Saved search alerts — track which queries the user has already subscribed to in this session
   const [savedAlerts, setSavedAlerts] = useState(new Set());
   const [savingAlert, setSavingAlert] = useState(false);
+
+  // Admin dashboard state
+  const [adminAlerts, setAdminAlerts] = useState([]);
+  const [adminStats, setAdminStats] = useState(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminFilter, setAdminFilter] = useState("inbox"); // "inbox" | "routed" | "fulfilled" | "all"
   
   // eslint-disable-next-line no-unused-vars
   const isExpired = (listing) => {
@@ -492,6 +516,10 @@ useEffect(() => {
   // When a user searches for something we don't have, they can tap "Notify me"
   // and we save the query. This data is gold — it tells you exactly what supply
   // you should be recruiting. View it in Firestore → searchAlerts collection.
+  //
+  // Phone-first model: ARU students mostly don't check email. We need a phone
+  // number to actually reach them when supply appears. If we don't have one on
+  // file, open the phone-prompt modal first; the actual save happens after.
   const saveSearchAlert = async (kind, query, parsedFilters) => {
     if (!user) {
       requireAuth("save_alert", () => saveSearchAlert(kind, query, parsedFilters));
@@ -501,21 +529,39 @@ useEffect(() => {
     const alertKey = `${kind}:${query.toLowerCase().trim()}`;
     if (savedAlerts.has(alertKey)) return; // already saved this session
 
+    // No phone on file? Ask for it before saving the alert.
+    if (!userPhone || !userPhone.trim()) {
+      setPendingAlert({ kind, query, parsedFilters });
+      setPhoneInputValue("");
+      setPhonePromptOpen(true);
+      return;
+    }
+    // Phone already on file → save directly
+    return performSaveAlert(kind, query, parsedFilters, userPhone);
+  };
+
+  // Actual write to Firestore. Separated so the phone-prompt modal can also
+  // call it after collecting the phone number.
+  const performSaveAlert = async (kind, query, parsedFilters, phone) => {
+    const alertKey = `${kind}:${query.toLowerCase().trim()}`;
     setSavingAlert(true);
     try {
       await addDoc(collection(db, "searchAlerts"), {
         userId: user.uid,
         userName: userName || "",
         userEmail: user.email || "",
+        userPhone: phone || "",
         kind, // "listing" | "service" | "room" | "collection"
         query: query.trim(),
         parsedFilters: parsedFilters || null,
         universityId: selectedUni?.id || null,
         notified: false,
+        routedAt: null, // set by admin when they broadcast to channel
+        fulfilledAt: null, // set by admin when supply matched
         createdAt: serverTimestamp(),
       });
       setSavedAlerts(new Set([...savedAlerts, alertKey]));
-      setSuccess("✓ Sawa! Tutakutaarifu kupitia app utakapoonekana.");
+      setSuccess("✓ Sawa! Tutakutaarifu utakapopatikana.");
       setTimeout(() => setSuccess(""), 4000);
     } catch (err) {
       console.error("Save alert failed:", err);
@@ -525,9 +571,116 @@ useEffect(() => {
     }
   };
 
+  // Called from the phone-prompt modal. Validates input, saves phone to user
+  // profile so we don't ask again, then completes the pending alert.
+  const submitPhoneAndSaveAlert = async () => {
+    const cleaned = (phoneInputValue || "").trim();
+    // Basic TZ phone validation — accept 07xxxxxxxx, 06xxxxxxxx, or +2557xxxxxxxx
+    const valid = /^(\+?255|0)[67]\d{8}$/.test(cleaned.replace(/\s/g, ""));
+    if (!valid) {
+      setError("Tafadhali andika namba sahihi (mfano: 0712345678)");
+      setTimeout(() => setError(""), 4000);
+      return;
+    }
+    try {
+      // Save phone to user's profile doc so we never ask again
+      await updateDoc(doc(db, "users", user.uid), { phone: cleaned });
+      setUserPhone(cleaned);
+      // Close modal, then complete the pending alert
+      setPhonePromptOpen(false);
+      if (pendingAlert) {
+        await performSaveAlert(pendingAlert.kind, pendingAlert.query, pendingAlert.parsedFilters, cleaned);
+        setPendingAlert(null);
+      }
+    } catch (err) {
+      console.error("Phone save failed:", err);
+      setError("Imeshindwa. Jaribu tena.");
+      setTimeout(() => setError(""), 3000);
+    }
+  };
+
+  // ─── Admin dashboard ───
+  // Loads all search alerts + headline stats. Only callable from the admin page,
+  // which is itself gated by the ADMIN_UIDS check. Firestore rules should also
+  // restrict who can read these collections (not enforced here).
+  const isAdmin = user && ADMIN_UIDS.includes(user.uid);
+
+  const loadAdminData = async () => {
+    if (!isAdmin) return;
+    setAdminLoading(true);
+    try {
+      // Load all search alerts, newest first
+      let alertSnap;
+      try {
+        alertSnap = await getDocs(query(collection(db, "searchAlerts"), orderBy("createdAt", "desc")));
+      } catch (e) {
+        // Fallback if no index
+        alertSnap = await getDocs(collection(db, "searchAlerts"));
+      }
+      const alerts = alertSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate?.() || null,
+        routedAt: d.data().routedAt?.toDate?.() || null,
+        fulfilledAt: d.data().fulfilledAt?.toDate?.() || null,
+      }));
+      // Sort in JS too in case the index fallback returned unsorted
+      alerts.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+      setAdminAlerts(alerts);
+
+      // Headline stats: simple counts, this-week vs total
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const isThisWeek = (createdAt) => {
+        if (!createdAt) return false;
+        const d = createdAt.toDate ? createdAt.toDate() : (createdAt instanceof Date ? createdAt : null);
+        return d && d >= oneWeekAgo;
+      };
+
+      const [usersSnap, listingsSnap, servicesSnap, roomsSnap] = await Promise.all([
+        getDocs(collection(db, "users")),
+        getDocs(collection(db, "listings")),
+        getDocs(collection(db, "services")),
+        getDocs(collection(db, "rooms")),
+      ]);
+
+      setAdminStats({
+        users: { total: usersSnap.size, thisWeek: usersSnap.docs.filter(d => isThisWeek(d.data().createdAt)).length },
+        listings: { total: listingsSnap.size, thisWeek: listingsSnap.docs.filter(d => isThisWeek(d.data().createdAt)).length },
+        services: { total: servicesSnap.size, thisWeek: servicesSnap.docs.filter(d => isThisWeek(d.data().createdAt)).length },
+        rooms: { total: roomsSnap.size, thisWeek: roomsSnap.docs.filter(d => isThisWeek(d.data().createdAt)).length },
+        alerts: { total: alerts.length, thisWeek: alerts.filter(a => isThisWeek(a.createdAt)).length },
+      });
+    } catch (err) {
+      console.error("Admin load failed:", err);
+      setError("Imeshindwa kupakia data ya admin.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  // Mark an alert as routed (you've broadcast it to your WhatsApp Channel)
+  const markAlertRouted = async (alert) => {
+    try {
+      await updateDoc(doc(db, "searchAlerts", alert.id), { routedAt: serverTimestamp() });
+      setAdminAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, routedAt: new Date() } : a));
+    } catch (err) { console.error("Mark routed failed:", err); }
+  };
+
+  // Mark an alert as fulfilled (supply matched, student notified)
+  const markAlertFulfilled = async (alert) => {
+    try {
+      await updateDoc(doc(db, "searchAlerts", alert.id), { fulfilledAt: serverTimestamp(), notified: true });
+      setAdminAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, fulfilledAt: new Date(), notified: true } : a));
+    } catch (err) { console.error("Mark fulfilled failed:", err); }
+  };
+
+
   // Reusable empty-results component for any tab.
-  // Shows a friendly message when search returned nothing,
-  // and a "Notify me" button if there was an actual query the user typed.
+  // Three states:
+  //   1. No query yet → fallback message ("Be the first to post")
+  //   2. Search committed + AI still thinking → render nothing (caller keeps existing list visible)
+  //   3. Search committed + AI done + no results → friendly "no results" with Niarifu button
+  //   4. After Niarifu tapped → success state, not a gray dead-end
   const EmptyResults = ({ kind, query, parsedFilters, fallbackTitle, fallbackHint }) => {
     const hasQuery = query && query.trim().length > 0;
     const alertKey = hasQuery ? `${kind}:${query.toLowerCase().trim()}` : null;
@@ -544,6 +697,30 @@ useEffect(() => {
       );
     }
 
+    // AI is still thinking — render nothing. Caller keeps existing items visible
+    // and the "✨ AI is thinking..." badge already shows somewhere else in the UI.
+    if (aiSearching) return null;
+
+    // After the user has saved the alert — show a clear success state,
+    // not just a grayed-out button next to "Hakuna matokeo" (that read as a dead-end).
+    if (alreadySaved) {
+      return (
+        <div style={{textAlign:'center',padding:'40px 20px',background:'#f0fdfa',borderRadius:'14px',border:'1px solid #99f6e4'}}>
+          <div style={{fontSize:'40px',marginBottom:'12px'}}>✓</div>
+          <div style={{fontSize:'15px',fontWeight:'700',color:'#0f766e',marginBottom:'6px'}}>
+            Tumeshakuhifadhi
+          </div>
+          <div style={{fontSize:'13px',color:'#0f766e',lineHeight:1.5,marginBottom:'4px'}}>
+            Utapata ujumbe "{query.length > 30 ? query.slice(0,30) + '…' : query}" itakapopatikana.
+          </div>
+          <div style={{fontSize:'11px',color:'#0d9488',opacity:0.7,marginTop:'8px'}}>
+            (We'll reach you when this is listed)
+          </div>
+        </div>
+      );
+    }
+
+    // Default empty state with Niarifu button
     return (
       <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
         <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
@@ -558,19 +735,19 @@ useEffect(() => {
         </div>
         <button
           onClick={() => saveSearchAlert(kind, query, parsedFilters)}
-          disabled={alreadySaved || savingAlert}
+          disabled={savingAlert}
           style={{
             padding:'12px 24px',
-            background: alreadySaved ? '#e5e7eb' : 'linear-gradient(135deg,#0f766e,#0d9488)',
-            color: alreadySaved ? '#6b7280' : '#fff',
+            background: 'linear-gradient(135deg,#0f766e,#0d9488)',
+            color: '#fff',
             border:'none',
             borderRadius:'24px',
             fontSize:'14px',
             fontWeight:'700',
-            cursor: alreadySaved ? 'default' : 'pointer',
-            boxShadow: alreadySaved ? 'none' : '0 2px 10px rgba(15,118,110,0.2)',
+            cursor: savingAlert ? 'wait' : 'pointer',
+            boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
           }}>
-          {savingAlert ? '...' : alreadySaved ? '✓ Imehifadhiwa' : '🔔 Niarifu kikipatikana'}
+          {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
         </button>
       </div>
     );
@@ -943,6 +1120,7 @@ const requestNotificationPermission = async (currentUser) => {
       setUserServices(userData.services || []);
       setUserAccountType(userData.accountType || "student");
       setUserProviderLocation(userData.location || "");
+      setUserPhone(userData.phone || "");
       setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
       setIsVerified(userData.verified || false);
       
@@ -2589,7 +2767,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -2899,14 +3077,18 @@ return (
   if (activeCat !== "all") {
     filteredListings = filteredListings.filter(item => item.category === activeCat);
   }
-  if (aiParsed && committedSearchQ.trim()) {
-    filteredListings = filterListings(filteredListings, aiParsed);
-  } else if (committedSearchQ.trim()) {
-    const q = committedSearchQ.toLowerCase();
-    filteredListings = filteredListings.filter(item =>
-      item.title.toLowerCase().includes(q) ||
-      item.description?.toLowerCase().includes(q)
-    );
+  // Only apply search filter when AI has finished (or wasn't needed).
+  // While AI is thinking, keep the unfiltered list visible — avoids a flash of empty state.
+  if (!aiSearching) {
+    if (aiParsed && committedSearchQ.trim()) {
+      filteredListings = filterListings(filteredListings, aiParsed);
+    } else if (committedSearchQ.trim()) {
+      const q = committedSearchQ.toLowerCase();
+      filteredListings = filteredListings.filter(item =>
+        item.title.toLowerCase().includes(q) ||
+        item.description?.toLowerCase().includes(q)
+      );
+    }
   }
   return (
 <div style={{display:'flex',flexDirection:'column',margin:'0 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
@@ -3105,13 +3287,15 @@ return (
     if (activeServiceCat !== "all") {
       filtered = filtered.filter(s => s.category === activeServiceCat);
     }
-    if (aiParsed && committedServiceSearchQ.trim()) {
-      filtered = filterServices(filtered, aiParsed);
-    } else if (committedServiceSearchQ.trim()) {
-      const q = committedServiceSearchQ.toLowerCase();
-      filtered = filtered.filter(s =>
-        s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
-      );
+    if (!aiSearching) {
+      if (aiParsed && committedServiceSearchQ.trim()) {
+        filtered = filterServices(filtered, aiParsed);
+      } else if (committedServiceSearchQ.trim()) {
+        const q = committedServiceSearchQ.toLowerCase();
+        filtered = filtered.filter(s =>
+          s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
+        );
+      }
     }
     return (
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
@@ -3203,15 +3387,17 @@ return (
     if (roomFilterMaxPrice) {
       filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
     }
-    if (aiParsed && committedRoomSearchQ.trim()) {
-      filtered = filterRooms(filtered, aiParsed);
-    } else if (committedRoomSearchQ.trim()) {
-      const q = committedRoomSearchQ.toLowerCase();
-      filtered = filtered.filter(r =>
-        r.location?.toLowerCase().includes(q) ||
-        r.description?.toLowerCase().includes(q) ||
-        r.landlordName?.toLowerCase().includes(q)
-      );
+    if (!aiSearching) {
+      if (aiParsed && committedRoomSearchQ.trim()) {
+        filtered = filterRooms(filtered, aiParsed);
+      } else if (committedRoomSearchQ.trim()) {
+        const q = committedRoomSearchQ.toLowerCase();
+        filtered = filtered.filter(r =>
+          r.location?.toLowerCase().includes(q) ||
+          r.description?.toLowerCase().includes(q) ||
+          r.landlordName?.toLowerCase().includes(q)
+        );
+      }
     }
     return filtered.length === 0 ? (
       <div style={{margin:'0 16px'}}>
@@ -3917,13 +4103,15 @@ return (
             if (activeServiceCat !== "all") {
               filtered = filtered.filter(s => s.category === activeServiceCat);
             }
-            if (aiParsed && committedServiceSearchQ.trim()) {
-              filtered = filterServices(filtered, aiParsed);
-            } else if (committedServiceSearchQ.trim()) {
-              const q = committedServiceSearchQ.toLowerCase();
-              filtered = filtered.filter(s =>
-                s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
-              );
+            if (!aiSearching) {
+              if (aiParsed && committedServiceSearchQ.trim()) {
+                filtered = filterServices(filtered, aiParsed);
+              } else if (committedServiceSearchQ.trim()) {
+                const q = committedServiceSearchQ.toLowerCase();
+                filtered = filtered.filter(s =>
+                  s.title.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
+                );
+              }
             }
             return (
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',margin:'0 16px'}}>
@@ -4709,15 +4897,17 @@ return (
             if (roomFilterMaxPrice) {
               filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
             }
-            if (aiParsed && committedRoomSearchQ.trim()) {
-              filtered = filterRooms(filtered, aiParsed);
-            } else if (committedRoomSearchQ.trim()) {
-              const q = committedRoomSearchQ.toLowerCase();
-              filtered = filtered.filter(r =>
-                r.location?.toLowerCase().includes(q) ||
-                r.description?.toLowerCase().includes(q) ||
-                r.landlordName?.toLowerCase().includes(q)
-              );
+            if (!aiSearching) {
+              if (aiParsed && committedRoomSearchQ.trim()) {
+                filtered = filterRooms(filtered, aiParsed);
+              } else if (committedRoomSearchQ.trim()) {
+                const q = committedRoomSearchQ.toLowerCase();
+                filtered = filtered.filter(r =>
+                  r.location?.toLowerCase().includes(q) ||
+                  r.description?.toLowerCase().includes(q) ||
+                  r.landlordName?.toLowerCase().includes(q)
+                );
+              }
             }
             return filtered.length === 0 ? (
               <div style={{margin:'0 16px'}}>
@@ -5123,6 +5313,137 @@ return (
         </div>
       )}
       
+      {/* ─── ADMIN DASHBOARD ─── */}
+      {page==="admin" && (
+        <div style={{width:'100%',flex:1,paddingTop:'70px',paddingBottom:'80px',background:'#f9fafb',minHeight:'100vh'}}>
+          <div style={{maxWidth:'700px',margin:'0 auto',padding:'0 16px'}}>
+            {!isAdmin ? (
+              <div style={{textAlign:'center',padding:'60px 16px',background:'#fff',borderRadius:'12px',marginTop:'20px'}}>
+                <div style={{fontSize:'40px',marginBottom:'12px'}}>🔒</div>
+                <div style={{fontSize:'16px',fontWeight:'600'}}>Admin access only</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Ukurasa huu ni kwa admin tu.</div>
+                <button onClick={()=>setPage("home")} style={{marginTop:'20px',padding:'10px 20px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>← Back to home</button>
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px',marginTop:'12px'}}>
+                  <h1 style={{fontSize:'22px',fontWeight:'700',color:'#0f1b2d',margin:0}}>Admin Dashboard</h1>
+                  <button onClick={loadAdminData} disabled={adminLoading} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:adminLoading?'wait':'pointer'}}>
+                    {adminLoading ? '...' : '↻ Refresh'}
+                  </button>
+                </div>
+
+                {/* Six numbers (no charts) */}
+                {adminStats && (
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'24px'}}>
+                    {[
+                      {label:'Users', data: adminStats.users, color:'#0f766e'},
+                      {label:'Search Alerts', data: adminStats.alerts, color:'#0ea5e9'},
+                      {label:'Listings (Goods)', data: adminStats.listings, color:'#7c3aed'},
+                      {label:'Services', data: adminStats.services, color:'#f59e0b'},
+                      {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
+                    ].map(stat => (
+                      <div key={stat.label} style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea'}}>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>{stat.label}</div>
+                        <div style={{fontSize:'24px',fontWeight:'700',color: stat.color}}>{stat.data.total}</div>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>+{stat.data.thisWeek} this week</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Demand Inbox header */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+                  <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>Demand Inbox</h2>
+                  <div style={{fontSize:'11px',color:'#8a9bb0'}}>Search queries that need supply matching</div>
+                </div>
+
+                {/* Filter chips */}
+                <div style={{display:'flex',gap:'6px',marginBottom:'14px',overflowX:'auto'}}>
+                  {[
+                    {id:'inbox',label:'New'},
+                    {id:'routed',label:'Routed'},
+                    {id:'fulfilled',label:'Fulfilled'},
+                    {id:'all',label:'All'},
+                  ].map(f => (
+                    <button key={f.id} onClick={()=>setAdminFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:adminFilter===f.id?'#0f1b2d':'#fff',color:adminFilter===f.id?'#fff':'#6b7280',border:adminFilter===f.id?'none':'1px solid #e2e6ea',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Alerts list */}
+                {(() => {
+                  const filtered = adminAlerts.filter(a => {
+                    if (adminFilter === 'inbox') return !a.routedAt && !a.fulfilledAt;
+                    if (adminFilter === 'routed') return a.routedAt && !a.fulfilledAt;
+                    if (adminFilter === 'fulfilled') return a.fulfilledAt;
+                    return true;
+                  });
+                  if (adminLoading) {
+                    return <div style={{textAlign:'center',padding:'40px',color:'#8a9bb0'}}>Inapakia...</div>;
+                  }
+                  if (filtered.length === 0) {
+                    return <div style={{textAlign:'center',padding:'30px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>Hakuna alerts katika {adminFilter}</div>;
+                  }
+                  return (
+                    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                      {filtered.map(alert => {
+                        const kindColors = {
+                          listing: {bg:'#fef3c7',color:'#92400e'},
+                          service: {bg:'#ede9fe',color:'#5b21b6'},
+                          room: {bg:'#dbeafe',color:'#1e40af'},
+                          collection: {bg:'#fce7f3',color:'#9f1239'},
+                        };
+                        const k = kindColors[alert.kind] || {bg:'#f3f4f6',color:'#374151'};
+                        return (
+                          <div key={alert.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                            {/* Top row: kind badge + date */}
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                              <span style={{display:'inline-block',padding:'3px 10px',background:k.bg,color:k.color,fontSize:'10px',fontWeight:'700',borderRadius:'10px',textTransform:'uppercase',letterSpacing:'0.3px'}}>{alert.kind}</span>
+                              <span style={{fontSize:'10px',color:'#9ca3af'}}>{alert.createdAt ? alert.createdAt.toLocaleString() : '—'}</span>
+                            </div>
+                            {/* Query */}
+                            <div style={{fontSize:'14px',fontWeight:'600',color:'#0f1b2d',marginBottom:'6px',lineHeight:1.4}}>
+                              "{alert.query}"
+                            </div>
+                            {/* User info */}
+                            <div style={{fontSize:'11px',color:'#6b7280',marginBottom:'10px',lineHeight:1.5}}>
+                              <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no email'}</div>
+                              {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0f766e',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
+                            </div>
+                            {/* Status + actions */}
+                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                              {alert.fulfilledAt ? (
+                                <span style={{padding:'5px 10px',background:'#dcfce7',color:'#166534',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
+                              ) : alert.routedAt ? (
+                                <>
+                                  <span style={{padding:'5px 10px',background:'#fef3c7',color:'#92400e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
+                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
+                                </>
+                              ) : (
+                                <button onClick={()=>markAlertRouted(alert)} style={{padding:'5px 10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Footer */}
+                <div style={{textAlign:'center',padding:'30px 0 10px',color:'#9ca3af',fontSize:'11px'}}>
+                  Use this inbox to drive your WhatsApp Channel demand broadcasts.<br/>
+                  Mark <b>Routed</b> after broadcasting. Mark <b>Fulfilled</b> when student is matched.
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {page==="profile"&&(
       <div style={{
     width:'100%',
@@ -5363,6 +5684,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
           )}
           
+          {isAdmin && (
+            <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer',marginTop:'10px'}}>
+              ⚙️ Admin Dashboard
+            </button>
+          )}
+
           <button onClick={handleLogout} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'16px'}}>🚪 Logout</button>
         </div>
       )}
@@ -6314,6 +6641,40 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   </div>
 )}
       
+
+      {/* Phone Capture Modal (for saving search alerts) */}
+      {phonePromptOpen && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'380px'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'34px',textAlign:'center',marginBottom:'10px'}}>📱</div>
+            <div style={{fontSize:'17px',fontWeight:'700',textAlign:'center',color:'#0f1b2d',marginBottom:'8px'}}>
+              Tunahitaji namba yako
+            </div>
+            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',lineHeight:1.5,marginBottom:'18px'}}>
+              Ili nikupate ukipatikana kile unachosaka. Hatutatuma matangazo — ni mawasiliano ya moja kwa moja tu.
+              <br/><br/>
+              <span style={{fontSize:'11px',color:'#9ca3af'}}>
+                (So I can reach you when what you searched for is found. No spam — just direct contact.)
+              </span>
+            </div>
+            <input
+              type="tel"
+              autoFocus
+              placeholder="0712345678"
+              value={phoneInputValue}
+              onChange={e=>setPhoneInputValue(e.target.value)}
+              onKeyDown={e=>{ if (e.key==='Enter') submitPhoneAndSaveAlert(); }}
+              style={{width:'100%',padding:'14px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'12px'}}
+            />
+            <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
+              Hifadhi na uniarifu
+            </button>
+            <button onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }} style={{width:'100%',padding:'10px',background:'transparent',color:'#6b7280',border:'none',fontSize:'13px',cursor:'pointer'}}>
+              Hapana, asante
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Auth Modal */}
       {showAuthModal && (
