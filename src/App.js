@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -841,34 +841,39 @@ useEffect(() => {
           </div>
         )}
 
-        <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
-          <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
-          <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
-            Hakuna matokeo sasa hivi katika {kind === "listing" ? "Goods" : kind === "service" ? "Services" : kind === "room" ? "Rooms" : "Collections"}
+        {/* The big "Hakuna matokeo" panel only appears when there are no
+            cross-category matches. If matches exist elsewhere, the banner
+            above is enough — no need to also dominate the screen with an empty state. */}
+        {crossHints.length === 0 && (
+          <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
+            <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
+            <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
+              Hakuna matokeo sasa hivi katika {kind === "listing" ? "Goods" : kind === "service" ? "Services" : kind === "room" ? "Rooms" : "Collections"}
+            </div>
+            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
+              Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
+            </div>
+            <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
+              (We'll notify you when something matching is listed)
+            </div>
+            <button
+              onClick={() => saveSearchAlert(kind, query, parsedFilters)}
+              disabled={savingAlert}
+              style={{
+                padding:'12px 24px',
+                background: 'linear-gradient(135deg,#0f766e,#0d9488)',
+                color: '#fff',
+                border:'none',
+                borderRadius:'24px',
+                fontSize:'14px',
+                fontWeight:'700',
+                cursor: savingAlert ? 'wait' : 'pointer',
+                boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
+              }}>
+              {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
+            </button>
           </div>
-          <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
-            Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
-          </div>
-          <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
-            (We'll notify you when something matching is listed)
-          </div>
-          <button
-            onClick={() => saveSearchAlert(kind, query, parsedFilters)}
-            disabled={savingAlert}
-            style={{
-              padding:'12px 24px',
-              background: 'linear-gradient(135deg,#0f766e,#0d9488)',
-              color: '#fff',
-              border:'none',
-              borderRadius:'24px',
-              fontSize:'14px',
-              fontWeight:'700',
-              cursor: savingAlert ? 'wait' : 'pointer',
-              boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
-            }}>
-            {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
-          </button>
-        </div>
+        )}
       </>
     );
   };
@@ -5451,7 +5456,7 @@ return (
       
       {/* ─── ADMIN DASHBOARD ─── */}
       {page==="admin" && (
-        <div style={{width:'100%',flex:1,paddingTop:'70px',paddingBottom:'80px',background:'#f9fafb',minHeight:'100vh'}}>
+        <div style={{width:'100%',flex:1,paddingTop:'70px',paddingBottom:'100px',background:'#f9fafb',minHeight:'100vh',height:'100vh',overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
           <div style={{maxWidth:'700px',margin:'0 auto',padding:'0 16px'}}>
             {!isAdmin ? (
               <div style={{textAlign:'center',padding:'60px 16px',background:'#fff',borderRadius:'12px',marginTop:'20px'}}>
