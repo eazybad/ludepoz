@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -366,6 +366,8 @@ useEffect(() => {
   const [studentIdFile, setStudentIdFile] = useState(null);
   const [studentIdPreview, setStudentIdPreview] = useState(null); 
   const [verificationStatus, setVerificationStatus] = useState(null);
+  const [nidaNumberInput, setNidaNumberInput] = useState("");
+  const [nameOnIdInput, setNameOnIdInput] = useState("");
 
   // Public seller profile state
   const [publicSeller, setPublicSeller] = useState(null);
@@ -389,6 +391,11 @@ useEffect(() => {
   const [adminStats, setAdminStats] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminFilter, setAdminFilter] = useState("inbox"); // "inbox" | "routed" | "fulfilled" | "all"
+  // Verification queue state
+  const [adminVerifications, setAdminVerifications] = useState([]);
+  const [verificationFilter, setVerificationFilter] = useState("pending"); // "pending" | "approved" | "rejected"
+  const [rejectingId, setRejectingId] = useState(null); // currently picking reject reason
+  const [viewingIdPhoto, setViewingIdPhoto] = useState(null); // url of full-size ID being viewed
   
   // eslint-disable-next-line no-unused-vars
   const isExpired = (listing) => {
@@ -659,11 +666,12 @@ useEffect(() => {
         return d && d >= oneWeekAgo;
       };
 
-      const [usersSnap, listingsSnap, servicesSnap, roomsSnap] = await Promise.all([
+      const [usersSnap, listingsSnap, servicesSnap, roomsSnap, verifSnap] = await Promise.all([
         getDocs(collection(db, "users")),
         getDocs(collection(db, "listings")),
         getDocs(collection(db, "services")),
         getDocs(collection(db, "rooms")),
+        getDocs(collection(db, "verificationRequests")),
       ]);
 
       setAdminStats({
@@ -673,6 +681,16 @@ useEffect(() => {
         rooms: { total: roomsSnap.size, thisWeek: roomsSnap.docs.filter(d => isThisWeek(d.data().createdAt)).length },
         alerts: { total: alerts.length, thisWeek: alerts.filter(a => isThisWeek(a.createdAt)).length },
       });
+
+      // Verification requests
+      const verifs = verifSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate?.() || null,
+        reviewedAt: d.data().reviewedAt?.toDate?.() || null,
+      }));
+      verifs.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+      setAdminVerifications(verifs);
     } catch (err) {
       console.error("Admin load failed:", err);
       setError("Imeshindwa kupakia data ya admin.");
@@ -696,6 +714,98 @@ useEffect(() => {
       setAdminAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, fulfilledAt: new Date(), notified: true } : a));
     } catch (err) { console.error("Mark fulfilled failed:", err); }
   };
+
+  // ─── Verification approval flow ───
+  // approveVerification: marks request as approved, flips user's isVerified,
+  // sets the badge type on the user doc, and sends an in-app notification.
+  const approveVerification = async (req) => {
+    try {
+      // Determine badge type from account type
+      const badgeType = req.accountType === "provider"
+        ? (req.providerLocation ? "landlord" : "provider")  // future: room verification triggers "landlord"
+        : "student";
+
+      // Update the verification request
+      await updateDoc(doc(db, "verificationRequests", req.id), {
+        status: "approved",
+        reviewedAt: serverTimestamp(),
+        reviewedBy: user.uid,
+      });
+
+      // Update the user's profile
+      await updateDoc(doc(db, "users", req.userId), {
+        isVerified: true,
+        verificationBadge: badgeType,
+        verifiedAt: serverTimestamp(),
+      });
+
+      // Send in-app notification
+      await addDoc(collection(db, "notifications"), {
+        userId: req.userId,
+        type: "verification_approved",
+        title: "✓ Akaunti yako imethibitishwa!",
+        message: badgeType === "student"
+          ? "Sasa una alama ya 🎓 Verified Student. Wengi watakuamini zaidi."
+          : badgeType === "landlord"
+          ? "Sasa una alama ya 🏠 Verified Landlord. Vyumba vyako vitaonekana zaidi."
+          : "Sasa una alama ya 💼 Verified Provider. Huduma zako zitaonekana zaidi.",
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+
+      // Update local state
+      setAdminVerifications(prev => prev.map(v => v.id === req.id
+        ? { ...v, status: "approved", reviewedAt: new Date() }
+        : v));
+      setSuccess("✓ Imethibitishwa");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch (err) {
+      console.error("Approve failed:", err);
+      setError("Imeshindwa kuthibitisha. Jaribu tena.");
+    }
+  };
+
+  // rejectVerification with a specific reason from the picker
+  const rejectVerification = async (req, reason) => {
+    const reasonText = {
+      blurry: "Picha haijawa wazi vya kutosha. Jaribu kwa picha bora.",
+      mismatched_name: "Jina kwenye kitambulisho halilingani na jina ulilotuma.",
+      fake_id: "Kitambulisho hakionekani halisi. Tafadhali wasilisha kitambulisho cha kweli.",
+      wrong_type: req.accountType === "provider"
+        ? "Tafadhali wasilisha NIDA, sio aina nyingine ya kitambulisho."
+        : "Tafadhali wasilisha Student ID, sio aina nyingine ya kitambulisho.",
+      expired: "Kitambulisho kimeisha muda wake. Wasilisha kipya.",
+    }[reason] || "Ombi lako halijakubalika. Jaribu tena.";
+
+    try {
+      await updateDoc(doc(db, "verificationRequests", req.id), {
+        status: "rejected",
+        rejectionReason: reason,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: user.uid,
+      });
+
+      await addDoc(collection(db, "notifications"), {
+        userId: req.userId,
+        type: "verification_rejected",
+        title: "Ombi la uthibitisho halikukubalika",
+        message: reasonText + " Unaweza kuwasilisha tena kupitia profile yako.",
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+
+      setAdminVerifications(prev => prev.map(v => v.id === req.id
+        ? { ...v, status: "rejected", rejectionReason: reason, reviewedAt: new Date() }
+        : v));
+      setRejectingId(null);
+      setSuccess("Ombi limekataliwa na mtumiaji ameambiwa");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch (err) {
+      console.error("Reject failed:", err);
+      setError("Imeshindwa. Jaribu tena.");
+    }
+  };
+
 
 
   // Compute matches in OTHER categories besides the current `kind`.
@@ -744,6 +854,43 @@ useEffect(() => {
   //   2. Search committed + AI still thinking → render nothing (caller keeps existing list visible)
   //   3. Search committed + AI done + no results → friendly "no results" with Niarifu button
   //   4. After Niarifu tapped → success state, not a gray dead-end
+  // ─── Verified badge component ───
+  // Renders a colored, branded chip indicating that a user has been verified.
+  // Receives the user doc or a partial { isVerified, verificationBadge } shape.
+  // Three variants based on verificationBadge:
+  //   "student" → 🎓 teal     "provider" → 💼 gray     "landlord" → 🏠 gold
+  // Returns null if the user isn't verified.
+  const VerifiedBadge = ({ user: u, size = "sm" }) => {
+    if (!u || !u.isVerified) return null;
+    const badge = u.verificationBadge || "student";
+    const variants = {
+      student: { icon: "🎓", label: "Verified Student", bg: "#f0fdfa", color: "#0f766e", border: "#99f6e4" },
+      provider: { icon: "💼", label: "Verified Provider", bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
+      landlord: { icon: "🏠", label: "Verified Landlord", bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
+    };
+    const v = variants[badge] || variants.student;
+    const padding = size === "xs" ? "1px 6px" : size === "sm" ? "2px 8px" : "4px 10px";
+    const fontSize = size === "xs" ? "9px" : size === "sm" ? "10px" : "12px";
+    return (
+      <span style={{
+        display:'inline-flex',
+        alignItems:'center',
+        gap:'4px',
+        padding,
+        fontSize,
+        fontWeight:'700',
+        color: v.color,
+        background: v.bg,
+        border: `1px solid ${v.border}`,
+        borderRadius:'10px',
+        whiteSpace:'nowrap',
+      }}>
+        <span>{v.icon}</span>
+        <span>{size === "xs" ? "Verified" : v.label}</span>
+      </span>
+    );
+  };
+
   const EmptyResults = ({ kind, query, parsedFilters, fallbackTitle, fallbackHint }) => {
     const hasQuery = query && query.trim().length > 0;
     const alertKey = hasQuery ? `${kind}:${query.toLowerCase().trim()}` : null;
@@ -2060,6 +2207,11 @@ useEffect(() => {
       userId: user.uid,
       userName: userName,
       userAvatar: userAvatar,
+      // Stamp verification at creation time so badges display without lookups.
+      // If the user later gets verified, OLDER listings won't show the badge —
+      // that's fine; they can re-list, and new listings will reflect the new status.
+      userIsVerified: isVerified || false,
+      userVerificationBadge: isVerified ? (userAccountType === "provider" ? "provider" : "student") : null,
       universityId: selectedUni.id,
       universityName: selectedUni.short,
       category: createData.cat,
@@ -2518,7 +2670,21 @@ useEffect(() => {
 
  const submitVerification = async () => {
   if (!studentIdFile || !user) {
-    setError("Please upload your student ID");
+    setError(userAccountType === "provider"
+      ? "Tafadhali pakia picha ya kitambulisho cha NIDA"
+      : "Tafadhali pakia picha ya kitambulisho cha mwanafunzi");
+    setTimeout(() => setError(""), 4000);
+    return;
+  }
+  if (!nameOnIdInput.trim()) {
+    setError("Tafadhali andika jina lako kama lilivyo kwenye kitambulisho");
+    setTimeout(() => setError(""), 4000);
+    return;
+  }
+  // For providers, require NIDA number too
+  if (userAccountType === "provider" && !nidaNumberInput.trim()) {
+    setError("Tafadhali andika namba yako ya NIDA");
+    setTimeout(() => setError(""), 4000);
     return;
   }
   
@@ -2526,7 +2692,7 @@ useEffect(() => {
     setUploading(true);
     setError("");
     
-    // ⭐ CHECK IF ALREADY SUBMITTED
+    // Check if already submitted (allow resubmit if rejected)
     const existingQuery = query(
       collection(db, "verificationRequests"),
       where("userId", "==", user.uid)
@@ -2535,54 +2701,61 @@ useEffect(() => {
     
     if (!existingSnapshot.empty) {
       const existingRequest = existingSnapshot.docs[0].data();
-      
       if (existingRequest.status === "pending") {
-        setError("You already have a pending verification request");
+        setError("Una ombi linaloendelea kuangaliwa");
         setUploading(false);
         return;
       }
-      
       if (existingRequest.status === "approved") {
-        setError("Your account is already verified");
+        setError("Akaunti yako tayari imethibitishwa");
         setUploading(false);
         return;
       }
-      
-      // If rejected, allow resubmission (continue with upload)
     }
     
-    // Upload student ID (compressed — receipt preset preserves legibility)
+    // Upload the ID image (compressed; receipt preset preserves legibility)
     const { file: compressedId } = await safeCompress(studentIdFile, COMPRESSION_PRESETS.receipt);
-    const storageRef = ref(storage, `verification/${user.uid}/${Date.now()}.jpg`);
+    const idType = userAccountType === "provider" ? "nida" : "studentId";
+    const storageRef = ref(storage, `verification/${user.uid}/${idType}_${Date.now()}.jpg`);
     const snapshot = await uploadBytes(storageRef, compressedId);
     const idUrl = await getDownloadURL(snapshot.ref);
-    
-    console.log("Upload successful!", snapshot);
 
-    // Create verification request
-    await addDoc(collection(db, "verificationRequests"), {
+    // Create verification request — different shape for student vs provider
+    const request = {
       userId: user.uid,
       userName: userName,
       email: user.email,
-      universityId: selectedUni.id,
-      universityName: selectedUni.short,
-      studentIdUrl: idUrl,
+      phone: userPhone || "",
+      accountType: userAccountType || "student",
+      nameOnId: nameOnIdInput.trim(),
+      idUrl: idUrl,
       status: "pending",
-      createdAt: serverTimestamp()
-    });
+      submittedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    };
+    if (userAccountType === "provider") {
+      request.nidaNumber = nidaNumberInput.trim();
+      request.providerLocation = userProviderLocation || "";
+    } else {
+      request.universityId = selectedUni.id;
+      request.universityName = selectedUni.short;
+      request.studentIdUrl = idUrl; // keep legacy field for backward compat
+    }
+
+    await addDoc(collection(db, "verificationRequests"), request);
     
-    // ⭐ UPDATE STATUS IMMEDIATELY
     setVerificationStatus("pending");
-    
     setShowVerifyModal(false);
     setStudentIdFile(null);
     setStudentIdPreview(null);
-    setSuccess("Verification request submitted! We'll review it within one hour.");
+    setNidaNumberInput("");
+    setNameOnIdInput("");
+    setSuccess("✓ Ombi limepokelewa! Tutakuthibitisha ndani ya saa 24-48.");
     setTimeout(() => setSuccess(""), 5000);
-    
   } catch (err) {
-    console.error("Error submitting verification:", err);
-    setError("Failed to submit verification: " + err.message);
+    console.error("Verification submit failed:", err);
+    setError("Imeshindwa. Jaribu tena.");
+    setTimeout(() => setError(""), 4000);
   } finally {
     setUploading(false);
   }
@@ -3242,6 +3415,9 @@ return (
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
+                    {item.userIsVerified && (
+                      <VerifiedBadge user={{ isVerified: true, verificationBadge: item.userVerificationBadge || "student" }} size="xs" />
+                    )}
                     <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
                     {item.location && <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>📍 {item.location}</span>}
                     <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
@@ -5494,6 +5670,116 @@ return (
                   </div>
                 )}
 
+                {/* ─── VERIFICATION QUEUE ─── */}
+                <div style={{marginBottom:'24px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+                    <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>
+                      Verification Queue
+                      {adminVerifications.filter(v => v.status === "pending").length > 0 && (
+                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'#fef3c7',color:'#92400e',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
+                          {adminVerifications.filter(v => v.status === "pending").length} pending
+                        </span>
+                      )}
+                    </h2>
+                    <div style={{fontSize:'11px',color:'#8a9bb0'}}>ID submissions to review</div>
+                  </div>
+
+                  {/* Filter chips */}
+                  <div style={{display:'flex',gap:'6px',marginBottom:'12px',overflowX:'auto'}}>
+                    {[
+                      {id:'pending',label:'Pending'},
+                      {id:'approved',label:'Approved'},
+                      {id:'rejected',label:'Rejected'},
+                    ].map(f => (
+                      <button key={f.id} onClick={()=>setVerificationFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:verificationFilter===f.id?'#0f1b2d':'#fff',color:verificationFilter===f.id?'#fff':'#6b7280',border:verificationFilter===f.id?'none':'1px solid #e2e6ea',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Queue */}
+                  {(() => {
+                    const filtered = adminVerifications.filter(v => v.status === verificationFilter);
+                    if (filtered.length === 0) {
+                      return <div style={{textAlign:'center',padding:'24px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>Hakuna {verificationFilter}</div>;
+                    }
+                    return (
+                      <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                        {filtered.map(req => {
+                          const isStudent = req.accountType !== "provider";
+                          const idType = isStudent ? "🎓 Student ID" : "🪪 NIDA";
+                          return (
+                            <div key={req.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                              <div style={{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'8px'}}>
+                                {/* ID photo */}
+                                {(req.idUrl || req.studentIdUrl) && (
+                                  <img
+                                    src={req.idUrl || req.studentIdUrl}
+                                    alt="ID"
+                                    onClick={() => setViewingIdPhoto(req.idUrl || req.studentIdUrl)}
+                                    style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'8px',flexShrink:0,cursor:'pointer',border:'1px solid #e2e6ea'}}
+                                  />
+                                )}
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}}>
+                                    <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#fef3c7',color:isStudent?'#1e40af':'#92400e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
+                                    <span style={{fontSize:'10px',color:'#9ca3af'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
+                                  </div>
+                                  <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>
+                                    {req.userName || 'Unknown'}
+                                  </div>
+                                  <div style={{fontSize:'11px',color:'#6b7280',lineHeight:1.5}}>
+                                    Account: {req.email}<br/>
+                                    {req.phone && <>Phone: {req.phone}<br/></>}
+                                    {req.nameOnId && <>Jina kwenye ID: <b>{req.nameOnId}</b><br/></>}
+                                    {req.nidaNumber && <>NIDA: <span style={{fontFamily:'monospace'}}>{req.nidaNumber}</span><br/></>}
+                                    {isStudent && req.universityName && <>Chuo: {req.universityName}<br/></>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Status / Actions */}
+                              {req.status === "pending" && (
+                                rejectingId === req.id ? (
+                                  // Reject reason picker
+                                  <div style={{background:'#fef2f2',borderRadius:'10px',padding:'10px',marginTop:'8px'}}>
+                                    <div style={{fontSize:'11px',fontWeight:'600',color:'#991b1b',marginBottom:'8px'}}>Sababu ya kukataa:</div>
+                                    <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+                                      {[
+                                        {id:'blurry',label:'Picha haijawa wazi'},
+                                        {id:'mismatched_name',label:'Jina halilingani'},
+                                        {id:'fake_id',label:'Kitambulisho si halisi'},
+                                        {id:'wrong_type',label:'Aina mbaya ya ID'},
+                                        {id:'expired',label:'Imeisha muda'},
+                                      ].map(r => (
+                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'#fff',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'#991b1b',cursor:'pointer',textAlign:'left'}}>
+                                          {r.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <button onClick={()=>setRejectingId(null)} style={{marginTop:'8px',padding:'6px 12px',background:'transparent',border:'none',fontSize:'11px',color:'#6b7280',cursor:'pointer'}}>Ghairi</button>
+                                  </div>
+                                ) : (
+                                  <div style={{display:'flex',gap:'6px'}}>
+                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
+                                    <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'#fff',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
+                                  </div>
+                                )
+                              )}
+                              {req.status === "approved" && (
+                                <div style={{padding:'6px 10px',background:'#dcfce7',color:'#166534',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✓ Approved {req.reviewedAt ? req.reviewedAt.toLocaleDateString() : ''}</div>
+                              )}
+                              {req.status === "rejected" && (
+                                <div style={{padding:'6px 10px',background:'#fee2e2',color:'#991b1b',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✗ Rejected ({req.rejectionReason || 'no reason'})</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 {/* Demand Inbox header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
                   <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>Demand Inbox</h2>
@@ -5610,7 +5896,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   )}
 </div>
             <div style={{flex:1}}>
-              <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
+                {isVerified && (
+                  <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
+                )}
+              </div>
               {/* BIO HIDDEN FOR NOW */}
               {/* {userBio && <div style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',marginTop:'4px',lineHeight:'1.4'}}>{userBio}</div>} */}
               <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
@@ -6427,14 +6718,65 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       borderRadius:'16px',
       padding:'24px',
       width:'100%',
-      maxWidth:'400px'
+      maxWidth:'420px',
+      maxHeight:'90vh',
+      overflowY:'auto'
     }} onClick={(e)=>e.stopPropagation()}>
-      <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Verify Your Account</h3>
-      
-      <p style={{fontSize:'16px',color:'#6b7280',marginBottom:'16px',lineHeight:'1.6'}}>
-        Upload a photo of your student ID to get verified. This helps us keep Kampasika safe and trusted.
+      <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'6px'}}>
+        {userAccountType === "provider" ? "Thibitisha akaunti yako" : "Thibitisha kwamba ni mwanafunzi"}
+      </h3>
+      <p style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px',lineHeight:1.5}}>
+        {userAccountType === "provider"
+          ? "Pakia picha ya kitambulisho cha NIDA. Hii inasaidia wanafunzi kukuamini unaweza kufanya kazi kweli."
+          : "Pakia picha ya kitambulisho chako cha mwanafunzi. Hii inasaidia kuhakikisha Kampasika ni salama."}
       </p>
-      
+
+      {/* Name on ID (required for both) */}
+      <label style={{display:'block',fontSize:'12px',fontWeight:'600',color:'#374151',marginBottom:'6px'}}>
+        Jina kama lilivyo kwenye kitambulisho
+      </label>
+      <input
+        type="text"
+        value={nameOnIdInput}
+        onChange={e => setNameOnIdInput(e.target.value)}
+        placeholder="Jina kamili"
+        style={{
+          width:'100%',
+          padding:'12px',
+          border:'1.5px solid #e2e6ea',
+          borderRadius:'10px',
+          fontSize:'14px',
+          outline:'none',
+          boxSizing:'border-box',
+          marginBottom:'14px'
+        }}
+      />
+
+      {/* NIDA number — providers only */}
+      {userAccountType === "provider" && (
+        <>
+          <label style={{display:'block',fontSize:'12px',fontWeight:'600',color:'#374151',marginBottom:'6px'}}>
+            Namba ya NIDA
+          </label>
+          <input
+            type="text"
+            value={nidaNumberInput}
+            onChange={e => setNidaNumberInput(e.target.value)}
+            placeholder="Mfano: 19850315-12345-12345-12"
+            style={{
+              width:'100%',
+              padding:'12px',
+              border:'1.5px solid #e2e6ea',
+              borderRadius:'10px',
+              fontSize:'14px',
+              outline:'none',
+              boxSizing:'border-box',
+              marginBottom:'14px'
+            }}
+          />
+        </>
+      )}
+
       <input 
         type="file" 
         id="student-id-upload" 
@@ -6444,11 +6786,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           const file = e.target.files[0];
           if (!file) return;
           if (!file.type.startsWith('image/')) {
-            setError("Please select an image file");
+            setError("Tafadhali chagua picha");
             return;
           }
           if (file.size > 5 * 1024 * 1024) {
-            setError("Image too large. Max 5MB");
+            setError("Picha ni kubwa sana. Max 5MB");
             return;
           }
           setStudentIdFile(file);
@@ -6463,7 +6805,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <div style={{position:'relative'}}>
             <img 
               src={studentIdPreview} 
-              alt="Student ID" 
+              alt="ID" 
               style={{
                 width:'100%',
                 height:'200px',
@@ -6483,7 +6825,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               fontSize:'12px',
               fontWeight:'600'
             }}>
-              Change Photo
+              Badilisha picha
             </div>
           </div>
         ) : (
@@ -6494,9 +6836,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             textAlign:'center',
             background:'#f9fafb'
           }}>
-            <div style={{fontSize:'48px',marginBottom:'12px'}}>🎓</div>
-            <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>Upload Student ID</div>
-            <div style={{fontSize:'12px',color:'#8a9bb0'}}>Click to select photo (max 5MB)</div>
+            <div style={{fontSize:'48px',marginBottom:'12px'}}>
+              {userAccountType === "provider" ? "🪪" : "🎓"}
+            </div>
+            <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>
+              {userAccountType === "provider" ? "Pakia picha ya NIDA" : "Pakia picha ya Student ID"}
+            </div>
+            <div style={{fontSize:'11px',color:'#8a9bb0'}}>Bonyeza kuchagua (max 5MB)</div>
           </div>
         )}
       </label>
@@ -6507,11 +6853,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         borderRadius:'10px',
         marginBottom:'16px'
       }}>
-        <div style={{fontSize:'13px',color:'#1e40af',lineHeight:'1.5'}}>
-          <strong>✓ What we need:</strong>
-          <br/>• Clear photo of your student ID
-          <br/>• Visible university name
-          <br/>• Readable student name/number
+        <div style={{fontSize:'12px',color:'#1e40af',lineHeight:1.5}}>
+          <strong>Tutaangalia:</strong>
+          <br/>• Picha iko wazi (haina ukungu)
+          <br/>• Jina linafanana na uliloandika hapo juu
+          {userAccountType === "provider" ? <><br/>• Namba ya NIDA inalingana</> : <><br/>• Chuo kinaonekana</>}
         </div>
       </div>
       
@@ -6523,14 +6869,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     padding:'12px',
     background: verificationStatus === "pending" 
       ? '#d1d5db' 
-      : (studentIdFile && !uploading ? '#2dd4bf' : '#e2e6ea'),
+      : (studentIdFile && !uploading ? '#0f766e' : '#e2e6ea'),
     color: verificationStatus === "pending"
       ? '#6b7280'
-      : (studentIdFile && !uploading ? '#0f1b2d' : '#8a9bb0'),
+      : (studentIdFile && !uploading ? '#fff' : '#8a9bb0'),
     border:'none',
     borderRadius:'10px',
     fontSize:'14px',
-    fontWeight:'600',
+    fontWeight:'700',
     cursor: verificationStatus === "pending" || !studentIdFile || uploading 
       ? 'not-allowed' 
       : 'pointer',
@@ -6538,12 +6884,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   }}
 >
   {uploading 
-    ? 'Submitting...' 
+    ? 'Inawasilisha...' 
     : verificationStatus === "pending"
-    ? '⏳ Already Submitted'
+    ? '⏳ Tayari imewasilishwa'
     : verificationStatus === "rejected"
-    ? 'Resubmit for Verification'
-    : 'Submit for Verification'
+    ? 'Wasilisha tena'
+    : 'Wasilisha kwa Uthibitisho'
   }
 </button>
       
@@ -6784,6 +7130,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       
 
       {/* Phone Capture Modal (for saving search alerts) */}
+      {/* Full-size ID photo viewer for admin */}
+      {viewingIdPhoto && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.9)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}} onClick={()=>setViewingIdPhoto(null)}>
+          <img src={viewingIdPhoto} alt="ID full size" style={{maxWidth:'100%',maxHeight:'90vh',borderRadius:'8px'}} />
+          <button onClick={()=>setViewingIdPhoto(null)} style={{position:'fixed',top:'20px',right:'20px',background:'#fff',color:'#000',border:'none',borderRadius:'50%',width:'40px',height:'40px',fontSize:'18px',cursor:'pointer'}}>×</button>
+        </div>
+      )}
+
       {phonePromptOpen && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }}>
           <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'380px'}} onClick={e=>e.stopPropagation()}>
