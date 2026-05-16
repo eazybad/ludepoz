@@ -3183,13 +3183,13 @@ return (
     paddingBottom:'100px'
   }}>
 
-         {false && (
+         {user && !isVerified && (
   <div style={{
     background: verificationStatus === "pending" 
       ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'  // Blue for pending
       : verificationStatus === "rejected"
       ? 'linear-gradient(135deg, #f87171, #ef4444)'  // Red for rejected
-      : 'linear-gradient(135deg, #fbbf24, #f59e0b)',  // Orange for not submitted
+      : 'linear-gradient(135deg, #0f766e, #0d9488)',  // Teal for not submitted (brand color)
     borderRadius:'16px',
     padding:'20px',
     marginBottom:'16px',
@@ -3207,37 +3207,37 @@ return (
       {verificationStatus === "pending" && (
         <>
           <span>⏳</span>
-          <span>Verification Pending</span>
+          <span>Inakaguliwa...</span>
         </>
       )}
       {verificationStatus === "rejected" && (
         <>
           <span>❌</span>
-          <span>Verification Rejected</span>
+          <span>Ombi halikukubalika</span>
         </>
       )}
       {!verificationStatus && (
         <>
-          <span>⚠️</span>
-          <span>Verify Your Account</span>
+          <span>✨</span>
+          <span>Pata Verified badge</span>
         </>
       )}
     </div>
     
     <p style={{
       color:'rgba(255,255,255,0.95)',
-      fontSize:'14px',
+      fontSize:'13px',
       lineHeight:'1.5',
       marginBottom:'12px'
     }}>
       {verificationStatus === "pending" && 
-        "We're reviewing your student ID. You'll be notified within 1 hour."
+        "Tunakaguliwa ombi lako. Tutakuthibitisha ndani ya saa 24-48."
       }
       {verificationStatus === "rejected" && 
-        "Your verification was rejected. Please submit a clearer photo of your student ID."
+        "Ombi lako halikukubalika. Unaweza kuwasilisha tena na picha bora."
       }
       {!verificationStatus && 
-        "Get verified to post listings, message sellers, and save items. Help grow our community!"
+        "Wanafunzi watakuamini zaidi ukiwa na alama ya Verified. Inachukua dakika 2 tu."
       }
     </p>
     
@@ -3262,7 +3262,7 @@ return (
             flex:1
           }}
         >
-          {verificationStatus === "rejected" ? '🔄 Resubmit' : '✓ Verify Now'}
+          {verificationStatus === "rejected" ? '🔄 Wasilisha tena' : '✓ Anza sasa'}
         </button>
       )}
       
@@ -3278,7 +3278,7 @@ return (
           textAlign:'center',
           color:'#fff'
         }}>
-          ⏳ Under Review
+          ⏳ Inakaguliwa
         </div>
       )}
       
