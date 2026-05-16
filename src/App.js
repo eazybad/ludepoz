@@ -77,7 +77,6 @@ const SEARCH_EXAMPLES = [
   "Ni nini unatafuta leo?",
   "Try: iphone 11 chini ya 400k",
   "Try: tutor wa math",
-  "Try: chumba master karibu na ARU",
   "Try: notes za calculus",
   "Try: calculator ya engineering",
   "Try: barber survey",
@@ -853,6 +852,35 @@ useEffect(() => {
     // (the cross-hint is shown FROM the original tab, so we want it cleared on return)
   };
 
+  // ─── Price input helpers ───
+  // parsePrice accepts the messy ways real users type prices:
+  //   "25000", "25,000", "25 000", "25k", "25K", "25.5k", "1m", "1.5M"
+  // Returns a number, or null if it can't be parsed.
+  // Used by the create-listing/service/room/collection forms so sellers don't
+  // have to type a bare integer.
+  const parsePrice = (raw) => {
+    if (!raw) return null;
+    let s = String(raw).trim().toLowerCase();
+    if (!s) return null;
+    // Strip commas, spaces, and TSh suffix if user typed it
+    s = s.replace(/,/g, "").replace(/\s+/g, "").replace(/tsh$/i, "").replace(/tzs$/i, "");
+    // Handle k/m suffixes
+    let multiplier = 1;
+    if (s.endsWith("k")) { multiplier = 1000; s = s.slice(0, -1); }
+    else if (s.endsWith("m")) { multiplier = 1000000; s = s.slice(0, -1); }
+    const n = parseFloat(s);
+    if (isNaN(n) || n < 0) return null;
+    return Math.round(n * multiplier);
+  };
+
+  // formatPriceInput returns a display-friendly version of what the user typed,
+  // for showing under the input so they can confirm the parsed value.
+  const formatPriceHint = (raw) => {
+    const n = parsePrice(raw);
+    if (n === null) return "";
+    return n.toLocaleString() + " TSh";
+  };
+
   // Reusable empty-results component for any tab.
   // Three states:
   //   1. No query yet → fallback message ("Be the first to post")
@@ -1031,6 +1059,7 @@ useEffect(() => {
   };
 
 
+  // eslint-disable-next-line no-unused-vars
   const getTimeUntilExpiry = (listing) => {
     if (!listing.expiresAt) return "";
     const expiryDate = listing.expiresAt.toDate ? listing.expiresAt.toDate() : new Date(listing.expiresAt);
@@ -1048,6 +1077,7 @@ useEffect(() => {
     return `Expires in ${days}d`;
   };
 
+  // eslint-disable-next-line no-unused-vars
   const renewListing = async (listingId) => {
     try {
       const newExpiry = new Date(Date.now() + 48 * 3600000);
@@ -1212,7 +1242,8 @@ useEffect(() => {
   }, []);
 
   const handleCreateRoom = async () => {
-    if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || !createRoomData.price || !createRoomData.location.trim()) {
+    const parsedRoomPrice = parsePrice(createRoomData.price);
+    if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || parsedRoomPrice === null || !createRoomData.location.trim()) {
       setError("Please fill in name, phone, room type, price, and location"); return;
     }
     try {
@@ -1243,7 +1274,7 @@ useEffect(() => {
         landlordName: createRoomData.landlordName.trim(),
         landlordPhone: createRoomData.landlordPhone.trim(),
         roomType: createRoomData.roomType,
-        price: parseInt(createRoomData.price),
+        price: parsedRoomPrice,
         location: createRoomData.location.trim(),
         nearUni: createRoomData.nearUni || "ARU",
         description: createRoomData.desc.trim(),
@@ -2191,7 +2222,8 @@ useEffect(() => {
   const handleCreateListing = async () => {
     if (!canPerformAction()) return;
 
-  if (!createData.cat || !createData.title.trim() || !createData.price || !createData.location.trim() || !user) {
+  const parsedPrice = parsePrice(createData.price);
+  if (!createData.cat || !createData.title.trim() || parsedPrice === null || !createData.location.trim() || !user) {
     setError("Tafadhali jaza sehemu zote: aina, kichwa, bei, na eneo.");
     setTimeout(() => setError(""), 4000);
     return;
@@ -2227,7 +2259,7 @@ useEffect(() => {
       category: createData.cat,
       title: createData.title.trim(),
       description: createData.desc.trim(),
-      price: parseInt(createData.price),
+      price: parsedPrice,
       condition: createData.cond,
       location: createData.location.trim(),
       whatsapp: createData.whatsapp.trim(),
@@ -2237,7 +2269,7 @@ useEffect(() => {
       views: 0,
       saves: 0,
       createdAt: serverTimestamp(),
-      expiresAt: new Date(Date.now() + 48 * 3600000)
+      // expiresAt removed — listings no longer auto-expire. Sellers mark them sold or delete them.
     });
     
     setShowCreateSuccess(true);
@@ -2246,7 +2278,7 @@ useEffect(() => {
     // Store last listing info for the share prompt
     const lastListing = {
       title: createData.title.trim(),
-      price: parseInt(createData.price),
+      price: parsedPrice,
       description: createData.desc.trim(),
       location: createData.location.trim(),
       universityName: selectedUni.short,
@@ -2276,8 +2308,10 @@ useEffect(() => {
 
   const handleCreateService = async () => {
     if (!canPerformAction()) return;
-    if (!createServiceData.category || !createServiceData.title.trim() || !createServiceData.price || !user) {
-      setError("Please fill in all required fields (category, title, price)");
+    const parsedSvcPrice = parsePrice(createServiceData.price);
+    if (!createServiceData.category || !createServiceData.title.trim() || parsedSvcPrice === null || !user) {
+      setError("Tafadhali jaza sehemu zote: aina, kichwa, na bei.");
+      setTimeout(() => setError(""), 4000);
       return;
     }
     try {
@@ -2307,7 +2341,7 @@ useEffect(() => {
         category: createServiceData.category,
         title: createServiceData.title.trim(),
         description: createServiceData.desc.trim(),
-        price: parseInt(createServiceData.price),
+        price: parsedSvcPrice,
         priceType: createServiceData.priceType || "fixed",
         location: (createServiceData.location || "").trim(),
         availability: (createServiceData.availability || "").trim(),
@@ -2395,8 +2429,11 @@ useEffect(() => {
 
   const handleCreateCollection = async () => {
     if (!user) return;
-    if (!createCollectionData.title.trim() || !createCollectionData.price) {
-      setError("Please fill in title and price"); return;
+    const parsedColPrice = parsePrice(createCollectionData.price);
+    if (!createCollectionData.title.trim() || parsedColPrice === null) {
+      setError("Tafadhali jaza kichwa na bei.");
+      setTimeout(() => setError(""), 4000);
+      return;
     }
     try {
       setUploading(true);
@@ -2419,7 +2456,7 @@ useEffect(() => {
         universityName: selectedUni.short,
         title: createCollectionData.title.trim(),
         description: createCollectionData.desc.trim(),
-        price: parseInt(createCollectionData.price),
+        price: parsedColPrice,
         expectedPeople: createCollectionData.expectedPeople ? parseInt(createCollectionData.expectedPeople) : 0,
         options: optionsList,
         paymentMethods: createCollectionData.paymentMethods.filter(pm => pm.number.trim()).map(pm => ({ network: pm.network, number: pm.number.trim(), name: pm.name.trim() })),
@@ -2863,9 +2900,9 @@ const loadSellerStats = useCallback(async (userId) => {
 }, []);
 
   // EXPIRY DISABLED — all user listings show as "active" for now
-  // To re-enable: restore isExpired checks below
+  // Note: expiry was removed. All user listings appear under "Active" regardless of age.
+  // To re-enable expiry someday: restore `isExpired` checks and a TTL field.
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
-  const myExpiredListings = []; // listings.filter(l => l.userId === user?.uid && isExpired(l));
   const myServices = services.filter(s => s.userId === user?.uid);
 
   if (loading) {
@@ -4027,11 +4064,26 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 25000" value={createData.price} onChange={e=>setCreateData({...createData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
+                <div style={{marginBottom:'16px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 25,000 or 25k"
+                    value={createData.price}
+                    onChange={e=>setCreateData({...createData,price:e.target.value})}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}
+                  />
+                  {createData.price && (
+                    <div style={{fontSize:'11px',color:formatPriceHint(createData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                      {formatPriceHint(createData.price) || '⚠ Bei haisomeki — andika mfano: 25000, 25k, 25,000'}
+                    </div>
+                  )}
+                </div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
-                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing (48h)"}</button>
+                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
               </>
             )}
           </div>
@@ -4537,7 +4589,22 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe what you offer, your experience, availability..." value={createServiceData.desc} onChange={e=>setCreateServiceData({...createServiceData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
 
                 <div style={{display:'flex',gap:'10px',marginBottom:'16px'}}>
-                  <div style={{flex:1}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label><input type="number" placeholder="e.g. 5000" value={createServiceData.price} onChange={e=>setCreateServiceData({...createServiceData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                  <div style={{flex:1}}>
+                    <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="e.g. 5,000 or 5k"
+                      value={createServiceData.price}
+                      onChange={e=>setCreateServiceData({...createServiceData,price:e.target.value})}
+                      style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
+                    />
+                    {createServiceData.price && (
+                      <div style={{fontSize:'11px',color:formatPriceHint(createServiceData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                        {formatPriceHint(createServiceData.price) || '⚠ Bei haisomeki'}
+                      </div>
+                    )}
+                  </div>
                   <div style={{width:'130px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price Type</label><select value={createServiceData.priceType} onChange={e=>setCreateServiceData({...createServiceData,priceType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="fixed">Fixed</option><option value="starting">Starting at</option><option value="negotiable">Negotiable</option></select></div>
                 </div>
 
@@ -4792,9 +4859,24 @@ return (
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Details — deadline, what's included, pickup info..." value={createCollectionData.desc} onChange={e=>setCreateCollectionData({...createCollectionData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price per person (TSh) *</label><input type="number" placeholder="e.g. 15000" value={createCollectionData.price} onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'16px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price per person (TSh) *</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 15,000 or 15k"
+                    value={createCollectionData.price}
+                    onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
+                  />
+                  {createCollectionData.price && (
+                    <div style={{fontSize:'11px',color:formatPriceHint(createCollectionData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                      {formatPriceHint(createCollectionData.price) || '⚠ Bei haisomeki'}
+                    </div>
+                  )}
+                </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Expected number of people (optional)</label><input type="number" placeholder="e.g. 45" value={createCollectionData.expectedPeople} onChange={e=>setCreateCollectionData({...createCollectionData,expectedPeople:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>How many people in your class/group? This helps calculate the expected total amount{createCollectionData.price && createCollectionData.expectedPeople ? ` — Expected: ${(parseInt(createCollectionData.price) * parseInt(createCollectionData.expectedPeople)).toLocaleString()} TSh` : ''}</div></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Expected number of people (optional)</label><input type="number" placeholder="e.g. 45" value={createCollectionData.expectedPeople} onChange={e=>setCreateCollectionData({...createCollectionData,expectedPeople:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>How many people in your class/group? This helps calculate the expected total amount{createCollectionData.price && createCollectionData.expectedPeople && parsePrice(createCollectionData.price) ? ` — Expected: ${(parsePrice(createCollectionData.price) * parseInt(createCollectionData.expectedPeople)).toLocaleString()} TSh` : ''}</div></div>
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Options (comma separated, optional)</label><input type="text" placeholder="e.g. Size S, Size M, Size L, Size XL" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Sizes, colors, quantities — anything students need to pick</div></div>
 
@@ -5334,7 +5416,22 @@ return (
                   </div>
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Monthly Rent (TSh) *</label><input type="number" placeholder="e.g. 80000" value={createRoomData.price} onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Monthly Rent (TSh) *</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 80,000 or 80k"
+                    value={createRoomData.price}
+                    onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
+                  />
+                  {createRoomData.price && (
+                    <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                      {formatPriceHint(createRoomData.price) ? formatPriceHint(createRoomData.price) + ' kwa mwezi' : '⚠ Bei haisomeki'}
+                    </div>
+                  )}
+                </div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label><input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
@@ -5992,7 +6089,6 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                       {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
-                      <div style={{fontSize:'12px',color:'#10b981',marginBottom:'8px',fontWeight:'600'}}>⏰ {getTimeUntilExpiry(item)}</div>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
                         {/* VIEW COUNT HIDDEN FOR NOW */}
@@ -6005,29 +6101,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   ))}
                 </div>
               </div>}
-              
-              {myExpiredListings.length>0&&<div>
-                <h3 style={{fontSize:'16px',fontWeight:'700',color:'#ef4444',marginBottom:'12px'}}>Expired Listings ({myExpiredListings.length})</h3>
-                <div style={{display:'flex',flexDirection:'column'}}>
-                  {myExpiredListings.map((item,idx)=>(
-                    <div key={item.id} style={{background:'#fff',borderBottom:idx===myExpiredListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',opacity:0.7,borderRadius:idx===0?'12px 12px 0 0':idx===myExpiredListings.length-1?'0 0 12px 12px':'0'}}>
-                      {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
-                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
-                      {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
-                      <div style={{fontSize:'12px',color:'#ef4444',marginBottom:'8px',fontWeight:'600'}}>🔴 {getTimeUntilExpiry(item)}</div>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                        <div style={{display:'flex',gap:'8px'}}>
-                          <button onClick={()=>renewListing(item.id)} style={{padding:'6px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🔄 Renew</button>
-                          <button onClick={()=>deleteListing(item.id)} style={{padding:'6px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>}
-              
-              {myActiveListings.length===0 && myExpiredListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
+
+              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
             </>
           )}
           
