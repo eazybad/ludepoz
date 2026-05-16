@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 const ENABLE_ROOMS = false;       // Rooms & Housing feature
-const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = false;  // Collections & Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -74,7 +74,7 @@ const generateSellerSlug = (name, uni) => {
 };
 
 const SEARCH_EXAMPLES = [
-  "Nini unatafuta leo?",
+  "Ni nini unatafuta leo?",
   "Try: iphone 11 chini ya 400k",
   "Try: tutor wa math",
   "Try: chumba master karibu na ARU",
@@ -362,6 +362,11 @@ useEffect(() => {
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
+  // Tracks whether we've finished loading the user's profile from Firestore.
+  // Used to suppress the verification banner flash on page load — we don't
+  // want to show "Pata Verified" then disappear it once we discover the user
+  // is already verified. Wait until we know.
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [studentIdFile, setStudentIdFile] = useState(null);
   const [studentIdPreview, setStudentIdPreview] = useState(null); 
@@ -1394,15 +1399,18 @@ const requestNotificationPermission = async (currentUser) => {
       setUserProviderLocation(userData.location || "");
       setUserPhone(userData.phone || "");
       setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
-      setIsVerified(userData.verified || false);
-      
-      // ⭐ CHECK VERIFICATION STATUS
+      // Read both legacy "verified" and current "isVerified" field — handles
+      // both data shapes since users created before v16 may have either.
+      setIsVerified(userData.isVerified === true || userData.verified === true);
+
       await checkVerificationStatus(userId);
     }
   } catch (err) {
     console.error("Error loading profile:", err);
+  } finally {
+    setProfileLoaded(true);
   }
-}, [checkVerificationStatus]); // ⭐ ADD DEPENDENCY
+}, [checkVerificationStatus]);
 
   // ─── Landlord room management ───
   // Loads ALL rooms owned by the current user, regardless of availability.
@@ -1808,6 +1816,8 @@ const requestNotificationPermission = async (currentUser) => {
         setUser(null);
         setUserName("");
         setUserAvatar(null);
+        setIsVerified(false);
+        setProfileLoaded(false);
         setLoading(false);
         // Not logged in — still try to load public data (will work if Firestore rules allow public reads)
         Promise.all([
@@ -3183,7 +3193,7 @@ return (
     paddingBottom:'100px'
   }}>
 
-         {user && !isVerified && (
+         {user && profileLoaded && !isVerified && (
   <div style={{
     background: verificationStatus === "pending" 
       ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'  // Blue for pending
@@ -3231,7 +3241,7 @@ return (
       marginBottom:'12px'
     }}>
       {verificationStatus === "pending" && 
-        "Tunakaguliwa ombi lako. Tutakuthibitisha ndani ya saa 24-48."
+        "Tunakagua ombi lako. Tutakuthibitisha ndani ya saa 12-24."
       }
       {verificationStatus === "rejected" && 
         "Ombi lako halikukubalika. Unaweza kuwasilisha tena na picha bora."
@@ -5559,6 +5569,51 @@ return (
                   <div style={{fontSize:'14px',color:'#8a9bb0'}}>Nothing active right now</div>
                 </div>
               ) : null
+            ) : publicSellerListings.length >= 4 ? (
+              // ─── Horizontal scroll for sellers with 4+ listings ───
+              // Avoids a long vertical scroll dominated by one seller's inventory.
+              // Cards are smaller (160px wide) and tappable to open full detail.
+              <div style={{
+                display:'flex',
+                gap:'10px',
+                overflowX:'auto',
+                paddingBottom:'10px',
+                WebkitOverflowScrolling:'touch',
+                scrollSnapType:'x mandatory',
+              }}>
+                {publicSellerListings.map((item) => {
+                  const cover = (item.photos && item.photos[0]) || item.photoUrl;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setViewingListing(item)}
+                      style={{
+                        flexShrink:0,
+                        width:'160px',
+                        background:'#fff',
+                        borderRadius:'12px',
+                        border:'1px solid #e2e6ea',
+                        overflow:'hidden',
+                        cursor:'pointer',
+                        scrollSnapAlign:'start',
+                      }}>
+                      {cover ? (
+                        <img src={cover} alt={item.title} style={{width:'100%',height:'120px',objectFit:'cover'}} />
+                      ) : (
+                        <div style={{width:'100%',height:'120px',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'32px'}}>📦</div>
+                      )}
+                      <div style={{padding:'8px 10px 10px'}}>
+                        <div style={{fontSize:'12px',fontWeight:'600',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:'4px'}}>
+                          {item.title}
+                        </div>
+                        <div style={{fontFamily:'serif',fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>
+                          {item.price?.toLocaleString()} TSh
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div style={{display:'flex',flexDirection:'column'}}>
                 {publicSellerListings.map((item, idx) => (
