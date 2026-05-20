@@ -149,3 +149,97 @@ exports.sendNewListingNotification = onDocumentCreated(
   }
 );
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
+const admin = require("firebase-admin");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
+
+admin.initializeApp();
+
+const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
+const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
+
+function assertAdmin(request) {
+  const callerUid = request.auth && request.auth.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+  if (!ADMIN_UIDS.has(callerUid)) {
+    throw new HttpsError("permission-denied", "Only admins can do this.");
+  }
+  return callerUid;
+}
+
+exports.adminSendPasswordReset = onCall({ secrets: [KAMPASIKA_WEB_API_KEY] }, async (request) => {
+  assertAdmin(request);
+
+  const email = String(request.data && request.data.email || "").trim().toLowerCase();
+  if (!email) {
+    throw new HttpsError("invalid-argument", "Missing user email.");
+  }
+
+  const apiKey = KAMPASIKA_WEB_API_KEY.value();
+  if (!apiKey) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Set KAMPASIKA_WEB_API_KEY in your Cloud Functions environment."
+    );
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestType: "PASSWORD_RESET",
+        email,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new HttpsError("internal", body.error?.message || "Password reset failed.");
+  }
+
+  return { success: true };
+});
+
+exports.adminDeleteUser = onCall(async (request) => {
+  const callerUid = assertAdmin(request);
+  const uid = String(request.data && request.data.uid || "").trim();
+
+  if (!uid) {
+    throw new HttpsError("invalid-argument", "Missing user uid.");
+  }
+  if (uid === callerUid) {
+    throw new HttpsError("failed-precondition", "Admins cannot delete their own account.");
+  }
+
+  const db = admin.firestore();
+  const deleteRefs = [db.collection("users").doc(uid)];
+
+  const collectionsToClean = [
+    ["listings", "userId"],
+    ["services", "userId"],
+    ["rooms", "userId"],
+    ["searchAlerts", "userId"],
+    ["verificationRequests", "userId"],
+    ["notifications", "userId"],
+  ];
+
+  for (const [collectionName, field] of collectionsToClean) {
+    const snap = await db.collection(collectionName).where(field, "==", uid).limit(400).get();
+    snap.docs.forEach((doc) => deleteRefs.push(doc.ref));
+  }
+
+  for (let i = 0; i < deleteRefs.length; i += 450) {
+    const batch = db.batch();
+    deleteRefs.slice(i, i + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  await admin.auth().deleteUser(uid);
+
+  return { success: true };
+});
