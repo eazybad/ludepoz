@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 
-const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
+const ENABLE_COLLECTIONS = true;  // Community Orders feature
 // ====================================
 
 const SERVICE_TAGS = [
@@ -171,6 +171,7 @@ function App() {
   const [success, setSuccess] = useState("");
   const [page, setPageRaw] = useState("home");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
+  const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const pageHistory = useRef(["home"]);
   const isGoingBack = useRef(false)
 
@@ -255,7 +256,7 @@ function App() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
-    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: []
+    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: []
   });
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
 
@@ -298,7 +299,7 @@ useEffect(() => {
 } = useKampasikaSearch(app);
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
-  const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "" });
+  const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "", paymentProofFile: null, paymentProofPreview: null });
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
@@ -1140,6 +1141,24 @@ useEffect(() => {
     setError("Failed to update feature");
   }
 };
+ const toggleIdentityVerificationRequirement = async () => {
+  try {
+    const newValue = !REQUIRE_IDENTITY_VERIFICATION;
+
+    await setDoc(
+      doc(db, "system", "features"),
+      { requireIdentityVerification: newValue },
+      { merge: true }
+    );
+
+    setRequireIdentityVerification(newValue);
+    setSuccess(newValue ? "Identity verification required for the whole app" : "Identity verification disabled for the whole app");
+    setTimeout(() => setSuccess(""), 3000);
+  } catch (err) {
+    console.error("Toggle failed:", err);
+    setError("Failed to update identity verification setting");
+  }
+};
 
  const deleteConversation = async (conversationId) => {
   if (!conversationId) return;
@@ -1284,6 +1303,7 @@ useEffect(() => {
       const data = snap.data();
 
       setEnableRooms(data.rooms === true);
+      setRequireIdentityVerification(data.requireIdentityVerification === true);
     }
   } catch (err) {
     console.error("Error loading feature flags:", err);
@@ -2662,7 +2682,12 @@ useEffect(() => {
   };
 
   const handleCreateCollection = async () => {
-    if (!user) return;
+    if (!canPerformAction("createCommunityOrder")) return;
+    if (REQUIRE_IDENTITY_VERIFICATION && !isVerified) {
+      setError("Please verify your account before using this feature.");
+      setShowVerifyModal(true);
+      return;
+    }
     const parsedColPrice = parsePrice(createCollectionData.price);
     if (!createCollectionData.title.trim() || parsedColPrice === null) {
       setError("Tafadhali jaza kichwa na bei.");
@@ -2688,6 +2713,9 @@ useEffect(() => {
         userAvatar: userAvatar,
         universityId: selectedUni.id,
         universityName: selectedUni.short,
+        communityName: createCollectionData.communityName.trim() || selectedUni.short,
+        communityType: createCollectionData.communityType || "class",
+        collectionType: createCollectionData.collectionType || "order",
         title: createCollectionData.title.trim(),
         description: createCollectionData.desc.trim(),
         price: parsedColPrice,
@@ -2712,8 +2740,8 @@ useEffect(() => {
       });
       setLastCreatedCollectionId(newColRef.id);
       setShowCreateCollectionSuccess(true);
-      setSuccess("Collection created!");
-      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", photoFiles: [], photoPreviews: [] });
+      setSuccess("Community Order created!");
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: [] });
       loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
@@ -2765,10 +2793,18 @@ useEffect(() => {
     const amountPaid = parseInt(orderFormData.amountPaid) || 0;
     try {
       setUploading(true);
+      let paymentProofUrl = null;
+      if (orderFormData.paymentProofFile) {
+        const { file } = await safeCompress(orderFormData.paymentProofFile, COMPRESSION_PRESETS.listing);
+        const proofRef = ref(storage, `collection-payment-proofs/${collectionItem.id}/${user.uid}_${Date.now()}.jpg`);
+        const proofSnap = await uploadBytes(proofRef, file);
+        paymentProofUrl = await getDownloadURL(proofSnap.ref);
+      }
       await updateDoc(doc(db, "collections", collectionItem.id, "orders", myOrderId), {
         amountPaid: amountPaid,
         payerName: (orderFormData.payerName || "").trim(),
         paymentRef: orderFormData.paymentRef.trim(),
+        ...(paymentProofUrl ? { paymentProofUrl } : {}),
         paid: amountPaid >= collectionItem.price,
         status: amountPaid >= collectionItem.price ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
       });
@@ -2783,7 +2819,7 @@ useEffect(() => {
         });
       }
       setSuccess("Payment confirmed! The rep can now verify your transaction.");
-      setOrderFormData({ ...orderFormData, amountPaid: "", payerName: "", paymentRef: "" });
+      setOrderFormData({ ...orderFormData, amountPaid: "", payerName: "", paymentRef: "", paymentProofFile: null, paymentProofPreview: null });
       setPaymentConfirmed(true);
       loadCollectionOrders(collectionItem.id);
       const updatedDoc = await getDoc(doc(db, "collections", collectionItem.id));
@@ -2858,6 +2894,22 @@ useEffect(() => {
       };
       reader.readAsDataURL(file);
     });
+  };
+  const handlePaymentProofSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError("Payment proof must be an image"); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Payment proof must be under 5MB"); return; }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setOrderFormData(prev => ({
+        ...prev,
+        paymentProofFile: file,
+        paymentProofPreview: ev.target.result
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
  const handleUpdateProfile = async () => {
@@ -3809,12 +3861,12 @@ return (
     ✨ AI is thinking...
   </div>
 )}
-{/* Collections & Orders compact strip */}
+{/* Community Orders compact strip */}
 {ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("collections")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
   <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
     <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'rgba(255,255,255,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}}>📋</div>
     <div>
-      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Collections & Orders{collections.length > 0 ? ` (${collections.length})` : ''}</span>
+      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Community Orders{collections.length > 0 ? ` (${collections.length})` : ''}</span>
       <div style={{fontSize:'10px',color:'rgba(15,27,45,0.55)',marginTop:'1px'}}>Track group buys & payments</div>
     </div>
   </div>
@@ -4014,7 +4066,7 @@ return (
 </>)}
 
 {/* ===== SERVICES TAB CONTENT ===== */}
-{homeTab==="services"&&(<>
+<div style={{display: homeTab==="services" ? "block" : "none"}}>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
     <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
       onChange={e => {
@@ -4098,10 +4150,10 @@ return (
       </div>
     );
   })()}
-</>)}
+</div>
 
 {/* ===== ROOMS TAB CONTENT ===== */}
-{ENABLE_ROOMS && homeTab==="rooms"&&(<>
+<div style={{display: ENABLE_ROOMS && homeTab==="rooms" ? "block" : "none"}}>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
     <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
       onChange={e => {
@@ -4194,7 +4246,7 @@ return (
       </div>
     );
   })()}
-</>)}
+</div>
         </div>
       )}
       
@@ -5162,16 +5214,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
           <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
-            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Collections & Orders</h2>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Community Orders</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — order and track payments in one place.</p>
-            <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Collection</button>
+            <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Community Order</button>
           </div>
 
           {/* Search collections */}
           {collections.length > 2 && (
             <>
               <div style={{margin:'0 16px 8px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-                <input type="text" placeholder="Tafuta collection..." value={collectionSearchQ}
+                <input type="text" placeholder="Search community orders..." value={collectionSearchQ}
                   onChange={e => {
                     setCollectionSearchQ(e.target.value);
                     if (!e.target.value.trim()) {
@@ -5191,7 +5243,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {collections.length === 0 ? (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
-              <div style={{fontSize:'16px',fontWeight:'600'}}>No active collections</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active community orders</div>
               <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create collections for t-shirts, tickets, contributions etc.</div>
             </div>
           ) : (
@@ -5201,7 +5253,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 : collections.filter(col => {
                     if (!committedCollectionSearchQ.trim()) return true;
                     const q = committedCollectionSearchQ.toLowerCase();
-                    return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q);
+                    return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q) || col.communityName?.toLowerCase().includes(q) || col.communityType?.toLowerCase().includes(q) || col.collectionType?.toLowerCase().includes(q);
                   })
               ).map(col => {
                 const target = col.expectedPeople || col.totalOrders || 0;
@@ -5209,7 +5261,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 // eslint-disable-next-line no-unused-vars
                 const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
                 return (
-                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
                       {col.photoUrl ? (
                         <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
@@ -5218,7 +5270,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       )}
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
-                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>by {col.userName} • {col.universityName}</div>
+                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {col.collectionType || "order"}</div>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
                         <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
                       </div>
                     </div>
@@ -5249,11 +5302,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="createCollection"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
-            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New Collection"}</h2>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New Community Order"}</h2>
             {showCreateCollectionSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
-                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Collection created!</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Community Order created!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
                   <button onClick={()=>{
@@ -5262,7 +5315,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                   }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("collections");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Collections</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("collections");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Community Orders</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
@@ -5284,6 +5337,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   )}
                 </label>
 
+                <div style={{marginBottom:'16px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community / group name</label>
+                  <input type="text" placeholder="e.g. ARU Catholic Community, Survey Year 1" value={createCollectionData.communityName} onChange={e=>setCreateCollectionData({...createCollectionData,communityName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Helps students find orders/events from their people.</div>
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+                  <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community type</label><select value={createCollectionData.communityType} onChange={e=>setCreateCollectionData({...createCollectionData,communityType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="class">Class / Year</option><option value="church">Church</option><option value="club">Club</option><option value="hostel">Hostel</option><option value="freshers">Freshers</option><option value="other">Other</option></select></div>
+                  <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Type</label><select value={createCollectionData.collectionType} onChange={e=>setCreateCollectionData({...createCollectionData,collectionType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="order">Group order</option><option value="event">Event registration</option><option value="contribution">Contribution</option><option value="freshers">Freshers support</option></select></div>
+                </div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>What are you collecting for? *</label><input type="text" placeholder="e.g. Year 3 Graduation T-Shirts, Field Trip Bus" value={createCollectionData.title} onChange={e=>setCreateCollectionData({...createCollectionData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Details — deadline, what's included, pickup info..." value={createCollectionData.desc} onChange={e=>setCreateCollectionData({...createCollectionData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
@@ -5360,7 +5423,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
-                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create Collection"}</button>
+                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create Community Order"}</button>
               </>
             )}
           </div>
@@ -5377,7 +5440,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           <div style={{padding:'16px'}}>
             <h2 style={{fontSize:'22px',fontWeight:'700',marginBottom:'4px'}}>{viewingCollection.title}</h2>
             <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'8px'}}>
-              by {viewingCollection.userName} • {viewingCollection.universityName}
+              by {viewingCollection.userName} • {viewingCollection.communityName || viewingCollection.universityName}
               {isCollectionAdmin(viewingCollection) && user?.uid !== viewingCollection.userId && (
                 <span style={{marginLeft:'8px',fontSize:'11px',background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👥 Co-admin</span>
               )}
@@ -5387,6 +5450,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
             
             <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
+
+            {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'#fef3c7',color:'#92400e',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
 
             {viewingCollection.description && <p style={{fontSize:'14px',color:'#4a5568',lineHeight:1.6,marginBottom:'16px',whiteSpace:'pre-wrap'}}>{viewingCollection.description}</p>}
 
@@ -5487,7 +5552,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
             }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
-              📲 Share Collection on WhatsApp
+              📲 Share Community Order on WhatsApp
             </button>
 
             {/* ORDER FORM — for students */}
@@ -5530,7 +5595,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         ) : 'Your order has been registered. Confirm your payment below when ready.';
                       })()}
                     </div>
-                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:""});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ Place Another Order</button>
+                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:"",paymentRef:"",amountPaid:"",payerName:"",paymentProofFile:null,paymentProofPreview:null});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ Place Another Order</button>
                   </div>
                 )}
 
@@ -5546,6 +5611,22 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                     <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Transaction Code</label><input type="text" value={orderFormData.paymentRef} onChange={e=>setOrderFormData({...orderFormData,paymentRef:e.target.value.toUpperCase()})} placeholder="e.g. SCI12345XYZ" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>From your payment SMS</div></div>
 
+
+                    <input type="file" id="payment-proof" accept="image/*" style={{display:'none'}} onChange={handlePaymentProofSelect}/>
+                    <label htmlFor="payment-proof" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
+                      {orderFormData.paymentProofPreview ? (
+                        <div style={{border:'1.5px solid #bbf7d0',borderRadius:'10px',padding:'8px',background:'#f0fdf4'}}>
+                          <img src={orderFormData.paymentProofPreview} alt="Payment proof preview" style={{width:'100%',maxHeight:'180px',objectFit:'cover',borderRadius:'8px'}}/>
+                          <div style={{fontSize:'12px',color:'#166534',fontWeight:'600',marginTop:'6px'}}>Proof screenshot attached. Tap to change.</div>
+                        </div>
+                      ) : (
+                        <div style={{border:'1.5px dashed #10b981',borderRadius:'10px',padding:'14px',textAlign:'center',background:'#f0fdf4'}}>
+                          <div style={{fontSize:'20px',marginBottom:'4px'}}>📷</div>
+                          <div style={{fontSize:'13px',fontWeight:'700',color:'#166534'}}>Attach payment screenshot</div>
+                          <div style={{fontSize:'11px',color:'#6b7280',marginTop:'3px'}}>Optional but recommended for informal payments</div>
+                        </div>
+                      )}
+                    </label>
                     <button onClick={()=>confirmPayment(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Confirming...":"✅ Confirm Payment"}</button>
                   </div>
                 )}
@@ -5611,7 +5692,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                               {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
                               {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
                               {order.phone && <span>{order.phone} • </span>}
-                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>}
+                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0f766e',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
                             </div>
                           </div>
                           
@@ -5659,7 +5740,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     }
                   }} style={{width:'100%',padding:'12px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
-                    📲 {collectionOrders.length === 0 ? 'Share Collection on WhatsApp' : 'Share Payment Status on WhatsApp'}
+                    📲 {collectionOrders.length === 0 ? 'Share Community Order on WhatsApp' : 'Share Payment Status on WhatsApp'}
                   </button>
               </div>
             )}
@@ -5674,6 +5755,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     </div>
                     {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
                     {order.paymentRef && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Ref: {order.paymentRef}</div>}
+                    {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:'12px',color:'#0f766e',fontWeight:'700',marginTop:'4px'}}>View payment proof</a>}
                   </div>
                 ))}
               </div>
@@ -6300,7 +6382,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
   </div>
 </div>
 
-                {/* ─── VERIFICATION QUEUE ─── */}
+
+                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Identity Verification</div>
+<div style={{fontSize:'13px',color:'#6b7280'}}>Require verified accounts before using main app features</div>
+</div>
+<button onClick={toggleIdentityVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_IDENTITY_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
+  {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>                {/* ─── VERIFICATION QUEUE ─── */}
                 <div style={{marginBottom:'24px'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
                     <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>
