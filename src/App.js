@@ -45,7 +45,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
-const ENABLE_ROOMS = false;       // Rooms & Housing feature
+
 const ENABLE_COLLECTIONS = true;  // Collections & Orders feature
 // ====================================
 
@@ -170,6 +170,7 @@ function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [page, setPageRaw] = useState("home");
+  const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const pageHistory = useRef(["home"]);
   const isGoingBack = useRef(false)
 
@@ -1107,6 +1108,31 @@ useEffect(() => {
     }
   };
   
+  const toggleRoomsFeature = async () => {
+  try {
+    const newValue = !ENABLE_ROOMS;
+
+    await setDoc(
+      doc(db, "system", "features"),
+      {
+        rooms: newValue
+      },
+      { merge: true }
+    );
+
+    setEnableRooms(newValue);
+
+    setSuccess(
+      newValue
+        ? "✓ Rooms feature enabled"
+        : "✓ Rooms feature disabled"
+    );
+  } catch (err) {
+    console.error("Toggle failed:", err);
+    setError("Failed to update feature");
+  }
+};
+
   const deleteConversation = async (conversationId) => {
   if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
   try {
@@ -1211,6 +1237,21 @@ useEffect(() => {
       });
     } catch(e) { console.error("Error setting up collections listener:", e); }
   }, []);
+
+  const loadFeatureFlags = async () => {
+  try {
+    const refDoc = doc(db, "system", "features");
+    const snap = await getDoc(refDoc);
+
+    if (snap.exists()) {
+      const data = snap.data();
+
+      setEnableRooms(data.rooms === true);
+    }
+  } catch (err) {
+    console.error("Error loading feature flags:", err);
+  }
+};
 
   // ============ ROOMS & HOUSING ============
   const loadRooms = useCallback(async () => {
@@ -1823,6 +1864,7 @@ const requestNotificationPermission = async (currentUser) => {
           loadListings(),
           loadServices(),
           loadCollections(),
+          loadFeatureFlags(),
           ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts(), loadMyAllRooms()] : []),
           loadConversations(),
         ]).catch(err => console.error("Data load error:", err));
@@ -6058,6 +6100,55 @@ return (
                     ))}
                   </div>
                 )}
+               
+                <div style={{
+  background:'#fff',
+  padding:'16px',
+  borderRadius:'12px',
+  marginBottom:'16px',
+  border:'1px solid #e2e6ea'
+}}>
+  <div style={{
+    display:'flex',
+    justifyContent:'space-between',
+    alignItems:'center'
+  }}>
+    
+    <div>
+      <div style={{
+        fontSize:'16px',
+        fontWeight:'700',
+        marginBottom:'4px'
+      }}>
+        🏠 Rooms Feature
+      </div>
+
+      <div style={{
+        fontSize:'13px',
+        color:'#6b7280'
+      }}>
+        Enable or disable room listings platform-wide
+      </div>
+    </div>
+
+    <button
+      onClick={toggleRoomsFeature}
+      style={{
+        padding:'10px 16px',
+        border:'none',
+        borderRadius:'10px',
+        cursor:'pointer',
+        fontWeight:'700',
+        background: ENABLE_ROOMS
+          ? '#10b981'
+          : '#ef4444',
+        color:'#fff'
+      }}
+    >
+      {ENABLE_ROOMS ? 'ON' : 'OFF'}
+    </button>
+  </div>
+</div>
 
                 {/* ─── VERIFICATION QUEUE ─── */}
                 <div style={{marginBottom:'24px'}}>
