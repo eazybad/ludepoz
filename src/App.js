@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
@@ -1121,6 +1121,14 @@ useEffect(() => {
     );
 
     setEnableRooms(newValue);
+    if (newValue) {
+  await Promise.all([loadRooms(), loadRoommatePosts()]);
+  if (user) await loadMyAllRooms();
+} else {
+  setRooms([]);
+  setRoommatePosts([]);
+  setMyAllRooms([]);
+}
 
     setSuccess(
       newValue
@@ -1133,29 +1141,58 @@ useEffect(() => {
   }
 };
 
-  const deleteConversation = async (conversationId) => {
+ const deleteConversation = async (conversationId) => {
+  if (!conversationId) return;
   if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
+
   try {
-    // Delete all messages in the conversation first
-    const messagesQuery = query(
-      collection(db, "conversations", conversationId, "messages")
-    );
-    const messagesSnap = await getDocs(messagesQuery);
-    const deletePromises = messagesSnap.docs.map(d => 
-      deleteDoc(doc(db, "conversations", conversationId, "messages", d.id))
-    );
-    await Promise.all(deletePromises);
-    
-    // Then delete the conversation itself
-    await deleteDoc(doc(db, "conversations", conversationId));
-    
-    // Update local state
+    const convRef = doc(db, "conversations", conversationId);
+    const convSnap = await getDoc(convRef);
+
+    if (!convSnap.exists()) {
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      return;
+    }
+
+    const conv = convSnap.data();
+    const isParticipant = user && (user.uid === conv.buyerId || user.uid === conv.sellerId);
+
+    if (!isParticipant) {
+      setError("You can only delete your own conversations.");
+      return;
+    }
+
+    // Old blank conversations have no real message, so delete only the parent doc.
+    const isEmptyConversation = !conv.lastMessage || !conv.lastMessage.trim();
+
+    if (!isEmptyConversation) {
+      const messagesQuery = query(
+        collection(db, "conversations", conversationId, "messages")
+      );
+      const messagesSnap = await getDocs(messagesQuery);
+
+      const deletePromises = messagesSnap.docs.map(d =>
+        deleteDoc(doc(db, "conversations", conversationId, "messages", d.id))
+      );
+
+      await Promise.all(deletePromises);
+    }
+
+    await deleteDoc(convRef);
+
     setConversations(prev => prev.filter(c => c.id !== conversationId));
+
+    if (activeConversation?.id === conversationId) {
+      setActiveConversation(null);
+      setMessages([]);
+      setPage("messages");
+    }
+
     setSuccess("Conversation deleted");
     setTimeout(() => setSuccess(""), 3000);
   } catch (err) {
     console.error("Error deleting conversation:", err);
-    setError("Failed to delete conversation");
+    setError("Failed to delete conversation: " + err.message);
   }
 };
 
@@ -1325,6 +1362,7 @@ useEffect(() => {
         videoUrl: videoUrl,
         available: true,
         views: 0,
+        userId: user ? user.uid : "anonymous",
         listedBy: user ? user.uid : "anonymous",
         listedByName: user ? userName : createRoomData.landlordName.trim(),
         listedByAvatar: user ? userAvatar : null,
@@ -1503,6 +1541,19 @@ const requestNotificationPermission = async (currentUser) => {
     }
   }, [user]);
 
+  useEffect(() => {
+  if (!ENABLE_ROOMS) {
+    setRooms([]);
+    setRoommatePosts([]);
+    setMyAllRooms([]);
+    return;
+  }
+
+  loadRooms();
+  loadRoommatePosts();
+  if (user) loadMyAllRooms();
+}, [ENABLE_ROOMS, user, loadRooms, loadRoommatePosts, loadMyAllRooms]);
+
   // Flip a room between KIPO WAZI (available) and KIMEPANGISHWA (rented).
   // Optimistic update: change UI immediately, then write to Firestore.
   // If Firestore fails, we re-load to get true state back.
@@ -1641,6 +1692,10 @@ const requestNotificationPermission = async (currentUser) => {
       const uniqueConvos = Array.from(new Map(allDocs.map(c => [c.id, c])).values());
       uniqueConvos.sort((a, b) => (b.lastMessageAt?.seconds || 0) - (a.lastMessageAt?.seconds || 0));
       setConversations(uniqueConvos);
+      setActiveConversation(prev => {
+  if (!prev?.id) return prev;
+  return uniqueConvos.find(c => c.id === prev.id) || prev;
+});
       const unread = uniqueConvos.reduce((sum, conv) => {
         const myUnread = user.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
         return sum + (myUnread || 0);
@@ -1667,62 +1722,60 @@ const requestNotificationPermission = async (currentUser) => {
   }, [user]);
 
   const startConversation = async (listing) => {
-    if (!user) {
-      requireAuth("message", () => startConversation(listing));
+  if (!user) {
+    requireAuth("message", () => startConversation(listing));
+    return;
+  }
+
+  if (user.uid === listing.userId) {
+    setError("You can't message your own listing!");
+    return;
+  }
+
+  try {
+    setSuccess("Opening conversation...");
+
+    const q = query(
+      collection(db, "conversations"),
+      where("listingId", "==", listing.id),
+      where("buyerId", "==", user.uid)
+    );
+
+    const existing = await getDocs(q);
+
+    if (!existing.empty) {
+      const conv = { id: existing.docs[0].id, ...existing.docs[0].data() };
+      setActiveConversation(conv);
+      setPage("chat");
+      setSuccess("");
+      markAsRead(conv.id);
       return;
     }
 
-    if (user.uid === listing.userId) {
-      setError("You can't message your own listing!");
-      return;
-    }
-    
-    try {
-      setSuccess("Opening conversation...");
-      const q = query(
-        collection(db, "conversations"),
-        where("listingId", "==", listing.id),
-        where("buyerId", "==", user.uid)
-      );
-      
-      const existing = await getDocs(q);
-      
-      if (!existing.empty) {
-        const conv = { id: existing.docs[0].id, ...existing.docs[0].data() };
-        setActiveConversation(conv);
-        setPage("chat");
-        setSuccess("");
-        markAsRead(conv.id);
-      } else {
-        const convData = {
-          listingId: listing.id,
-          listingTitle: listing.title,
-          listingPrice: listing.price,
-          listingPhoto: listing.photoUrl || null,
-          buyerId: user.uid,
-          buyerName: userName,
-          buyerAvatar: userAvatar,
-          sellerId: listing.userId,
-          sellerName: listing.userName,
-          sellerAvatar: listing.userAvatar,
-          lastMessage: "",
-          lastMessageAt: serverTimestamp(),
-          buyerUnread: 0,
-          sellerUnread: 0,
-          createdAt: serverTimestamp()
-        };
-        const newConvRef = await addDoc(collection(db, "conversations"), convData);
-        // Use local data instead of extra getDoc round trip
-        setActiveConversation({ id: newConvRef.id, ...convData });
-        setPage("chat");
-        setSuccess("");
-      }
-    } catch (err) {
-      console.error("Error starting conversation:", err);
-      setError("Failed to start conversation. Check your connection.");
-      setSuccess("");
-    }
-  };
+    setActiveConversation({
+      id: null,
+      _draft: true,
+      listingId: listing.id,
+      listingTitle: listing.title,
+      listingPrice: listing.price,
+      listingPhoto: listing.photoUrl || null,
+      buyerId: user.uid,
+      buyerName: userName,
+      buyerAvatar: userAvatar,
+      sellerId: listing.userId,
+      sellerName: listing.userName,
+      sellerAvatar: listing.userAvatar
+    });
+
+    setMessages([]);
+    setPage("chat");
+    setSuccess("");
+  } catch (err) {
+    console.error("Error starting conversation:", err);
+    setError("Failed to start conversation. Check your connection.");
+    setSuccess("");
+  }
+};
 
  const sendMessage = async () => {
     if (!messageText.trim() || !activeConversation) return;
@@ -1738,15 +1791,58 @@ const requestNotificationPermission = async (currentUser) => {
       senderName: userName,
       text: text,
       createdAt: new Date(),
-      _pending: true
+status: "sending",
+_pending: true
     }]);
     
     try {
+
+      if (!activeConversation.id) {
+  const convRef = doc(collection(db, "conversations"));
+  const msgRef = doc(collection(db, "conversations", convRef.id, "messages"));
+  const isFromBuyer = user.uid === activeConversation.buyerId;
+
+  const batch = writeBatch(db);
+
+  batch.set(convRef, {
+    listingId: activeConversation.listingId,
+    listingTitle: activeConversation.listingTitle,
+    listingPrice: activeConversation.listingPrice,
+    listingPhoto: activeConversation.listingPhoto || null,
+    buyerId: activeConversation.buyerId,
+    buyerName: activeConversation.buyerName,
+    buyerAvatar: activeConversation.buyerAvatar || null,
+    sellerId: activeConversation.sellerId,
+    sellerName: activeConversation.sellerName,
+    sellerAvatar: activeConversation.sellerAvatar || null,
+    lastMessage: text,
+    lastMessageAt: serverTimestamp(),
+    buyerUnread: 0,
+    sellerUnread: isFromBuyer ? 1 : 0,
+    createdAt: serverTimestamp()
+  });
+
+  batch.set(msgRef, {
+    senderId: user.uid,
+    senderName: userName,
+    text: text,
+status: "sent",
+readBy: [user.uid],
+createdAt: serverTimestamp()
+  });
+
+  await batch.commit();
+  setActiveConversation(prev => ({ ...prev, id: convRef.id, _draft: false }));
+  return;
+}
+
       await addDoc(collection(db, "conversations", activeConversation.id, "messages"), {
         senderId: user.uid,
         senderName: userName,
         text: text,
-        createdAt: serverTimestamp()
+status: "sent",
+readBy: [user.uid],
+createdAt: serverTimestamp()
       });
       
       const isFromBuyer = user.uid === activeConversation.buyerId;
@@ -1772,9 +1868,12 @@ const requestNotificationPermission = async (currentUser) => {
       if (conv) {
         const isFromBuyer = user.uid === conv.buyerId;
         const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
-        if ((conv[unreadField] || 0) > 0) {
-          await updateDoc(doc(db, "conversations", conversationId), { [unreadField]: 0 });
-        }
+const lastReadField = isFromBuyer ? "buyerLastReadAt" : "sellerLastReadAt";
+
+await updateDoc(doc(db, "conversations", conversationId), {
+  [unreadField]: 0,
+  [lastReadField]: serverTimestamp()
+});
       } else {
         // Fallback: fetch then update (for conversations not yet in local state)
         const convRef = doc(db, "conversations", conversationId);
@@ -1782,10 +1881,13 @@ const requestNotificationPermission = async (currentUser) => {
         if (convDoc.exists()) {
           const convData = convDoc.data();
           const isFromBuyer = user.uid === convData.buyerId;
-          const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
-          if ((convData[unreadField] || 0) > 0) {
-            await updateDoc(convRef, { [unreadField]: 0 });
-          }
+         const unreadField = isFromBuyer ? "buyerUnread" : "sellerUnread";
+const lastReadField = isFromBuyer ? "buyerLastReadAt" : "sellerLastReadAt";
+
+await updateDoc(convRef, {
+  [unreadField]: 0,
+  [lastReadField]: serverTimestamp()
+});
         }
       }
     } catch (err) {
@@ -2067,7 +2169,10 @@ const requestNotificationPermission = async (currentUser) => {
   }, [user, page, loadConversations]);
 
 useEffect(() => {
-  if (!activeConversation) return;
+  if (!activeConversation || !activeConversation.id) {
+  setMessages([]);
+  return;
+}
 
   const q = query(
     collection(db, "conversations", activeConversation.id, "messages"),
@@ -3094,30 +3199,53 @@ const loadSellerStats = useCallback(async (userId) => {
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
 
-  if (loading) {
+if (loading) {
   return (
     <div style={{
-      display:'flex',
-      flexDirection:'column',
-      alignItems:'center',
-      justifyContent:'center',
+      position:'relative',
       height:'100vh',
       background:'#0f1b2d',
-      fontFamily:'system-ui'
+      fontFamily:'system-ui',
+      overflow:'hidden'
     }}>
-      <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#fff',marginBottom:'8px'}}>
+      <div style={{
+        position:'absolute',
+        top:'50%',
+        left:'50%',
+        transform:'translate(-50%, -50%)',
+        width:'42px',
+        height:'42px',
+        borderRadius:'50%',
+        border:'1px solid rgba(45,212,191,0.45)',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        boxShadow:'0 0 14px rgba(45,212,191,0.18)'
+      }}>
+        <div style={{
+          width:'14px',
+          height:'14px',
+          border:'2px solid #2dd4bf',
+          borderRadius:'3px',
+          transform:'rotate(45deg)',
+          boxShadow:'0 0 10px rgba(45,212,191,0.45)'
+        }}/>
+      </div>
+
+      <div style={{
+        position:'absolute',
+        left:'0',
+        right:'0',
+        bottom:'76px',
+        textAlign:'center',
+        fontFamily:'serif',
+        fontSize:'30px',
+        fontWeight:'700',
+        color:'#fff',
+        letterSpacing:'0'
+      }}>
         Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
       </div>
-      <div style={{fontSize:'13px',color:'rgba(255,255,255,0.5)'}}>Student Marketplace</div>
-      <div style={{
-        marginTop:'24px',
-        width:'32px',height:'32px',
-        border:'3px solid rgba(255,255,255,0.1)',
-        borderTopColor:'#2dd4bf',
-        borderRadius:'50%',
-        animation:'spin 0.8s linear infinite'
-      }}/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
@@ -4600,6 +4728,23 @@ return (
       )}
       {messages.map(msg=>{
         const isMine=msg.senderId===user.uid;
+        const toMillis = (value) => {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (value.toDate) return value.toDate().getTime();
+  if (value.seconds) return value.seconds * 1000;
+  return 0;
+};
+
+const sentAt = toMillis(msg.createdAt);
+const otherLastReadAt = isMine
+  ? (user.uid === activeConversation.buyerId
+      ? activeConversation.sellerLastReadAt
+      : activeConversation.buyerLastReadAt)
+  : null;
+
+const wasRead = isMine && sentAt > 0 && toMillis(otherLastReadAt) >= sentAt;
+const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         return (
           <div key={msg.id} style={{
             display:'flex',
@@ -4618,16 +4763,21 @@ return (
             }}>
               {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
               <div style={{wordBreak:'break-word'}}>{msg.text}</div>
-              <div style={{fontSize:'10px',marginTop:'4px',opacity:0.6,textAlign:'right'}}>
-                {msg._pending ? '⏳ sending...' : msg.createdAt ? (() => {
-                  try {
-                    const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
-                    return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
-                  } catch(e) {
-                    return '';
-                  }
-                })() : ''}
-              </div>
+             <div style={{fontSize:'10px',marginTop:'4px',opacity:0.65,textAlign:'right'}}>
+  {msg.createdAt ? (() => {
+    try {
+      const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
+      return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
+    } catch(e) {
+      return '';
+    }
+  })() : ''}
+  {isMine && (
+    <span style={{marginLeft:'6px',color:wasRead?'#0f766e':'inherit',fontWeight:wasRead?'600':'400'}}>
+      {statusText}
+    </span>
+  )}
+</div>
             </div>
           </div>
         );
