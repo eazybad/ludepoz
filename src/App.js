@@ -351,6 +351,7 @@ useEffect(() => {
   const [viewingListing, setViewingListing] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [sellerStats, setSellerStats] = useState(null);
+   // eslint-disable-next-line no-unused-vars
   const [openListingId, setOpenListingId] = useState(null);
   const [viewedListingsSet, setViewedListingsSet] = useState(() => {
   const stored = localStorage.getItem('viewedListings');
@@ -1141,24 +1142,24 @@ useEffect(() => {
     setError("Failed to update feature");
   }
 };
- const toggleIdentityVerificationRequirement = async () => {
-  try {
-    const newValue = !REQUIRE_IDENTITY_VERIFICATION;
+  const toggleIdentityVerificationRequirement = async () => {
+    try {
+      const newValue = !REQUIRE_IDENTITY_VERIFICATION;
 
-    await setDoc(
-      doc(db, "system", "features"),
-      { requireIdentityVerification: newValue },
-      { merge: true }
-    );
+      await setDoc(
+        doc(db, "system", "features"),
+        { requireIdentityVerification: newValue },
+        { merge: true }
+      );
 
-    setRequireIdentityVerification(newValue);
-    setSuccess(newValue ? "Identity verification required for the whole app" : "Identity verification disabled for the whole app");
-    setTimeout(() => setSuccess(""), 3000);
-  } catch (err) {
-    console.error("Toggle failed:", err);
-    setError("Failed to update identity verification setting");
-  }
-};
+      setRequireIdentityVerification(newValue);
+      setSuccess(newValue ? "Identity verification required for the whole app" : "Identity verification disabled for the whole app");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Failed to update identity verification setting");
+    }
+  };
 
  const deleteConversation = async (conversationId) => {
   if (!conversationId) return;
@@ -2684,7 +2685,7 @@ useEffect(() => {
   const handleCreateCollection = async () => {
     if (!canPerformAction("createCommunityOrder")) return;
     if (REQUIRE_IDENTITY_VERIFICATION && !isVerified) {
-      setError("Please verify your account before using this feature.");
+      setError("Please verify your account before creating a Community Order.");
       setShowVerifyModal(true);
       return;
     }
@@ -3311,18 +3312,18 @@ if (loading) {
     const hour = new Date().getHours();
 
     if (hour >= 5 && hour < 12) {
-      return "GOOD MORNING";
+      return "ZA ASUBUHI";
     }
 
     if (hour >= 12 && hour < 17) {
-      return "GOOD AFTERNOON";
+      return "ZA MCHANA";
     }
 
     if (hour >= 17 && hour < 22) {
-      return "GOOD EVENING";
+      return "ZA JIONI";
     }
 
-    return "WELCOME BACK";
+    return "KARIBU TENA";
   };
 
 return (
@@ -3346,6 +3347,7 @@ return (
         margin: 0;
         padding: 0;
         box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
       }
       
       html {
@@ -3873,8 +3875,20 @@ return (
   <span style={{fontSize:'16px',color:'rgba(15,27,45,0.4)',fontWeight:'600'}}>→</span>
 </div>}
 
+{REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
+  <div style={{margin:'0 16px 12px 16px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'14px',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',boxShadow:'0 2px 10px rgba(79,70,229,0.08)'}}>
+    <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
+      <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'#4f46e5',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Verify your identity</div>
+        <div style={{fontSize:'10px',color:'rgba(15,27,45,0.58)',marginTop:'1px'}}>Required before using main app features</div>
+      </div>
+    </div>
+    <button onClick={()=>setPage("verification")} style={{padding:'7px 10px',background:'#4f46e5',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
+  </div>
+)}
 {/* ===== GOODS TAB CONTENT ===== */}
-{homeTab==="goods"&&(<>
+<div style={{display: homeTab==="goods" ? "block" : "none"}}>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
     {(() => {
@@ -3958,104 +3972,34 @@ return (
     />
   </div>
 ) : null}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-                      <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                      {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />}
-                    </div>
-                    {openListingId === item.id && (
-  <div style={{
-    marginTop:'10px',
-    display:'flex',
-    gap:'12px',
-    borderTop:'1px solid #f0f0f0',
-    paddingTop:'10px'
-  }}>
-    {item.whatsapp ? (
-      <button
-        onClick={(e)=>{
-          e.stopPropagation();
-          const num = item.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
-          const msg = `Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;
-          window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
-        }}
-        style={{
-          flex:1,
-          padding:'8px',
-          background:'#25D366',
-          color:'#fff',
-          border:'none',
-          borderRadius:'6px',
-          fontSize:'13px',
-          fontWeight:'600',
-          cursor:'pointer'
-        }}
-      >
-        📱 WhatsApp
-      </button>
-    ) : null}
+          <div style={{paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom:'10px'}}>
+              <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',lineHeight:1.1}}>{item.price.toLocaleString()} TSh</div>
+              {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />}
+            </div>
 
-    <button
-      onClick={(e)=>{
-        e.stopPropagation();
-        shareOnWhatsApp(item);
-      }}
-      style={{
-        flex:1,
-        padding:'8px',
-        background:'#f4f6f8',
-        color:'#0f1b2d',
-        border:'none',
-        borderRadius:'6px',
-        fontSize:'13px',
-        fontWeight:'600',
-        cursor:'pointer'
-      }}
-    >
-      📲 Share
-    </button>
-  </div>
-)}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(68px, 1fr))',gap:'6px',width:'100%'}}>
+              {item.whatsapp && item.userId !== user?.uid && (
+                <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{minWidth:0,padding:'9px 6px',background:'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                  <span>📱</span><span>WhatsApp</span>
+                </button>
+              )}
 
-                    <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
-                      {item.userId !== user?.uid && (
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      setOpenListingId(openListingId === item.id ? null : item.id);
-      setViewingListing(item);
-      setPhotoIndex(0);
-      incrementViews(item.id);
-      if (item.userId !== user?.uid) {
-        loadSellerStats(item.userId);
-      }
-    }}
-    style={{
-      display:'flex',
-      alignItems:'center',
-      gap:'4px',
-      fontSize:'12px',
-      color:'#0f1b2d',
-      cursor:'pointer',
-      border:'none',
-      background:'none',
-      fontWeight:'600'
-    }}
-  >
-    📋 Details
-  </button>
-)}
+              <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                <span>📲</span><span>Share</span>
+              </button>
 
-                     
-                      <button onClick={(e)=>{e.stopPropagation();toggleSave(item);}} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:cart.some(c=>c.id===item.id)?'#f59e0b':'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>🔖</button>
-                      {item.userId !== user?.uid && (
-                        <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{display:'flex',alignItems:'center',gap:'3px',fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}} title="Message seller">💬 Message</button>
-                      )}
-                      {/* VIEW COUNT HIDDEN FOR NOW — uncomment to re-enable */}
-                      {/* <span style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#8a9bb0'}}>👁 {item.views||0}</span> */}
-                      <button onClick={(e)=>{e.stopPropagation();setReportTarget({type:'listing',id:item.id,name:item.title});setShowReportModal(true);}} style={{fontSize:'12px',color:'#8a9bb0',cursor:'pointer',border:'none',background:'none'}}>⋮</button>
-                    </div>
-                  </div>
+              <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'#fff',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                <span>📋</span><span>Details</span>
+              </button>
+
+              {item.userId !== user?.uid && (
+                <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#ecfeff',color:'#0f766e',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
+                  <span>💬</span><span>Message</span>
+                </button>
+              )}
+            </div>
+          </div>
                   {user && item.userId===user.uid&&!item.sold&&(<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>)}
                 </div>
               ))
@@ -4063,7 +4007,7 @@ return (
           </div>
   );
 })()}
-</>)}
+</div>
 
 {/* ===== SERVICES TAB CONTENT ===== */}
 <div style={{display: homeTab==="services" ? "block" : "none"}}>
@@ -6387,10 +6331,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
                     <div>
                       <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Identity Verification</div>
-<div style={{fontSize:'13px',color:'#6b7280'}}>Require verified accounts before using main app features</div>
-</div>
-<button onClick={toggleIdentityVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_IDENTITY_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
-  {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
+                      <div style={{fontSize:'13px',color:'#6b7280'}}>Require verified accounts before using main app features</div>
+                    </div>
+                    <button onClick={toggleIdentityVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_IDENTITY_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
+                      {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
                     </button>
                   </div>
                 </div>                {/* ─── VERIFICATION QUEUE ─── */}
