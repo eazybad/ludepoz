@@ -1917,9 +1917,6 @@ await updateDoc(convRef, {
   };
 
   useEffect(() => {
-    // Safety: show UI after 2s max even if auth/network is slow
-    const safetyTimer = setTimeout(() => setLoading(false), 2000);
-    
     // Try to show cached data immediately (works offline too)
     // This won't fail even without auth since it reads from local IndexedDB
     try {
@@ -1980,9 +1977,8 @@ await updateDoc(convRef, {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        setLoading(false);
         // Now auth is ready — load/refresh all data from network in parallel
-        Promise.all([
+        await Promise.all([
           loadUserProfile(currentUser.uid),
           loadListings(),
           loadServices(),
@@ -1991,6 +1987,7 @@ await updateDoc(convRef, {
           ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts(), loadMyAllRooms()] : []),
           loadConversations(),
         ]).catch(err => console.error("Data load error:", err));
+        setLoading(false);
         // Handle deep links after auth
         if (path.startsWith('/seller/')) {
           const slug = path.replace('/seller/', '');
@@ -2021,13 +2018,13 @@ await updateDoc(convRef, {
         setUserAvatar(null);
         setIsVerified(false);
         setProfileLoaded(false);
-        setLoading(false);
         // Not logged in — still try to load public data (will work if Firestore rules allow public reads)
-        Promise.all([
+        await Promise.all([
           loadListings(),
           loadServices(),
           loadCollections(),
         ]).catch(() => {});
+        setLoading(false);
         // Handle deep links for non-authenticated users
         if (path.startsWith('/collection/')) {
           const colId = path.replace('/collection/', '');
@@ -2045,9 +2042,8 @@ await updateDoc(convRef, {
         }
       }
     });
-    return () => { 
-      unsubscribe(); 
-      clearTimeout(safetyTimer); 
+    return () => {
+      unsubscribe();
       window.removeEventListener('popstate', handlePopState);
       if (unsubListings.current) unsubListings.current();
       if (unsubServices.current) unsubServices.current();
@@ -3269,20 +3265,16 @@ if (loading) {
         width:'42px',
         height:'42px',
         borderRadius:'50%',
-        border:'1px solid rgba(45,212,191,0.45)',
+        border:'1.5px solid rgba(45,212,191,0.45)',
         display:'flex',
         alignItems:'center',
         justifyContent:'center',
-        boxShadow:'0 0 14px rgba(45,212,191,0.18)'
+        boxShadow:'0 0 14px rgba(45,212,191,0.18)',
+        color:'#0f766e',
+        fontSize:'18px',
+        background:'#fff'
       }}>
-        <div style={{
-          width:'14px',
-          height:'14px',
-          border:'2px solid #2dd4bf',
-          borderRadius:'3px',
-          transform:'rotate(45deg)',
-          boxShadow:'0 0 10px rgba(45,212,191,0.45)'
-        }}/>
+        ✧
       </div>
 
       <div style={{
