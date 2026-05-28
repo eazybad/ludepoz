@@ -46,7 +46,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 
-const ENABLE_COLLECTIONS = true;  // Community Orders feature
+const ENABLE_COLLECTIONS = true;  // Communities & events (group orders)
 // ====================================
 
 const SERVICE_TAGS = [
@@ -236,8 +236,9 @@ function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
-  // eslint-disable-next-line no-unused-vars
-  const [showVerificationBanner, setShowVerificationBanner] = useState(false);
+  const [showAppMenu, setShowAppMenu] = useState(false);
+  const [showMenuVerifyBanner, setShowMenuVerifyBanner] = useState(false);
+  const [showAboutBanner, setShowAboutBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
   // Services state
@@ -253,6 +254,8 @@ function App() {
   const [showCreateServiceSuccess, setShowCreateServiceSuccess] = useState(false);
   // Collections/Orders tracker state
   const [collections, setCollections] = useState([]);
+  const [viewingCommunity, setViewingCommunity] = useState(null);
+  const feedsHydratedRef = useRef(false);
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
@@ -1248,22 +1251,30 @@ useEffect(() => {
   const unsubCollections = useRef(null);
   const unsubCollectionOrders = useRef(null);
 
+  const markFeedsHydrated = useCallback(() => {
+    if (feedsHydratedRef.current) return;
+    feedsHydratedRef.current = true;
+    setLoading(false);
+  }, []);
+
   const loadListings = useCallback(() => {
   if (unsubListings.current) unsubListings.current();
   try {
     const q = query(collection(db, "listings"), where("sold", "==", false), orderBy("createdAt", "desc"));
     unsubListings.current = onSnapshot(q, (snap) => {
       setListings(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      markFeedsHydrated();
     }, (err) => {
       console.error("Listings listener error:", err);
       // Fallback without orderBy
       const q2 = query(collection(db, "listings"), where("sold", "==", false));
       unsubListings.current = onSnapshot(q2, (snap) => {
         setListings(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        markFeedsHydrated();
       }, (err2) => console.error("Listings fallback error:", err2));
     });
   } catch(e) { console.error("Error setting up listings listener:", e); }
-}, []);
+}, [markFeedsHydrated]);
 
   const loadServices = useCallback(() => {
     if (unsubServices.current) unsubServices.current();
@@ -1535,7 +1546,7 @@ const requestNotificationPermission = async (currentUser) => {
       // both data shapes since users created before v16 may have either.
       setIsVerified(userData.isVerified === true || userData.verified === true);
 
-      await checkVerificationStatus(userId);
+      checkVerificationStatus(userId).catch(() => {});
     }
   } catch (err) {
     console.error("Error loading profile:", err);
@@ -1618,17 +1629,18 @@ const requestNotificationPermission = async (currentUser) => {
 
 
  
-  const loadConversations = useCallback(async () => {
-    if (!user) return;
+  const loadConversations = useCallback(async (userId) => {
+    const uid = userId || user?.uid;
+    if (!uid) return;
     try {
       const q1 = query(
         collection(db, "conversations"),
-        where("buyerId", "==", user.uid),
+        where("buyerId", "==", uid),
         orderBy("lastMessageAt", "desc")
       );
       const q2 = query(
         collection(db, "conversations"),
-        where("sellerId", "==", user.uid),
+        where("sellerId", "==", uid),
         orderBy("lastMessageAt", "desc")
       );
       
@@ -1643,7 +1655,7 @@ const requestNotificationPermission = async (currentUser) => {
       setConversations(uniqueConvos);
       
       const unread = uniqueConvos.reduce((sum, conv) => {
-        const myUnread = user.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+        const myUnread = uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
         return sum + (myUnread || 0);
       }, 0);
       setUnreadCount(unread);
@@ -1977,17 +1989,15 @@ await updateDoc(convRef, {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Now auth is ready — load/refresh all data from network in parallel
-        await Promise.all([
+        // Keep splash until first listings snapshot (or timeout) — avoids empty home flash
+        Promise.all([
           loadUserProfile(currentUser.uid),
           loadListings(),
           loadServices(),
           loadCollections(),
           loadFeatureFlags(),
-          ...(ENABLE_ROOMS ? [loadRooms(), loadRoommatePosts(), loadMyAllRooms()] : []),
-          loadConversations(),
+          loadConversations(currentUser.uid),
         ]).catch(err => console.error("Data load error:", err));
-        setLoading(false);
         // Handle deep links after auth
         if (path.startsWith('/seller/')) {
           const slug = path.replace('/seller/', '');
@@ -2019,12 +2029,9 @@ await updateDoc(convRef, {
         setIsVerified(false);
         setProfileLoaded(false);
         // Not logged in — still try to load public data (will work if Firestore rules allow public reads)
-        await Promise.all([
-          loadListings(),
-          loadServices(),
-          loadCollections(),
-        ]).catch(() => {});
-        setLoading(false);
+        loadListings();
+        loadServices();
+        loadCollections();
         // Handle deep links for non-authenticated users
         if (path.startsWith('/collection/')) {
           const colId = path.replace('/collection/', '');
@@ -2052,6 +2059,12 @@ await updateDoc(convRef, {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadMyAllRooms, loadConversations, loadPublicSellerProfile, setPage]);
+
+  // Never stay on splash forever if Firestore is slow or offline
+  useEffect(() => {
+    const t = setTimeout(() => markFeedsHydrated(), 4500);
+    return () => clearTimeout(t);
+  }, [markFeedsHydrated]);
 
   //eslint-disable-next-line
   const [tokenRequested, setTokenRequested] = useState(false);
@@ -2325,7 +2338,6 @@ useEffect(() => {
     } catch (err) {
       console.error("Signup error:", err);
       setError(getAuthErrorMessage(err, "signup"));
-    } finally {
       setLoading(false);
     }
   };
@@ -2359,7 +2371,6 @@ useEffect(() => {
     } catch (err) {
       console.error("Login error:", err);
       setError(getAuthErrorMessage(err, "login"));
-    } finally {
       setLoading(false);
     }
   };
@@ -2681,7 +2692,7 @@ useEffect(() => {
   const handleCreateCollection = async () => {
     if (!canPerformAction("createCommunityOrder")) return;
     if (REQUIRE_IDENTITY_VERIFICATION && !isVerified) {
-      setError("Please verify your account before creating a Community Order.");
+      setError("Please verify your account before creating a community order or event.");
       setShowVerifyModal(true);
       return;
     }
@@ -2737,7 +2748,7 @@ useEffect(() => {
       });
       setLastCreatedCollectionId(newColRef.id);
       setShowCreateCollectionSuccess(true);
-      setSuccess("Community Order created!");
+      setSuccess("Order / event created!");
       setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: [] });
       loadCollections();
     } catch (err) {
@@ -3514,7 +3525,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communities"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -3541,19 +3552,94 @@ return (
  <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
   {page==="home" && user ? (
     <>
-      <div style={{
-        width:'40px',
-        height:'40px',
-        borderRadius:'50%',
-        border:'1.5px solid #dbe3ea',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        color:'#0f766e',
-        fontSize:'18px',
-        background:'#fff'
-      }}>
-        ✧
+      <div style={{position:'relative'}}>
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={() => setShowAppMenu(v => !v)}
+          style={{
+            width:'40px',
+            height:'40px',
+            borderRadius:'50%',
+            border:'1.5px solid #dbe3ea',
+            display:'flex',
+            alignItems:'center',
+            justifyContent:'center',
+            color:'#0f766e',
+            fontSize:'18px',
+            background:'#fff',
+            cursor:'pointer',
+            padding:0
+          }}
+        >
+          ✧
+        </button>
+        {showAppMenu && (
+          <>
+            <div
+              style={{position:'fixed',inset:0,zIndex:150}}
+              onClick={() => setShowAppMenu(false)}
+            />
+            <div style={{
+              position:'absolute',
+              top:'46px',
+              left:0,
+              zIndex:151,
+              background:'#fff',
+              borderRadius:'12px',
+              boxShadow:'0 8px 24px rgba(15,27,45,0.15)',
+              border:'1px solid #e2e6ea',
+              minWidth:'168px',
+              overflow:'hidden'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAppMenu(false);
+                  setShowMenuVerifyBanner(true);
+                  setShowAboutBanner(false);
+                  if (page !== 'home') setPage('home');
+                }}
+                style={{
+                  width:'100%',
+                  padding:'12px 16px',
+                  border:'none',
+                  background:'none',
+                  textAlign:'left',
+                  fontSize:'14px',
+                  fontWeight:'600',
+                  color:'#0f1b2d',
+                  cursor:'pointer'
+                }}
+              >
+                ✓ Get Verified
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAppMenu(false);
+                  setShowAboutBanner(true);
+                  setShowMenuVerifyBanner(false);
+                  if (page !== 'home') setPage('home');
+                }}
+                style={{
+                  width:'100%',
+                  padding:'12px 16px',
+                  border:'none',
+                  borderTop:'1px solid #f0f2f5',
+                  background:'none',
+                  textAlign:'left',
+                  fontSize:'14px',
+                  fontWeight:'600',
+                  color:'#0f1b2d',
+                  cursor:'pointer'
+                }}
+              >
+                ℹ About
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{
@@ -3653,7 +3739,194 @@ return (
     paddingBottom:'100px'
   }}>
 
-         {user && profileLoaded && !isVerified && (
+         {showAboutBanner && (
+  <div style={{
+    position:'relative',
+    borderRadius:'20px',
+    marginBottom:'16px',
+    overflow:'hidden',
+    boxShadow:'0 12px 32px rgba(15,27,45,0.22)',
+    border:'1px solid rgba(45,212,191,0.25)'
+  }}>
+    <div style={{
+      position:'absolute',
+      inset:0,
+      background:'linear-gradient(145deg, #0f1b2d 0%, #134e4a 45%, #0f766e 100%)'
+    }} />
+    <div style={{
+      position:'absolute',
+      top:'-28px',
+      right:'-20px',
+      width:'110px',
+      height:'110px',
+      borderRadius:'50%',
+      background:'rgba(45,212,191,0.18)',
+      filter:'blur(2px)'
+    }} />
+    <div style={{
+      position:'absolute',
+      bottom:'-36px',
+      left:'-24px',
+      width:'90px',
+      height:'90px',
+      borderRadius:'50%',
+      background:'rgba(251,191,36,0.12)'
+    }} />
+    <div style={{position:'relative',padding:'22px 18px 18px'}}>
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => setShowAboutBanner(false)}
+        style={{
+          position:'absolute',
+          top:'14px',
+          right:'14px',
+          background:'rgba(255,255,255,0.12)',
+          border:'1px solid rgba(255,255,255,0.2)',
+          borderRadius:'50%',
+          width:'30px',
+          height:'30px',
+          color:'#fff',
+          cursor:'pointer',
+          fontSize:'16px',
+          lineHeight:1,
+          backdropFilter:'blur(4px)'
+        }}
+      >×</button>
+      <div style={{
+        width:'48px',
+        height:'48px',
+        borderRadius:'14px',
+        background:'rgba(255,255,255,0.14)',
+        border:'1px solid rgba(255,255,255,0.22)',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        fontSize:'22px',
+        marginBottom:'12px',
+        boxShadow:'0 4px 14px rgba(0,0,0,0.15)'
+      }}>✧</div>
+      <div style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',marginBottom:'4px',letterSpacing:'-0.02em'}}>
+        Kam<em style={{color:'#5eead4',fontStyle:'normal'}}>pa</em>sika
+      </div>
+      <div style={{fontSize:'12px',fontWeight:'600',color:'rgba(255,255,255,0.75)',marginBottom:'14px',letterSpacing:'0.04em',textTransform:'uppercase'}}>
+        Campus marketplace for students
+      </div>
+      <p style={{color:'rgba(255,255,255,0.92)',fontSize:'13px',lineHeight:'1.65',margin:'0 0 14px'}}>
+        Kampasika ni soko la wanafunzi kwenye chuo — nunua, uza, na pata huduma karibu na kampus yako.
+        Fuatilia oda za jamii, matukio, na malipo kwa urahisi na usalama.
+      </p>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'14px'}}>
+        {[
+          { icon:'🛍️', label:'Buy & sell goods' },
+          { icon:'🛠️', label:'Find services' },
+          { icon:'🏫', label:'Communities & events' },
+          { icon:'✓', label:'Verified sellers' },
+        ].map(item => (
+          <div key={item.label} style={{
+            background:'rgba(255,255,255,0.1)',
+            border:'1px solid rgba(255,255,255,0.14)',
+            borderRadius:'12px',
+            padding:'10px',
+            display:'flex',
+            alignItems:'center',
+            gap:'8px'
+          }}>
+            <span style={{fontSize:'16px'}}>{item.icon}</span>
+            <span style={{fontSize:'11px',fontWeight:'600',color:'#fff',lineHeight:1.3}}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{
+        fontSize:'11px',
+        color:'rgba(255,255,255,0.7)',
+        textAlign:'center',
+        paddingTop:'4px',
+        borderTop:'1px solid rgba(255,255,255,0.12)'
+      }}>
+        Built for students · Safe · Fast · On campus
+      </div>
+    </div>
+  </div>
+)}
+
+         {showMenuVerifyBanner && (
+  <div style={{
+    background: verificationStatus === "pending"
+      ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'
+      : verificationStatus === "rejected"
+      ? 'linear-gradient(135deg, #f87171, #ef4444)'
+      : isVerified
+      ? 'linear-gradient(135deg, #10b981, #059669)'
+      : 'linear-gradient(135deg, #0f766e, #0d9488)',
+    borderRadius:'16px',
+    padding:'20px',
+    marginBottom:'16px',
+    boxShadow:'0 4px 12px rgba(245,158,11,0.2)',
+    position:'relative'
+  }}>
+    <button
+      type="button"
+      aria-label="Close"
+      onClick={() => setShowMenuVerifyBanner(false)}
+      style={{
+        position:'absolute',
+        top:'12px',
+        right:'12px',
+        background:'rgba(255,255,255,0.2)',
+        border:'none',
+        borderRadius:'50%',
+        width:'28px',
+        height:'28px',
+        color:'#fff',
+        cursor:'pointer',
+        fontSize:'16px',
+        lineHeight:1
+      }}
+    >×</button>
+    <div style={{fontSize:'20px',fontWeight:'700',color:'#fff',marginBottom:'8px',display:'flex',alignItems:'center',gap:'8px'}}>
+      {isVerified ? (
+        <><span>✓</span><span>Uko verified!</span></>
+      ) : verificationStatus === "pending" ? (
+        <><span>⏳</span><span>Inakaguliwa...</span></>
+      ) : verificationStatus === "rejected" ? (
+        <><span>❌</span><span>Ombi halikukubalika</span></>
+      ) : (
+        <><span>✨</span><span>Pata Verified badge</span></>
+      )}
+    </div>
+    <p style={{color:'rgba(255,255,255,0.95)',fontSize:'13px',lineHeight:'1.5',marginBottom:'12px'}}>
+      {isVerified
+        ? "Alama yako ya Verified inaonyesha wanafunzi wengine unaweza kuaminika. Asante kwa kuthibitisha akaunti yako."
+        : verificationStatus === "pending"
+        ? "Tunakagua ombi lako. Tutakuthibitisha ndani ya saa 12-24."
+        : verificationStatus === "rejected"
+        ? "Ombi lako halikukubalika. Unaweza kuwasilisha tena na picha bora."
+        : "Wanafunzi watakuamini zaidi ukiwa na alama ya Verified. Pakia kitambulisho chako — inachukua dakika 2 tu."}
+    </p>
+    {!isVerified && verificationStatus !== "pending" && (
+      <button
+        type="button"
+        onClick={() => setShowVerifyModal(true)}
+        style={{
+          background:'#fff',
+          color: verificationStatus === "rejected" ? '#ef4444' : '#0f766e',
+          padding:'10px 20px',
+          borderRadius:'10px',
+          border:'none',
+          fontSize:'14px',
+          fontWeight:'600',
+          cursor:'pointer',
+          width:'100%'
+        }}
+      >
+        {verificationStatus === "rejected" ? '🔄 Wasilisha tena' : '✓ Anza uthibitishaji'}
+      </button>
+    )}
+  </div>
+)}
+
+         {user && profileLoaded && !isVerified && !showMenuVerifyBanner && (
   <div style={{
     background: verificationStatus === "pending" 
       ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'  // Blue for pending
@@ -3855,13 +4128,13 @@ return (
     ✨ AI is thinking...
   </div>
 )}
-{/* Community Orders compact strip */}
-{ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("collections")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+{/* Communities & Events compact strip */}
+{ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("communities")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
   <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-    <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'rgba(255,255,255,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}}>📋</div>
+    <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'rgba(255,255,255,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}}>🏫</div>
     <div>
-      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Community Orders{collections.length > 0 ? ` (${collections.length})` : ''}</span>
-      <div style={{fontSize:'10px',color:'rgba(15,27,45,0.55)',marginTop:'1px'}}>Track group buys & payments</div>
+      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Communities & Events</span>
+      <div style={{fontSize:'10px',color:'rgba(15,27,45,0.55)',marginTop:'1px'}}>Browse groups, orders & campus events</div>
     </div>
   </div>
   <span style={{fontSize:'16px',color:'rgba(15,27,45,0.4)',fontWeight:'600'}}>→</span>
@@ -5145,21 +5418,112 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         </div>
       )}
 
+      {/* ============ COMMUNITIES INDEX ============ */}
+      {page==="communities"&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Communities & Events</h2>
+            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a community to see all active orders and events inside it.</p>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
+              <button onClick={()=>setPage("collections")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>View all</button>
+            </div>
+          </div>
+
+          {collections.length === 0 ? (
+            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+              <div style={{fontSize:'40px',marginBottom:'16px'}}>🏫</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active communities yet</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create an order or event under a community name and it will appear here.</div>
+            </div>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+              {Object.values(collections.reduce((acc, col) => {
+                const key = (col.communityName || col.universityName || "General").trim();
+                if (!acc[key]) acc[key] = { name: key, items: [], orders: 0, events: 0 };
+                acc[key].items.push(col);
+                if ((col.collectionType || "order") === "event") acc[key].events += 1;
+                else acc[key].orders += 1;
+                return acc;
+              }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
+                <button
+                  key={group.name}
+                  type="button"
+                  onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }}
+                  style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}
+                >
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
+                    <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
+                    <div style={{fontSize:'11px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
+                  </div>
+                  <div style={{marginTop:'8px',fontSize:'12px',color:'#6b7280'}}>{group.orders} orders • {group.events} events</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============ COMMUNITY DETAIL ============ */}
+      {page==="communityDetail"&&viewingCommunity&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{margin:'0 16px 12px 16px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'14px',padding:'14px'}}>
+            <h3 style={{margin:0,fontSize:'18px',fontWeight:'700',color:'#9a3412'}}>{viewingCommunity.name}</h3>
+            <div style={{marginTop:'6px',fontSize:'12px',color:'#7c2d12'}}>{viewingCommunity.items.length} active collections</div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+            {viewingCommunity.items.map(col => {
+              const target = col.expectedPeople || col.totalOrders || 0;
+              const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
+              return (
+                <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
+                    {col.photoUrl ? (
+                      <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
+                    ) : (
+                      <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
+                    )}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
+                      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {col.collectionType || "order"}</div>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
+                      <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
+                    </div>
+                  </div>
+                  <div style={{marginTop:'12px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>
+                      <span>{col.totalOrders || 0}{col.expectedPeople ? `/${col.expectedPeople}` : ''} ordered</span>
+                      <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
+                    </div>
+                    <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#f59e0b',borderRadius:'3px',transition:'width 0.3s'}}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ============ COLLECTIONS / ORDERS TRACKER ============ */}
       {page==="collections"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
           <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
-            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Community Orders</h2>
-            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — order and track payments in one place.</p>
-            <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Community Order</button>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>All Orders & Events</h2>
+            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — browse everything or open a community first.</p>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By community</button>
+              <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
+            </div>
           </div>
 
           {/* Search collections */}
           {collections.length > 2 && (
             <>
               <div style={{margin:'0 16px 8px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-                <input type="text" placeholder="Search community orders..." value={collectionSearchQ}
+                <input type="text" placeholder="Search orders, events, communities..." value={collectionSearchQ}
                   onChange={e => {
                     setCollectionSearchQ(e.target.value);
                     if (!e.target.value.trim()) {
@@ -5179,8 +5543,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {collections.length === 0 ? (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
-              <div style={{fontSize:'16px',fontWeight:'600'}}>No active community orders</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create collections for t-shirts, tickets, contributions etc.</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active orders or events</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create group orders and event registrations for their community.</div>
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -5238,11 +5602,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="createCollection"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
-            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New Community Order"}</h2>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New order / event"}</h2>
             {showCreateCollectionSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
-                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Community Order created!</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Created successfully!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
                   <button onClick={()=>{
@@ -5251,13 +5615,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                   }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("collections");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Community Orders</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Communities & Events</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
                 <div style={{background:'#fef3c7',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#92400e',lineHeight:1.5}}>
-                  📋 <strong>For class reps & councils:</strong> Create a collection for t-shirts, event tickets, field trip contributions, or any group order. Students can order and you can track who has paid.
+                  📋 <strong>For class reps & councils:</strong> Create an order or event under your community name — t-shirts, tickets, contributions, and more. Students join from your community page and you track payments.
                 </div>
 
                 <input type="file" id="collection-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleCollectionPhotoSelect}/>
@@ -5275,7 +5639,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'16px'}}>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community / group name</label>
-                  <input type="text" placeholder="e.g. ARU Catholic Community, Survey Year 1" value={createCollectionData.communityName} onChange={e=>setCreateCollectionData({...createCollectionData,communityName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                  <input type="text" placeholder="e.g. TUCASA ARU Community, Architecture Year 1, CSN 1" value={createCollectionData.communityName} onChange={e=>setCreateCollectionData({...createCollectionData,communityName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                   <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Helps students find orders/events from their people.</div>
                 </div>
 
@@ -5359,7 +5723,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
-                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create Community Order"}</button>
+                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
               </>
             )}
           </div>
@@ -5488,7 +5852,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
             }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
-              📲 Share Community Order on WhatsApp
+              📲 Share on WhatsApp
             </button>
 
             {/* ORDER FORM — for students */}
@@ -5676,7 +6040,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     }
                   }} style={{width:'100%',padding:'12px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
-                    📲 {collectionOrders.length === 0 ? 'Share Community Order on WhatsApp' : 'Share Payment Status on WhatsApp'}
+                    📲 {collectionOrders.length === 0 ? 'Share on WhatsApp' : 'Share Payment Status on WhatsApp'}
                   </button>
               </div>
             )}
