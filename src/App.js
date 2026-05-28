@@ -2334,6 +2334,7 @@ useEffect(() => {
         : "Akaunti yako imeundwa! Sasa wanafunzi wanaweza kukupata.");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
+      setLoading(false);
       setPage("home");
     } catch (err) {
       console.error("Signup error:", err);
@@ -2367,6 +2368,7 @@ useEffect(() => {
       setSuccess("Logged in successfully!");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
+      setLoading(false);
       setPage("home");
     } catch (err) {
       console.error("Login error:", err);
