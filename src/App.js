@@ -909,10 +909,28 @@ useEffect(() => {
       setCreateCollectionData((prev) => ({
         ...prev,
         title: draft.title || prev.title,
-        desc: draft.description || prev.desc,
+        desc: draft.description || draft.desc || prev.desc,
         price: draft.price != null ? String(draft.price) : prev.price,
         communityName: draft.communityName || prev.communityName,
+        communityType: draft.communityType || prev.communityType,
         collectionType: draft.collectionType || prev.collectionType,
+        expectedPeople: draft.expectedPeople != null ? String(draft.expectedPeople) : prev.expectedPeople,
+        deadline: draft.deadline || prev.deadline,
+        options: Array.isArray(draft.options)
+          ? draft.options.join(", ")
+          : typeof draft.options === "string"
+          ? draft.options
+          : prev.options,
+        adminEmails: Array.isArray(draft.adminEmails)
+          ? draft.adminEmails.join(", ")
+          : typeof draft.adminEmails === "string"
+          ? draft.adminEmails
+          : prev.adminEmails,
+        paymentMethods: (draft.paymentMethods && draft.paymentMethods.length > 0)
+          ? draft.paymentMethods
+          : draft.payNumber
+          ? [{ network: draft.payNetwork || "M-Pesa", number: draft.payNumber, name: draft.payName || "" }]
+          : prev.paymentMethods,
       }));
       setPage("createCollection");
     } else {
@@ -929,6 +947,61 @@ useEffect(() => {
     setSuccess("Form filled — review, add photos, then publish.");
     setTimeout(() => setSuccess(""), 5000);
   }, [setPage]);
+
+  // Inline collection field extractor — works offline, no network needed
+  const extractCollectionFields = (text) => {
+    const t = text.toLowerCase();
+    // price
+    const priceMatch = text.match(/(\d[\d,.]*)\s*(k|elfu|000)?\s*(?:tsh|tzs|shilingi)?/i);
+    let price = null;
+    if (priceMatch) {
+      let n = parseFloat(priceMatch[1].replace(/,/g,''));
+      if (priceMatch[2]) n *= priceMatch[2]==='k'||priceMatch[2]==='elfu' ? 1000 : priceMatch[2]==='000' ? 1 : 1;
+      if (n > 100) price = Math.round(n);
+    }
+    // deadline — "15 Juni", "Juni 15", DD/MM/YYYY, YYYY-MM-DD
+    const monthsSw = {januari:1,februari:2,machi:3,aprili:4,mei:5,juni:6,julai:7,agosti:8,septemba:9,oktoba:10,novemba:11,desemba:12,jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+    let deadline = null;
+    const yr = new Date().getFullYear();
+    let dm = text.match(/(\d{1,2})(\d{1,2})(\d{4})/);
+    if (dm) deadline = `${dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
+    if (!deadline) { dm = text.match(/(\d{4}-\d{2}-\d{2})/); if (dm) deadline = dm[1]; }
+    if (!deadline) { dm = text.match(/(\d{1,2})\s+([a-z]+)/i)||text.match(/([a-z]{3,})\s+(\d{1,2})/i); if(dm){const d=dm[1].match(/^\d/)?dm[1]:dm[2];const ms=dm[1].match(/^\d/)?dm[2]:dm[1];const mon=monthsSw[ms.toLowerCase()];if(mon)deadline=`${yr}-${String(mon).padStart(2,'0')}-${String(parseInt(d)).padStart(2,'0')}`;}}
+    // expectedPeople
+    let expectedPeople = null;
+    const ep = text.match(/(\d+)\s*(?:watu|people|persons|members|students|wanafunzi|nafasi|spots?)/i)||text.match(/total\s*(?:of\s*)?(\d+)/i);
+    if (ep) expectedPeople = parseInt(ep[1]);
+    // communityName — look for proper nouns followed by Year/Class/etc or after "ya"/"for"/"kwa"
+    let communityName = null;
+    const cn = text.match(/(?:ya|for|kwa|of|darasa la|group ya|class ya|jamii ya)\s+([A-Za-z][A-Za-z0-9\s]{2,30}?)(?:\s*,|\s*\.|$|\s+bei|\s+price)/i)
+      || text.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+){0,3}(?:\s+(?:Year|Class|Club|Community|Church|Association|Batch))[\s\d]*)/);
+    if (cn) communityName = cn[1].trim();
+    // communityType
+    let communityType = "class";
+    if (/(kanisa|church|parokia|catholic|christian|islamic|mosque|kkkt|msalaba)/.test(t)) communityType = "church";
+    else if (/(club|timu|team|association|society|league)/.test(t)) communityType = "club";
+    else if (/(hostel|dormitory|nyumba|chumba|room)/.test(t)) communityType = "hostel";
+    else if (/(freshers|wapya|newcomers|first year)/.test(t)) communityType = "freshers";
+    // collectionType
+    let collectionType = "order";
+    if (/(event|ticket|usajili|registration|tamasha|sherehe|party|graduation|convocation|matamshi)/.test(t)) collectionType = "event";
+    else if (/(mchango|contribution|donate|donation|fundraiser|msaada|support|sadaka)/.test(t)) collectionType = "contribution";
+    else if (/(freshers|wapya)/.test(t)) collectionType = "freshers";
+    // options (sizes etc)
+    let options = [];
+    const szRe = text.match(/(XS|S|M|L|XL|XXL|XXXL)/g);
+    if (szRe) options = [...new Set(szRe)];
+    else { const optM = text.match(/(?:sizes?|chaguo|options?)[:\s]+([A-Za-z0-9,\s/]+)/i); if(optM) options = optM[1].split(/[,/]/).map(s=>s.trim()).filter(Boolean); }
+    // payment — "lipia" keyword + number
+    let payNumber = null, payNetwork = "M-Pesa", payName = null;
+    const nets = [["mpesa","M-Pesa"],["m-pesa","M-Pesa"],["tigopesa","Tigo Pesa"],["tigo pesa","Tigo Pesa"],["airtel","Airtel Money"],["halotel","Halopesa"],["halopesa","Halopesa"]];
+    for (const [kw,name] of nets) { if (t.includes(kw)) { payNetwork = name; break; } }
+    const numM = text.match(/(0[67]\d{8}|255[67]\d{8})/);
+    if (numM) payNumber = numM[1];
+    const nameM = text.match(/(?:lipia|jina|name|akaunti|account)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
+    if (nameM) payName = nameM[1].trim();
+    return { price, deadline, expectedPeople, communityName, communityType, collectionType, options: options.length>0?options:undefined, payNumber, payNetwork, payName };
+  };
 
   const handleCreateAssist = async (preferredTarget) => {
     const text = createAssistText.trim();
@@ -949,7 +1022,49 @@ useEffect(() => {
         }
       }
       if (preferredTarget === "listing") draft = { ...draft, type: "listing" };
-      if (preferredTarget === "collection") draft = { ...draft, type: "collection" };
+      if (preferredTarget === "collection") {
+        draft = { ...draft, type: "collection" };
+        // Always apply inline extractor — works even when AI/network fails
+        const local = extractCollectionFields(text);
+        draft = {
+          ...draft,
+          price: local.price ?? draft.price,
+          communityName: local.communityName || draft.communityName,
+          communityType: local.communityType || draft.communityType,
+          collectionType: local.collectionType || draft.collectionType,
+          expectedPeople: local.expectedPeople ?? draft.expectedPeople,
+          deadline: local.deadline || draft.deadline,
+          options: (local.options?.length > 0 ? local.options : draft.options),
+          payNumber: local.payNumber || draft.payNumber,
+          payNetwork: local.payNetwork || draft.payNetwork,
+          payName: local.payName || draft.payName,
+        };
+        // AI layer on top if available
+        if (shouldUseCreateAI(text)) {
+          try {
+            const aiDraft2 = await parseCreateWithAI(app, text);
+            if (aiDraft2 && typeof aiDraft2 === "object") {
+              draft = {
+                ...draft,
+                ...aiDraft2,
+                type: "collection",
+                price: aiDraft2.price ?? draft.price,
+                communityName: aiDraft2.communityName || draft.communityName,
+                communityType: aiDraft2.communityType || draft.communityType,
+                collectionType: aiDraft2.collectionType || draft.collectionType,
+                expectedPeople: aiDraft2.expectedPeople ?? draft.expectedPeople,
+                deadline: aiDraft2.deadline || draft.deadline,
+                options: (aiDraft2.options?.length > 0 ? aiDraft2.options : draft.options),
+                payNumber: aiDraft2.payNumber || draft.payNumber,
+                payNetwork: aiDraft2.payNetwork || draft.payNetwork,
+                payName: aiDraft2.payName || draft.payName,
+              };
+            }
+          } catch (err) {
+            console.warn("Collection AI layer failed, local parse used:", err);
+          }
+        }
+      }
       applyCreateDraft(draft);
     } catch (err) {
       console.error(err);
@@ -1323,6 +1438,19 @@ useEffect(() => {
   const unsubServices = useRef(null);
   const unsubCollections = useRef(null);
   const unsubCollectionOrders = useRef(null);
+
+  // Auto-pop About banner for unverified/guest users after 5s
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!user || !isVerified) {
+        setShowAboutBanner(true);
+        // Auto-dismiss after 5s
+        setTimeout(() => setShowAboutBanner(false), 5000);
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isVerified]);
 
   const markFeedsHydrated = useCallback(() => {
     if (feedsHydratedRef.current) return;
@@ -3039,6 +3167,20 @@ useEffect(() => {
     } catch (err) { setError("Failed to update: " + err.message); }
   };
 
+  const deleteCollection = async (collectionId) => {
+    if (!window.confirm("Delete this collection permanently? This cannot be undone.")) return;
+    try {
+      await deleteDoc(doc(db, "collections", collectionId));
+      setViewingCollection(null);
+      setCollectionOrders([]);
+      goBack();
+      setSuccess("Collection deleted.");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError("Failed to delete: " + err.message);
+    }
+  };
+
   const closeCollection = async (collectionId) => {
     if (!window.confirm("Close this collection? No new orders will be accepted.")) return;
     try {
@@ -3915,10 +4057,11 @@ return (
   }}>
 
          {showAboutBanner && (
+  <div style={{margin:'0 16px 12px 16px'}}>
   <div style={{
     position:'relative',
     borderRadius:'14px',
-    marginBottom:'12px',
+    marginBottom:'0',
     overflow:'hidden',
     boxShadow:'0 4px 16px rgba(15,27,45,0.14)',
     border:'1px solid rgba(6,214,199,0.2)',
@@ -3948,7 +4091,7 @@ return (
           Kam<em style={{color:'#5eead4',fontStyle:'normal'}}>pa</em>sika
         </div>
         <p style={{color:'rgba(255,255,255,0.9)',fontSize:'11px',lineHeight:'1.45',margin:0}}>
-          Soko la wanafunzi — ambapo unaweza kununua, kuuza, kutoa huduma, na kukutana na jamii za chuo. Salama na haraka.
+          Mtandao wa wanachuo — ambapo unaweza kununua, kuuza, kutoa huduma, na kukutana na jamii za chuo. Salama na haraka.
         </p>
         <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'8px'}}>
           {['Goods', 'Services', 'Communities', 'Verified'].map(tag => (
@@ -3977,11 +4120,12 @@ return (
       >×</button>
     </div>
   </div>
+  </div>
 )}
 
 {/* ── SLIM STRIP: already verified ── */}
 {showVerifiedBanner && (
-  <div style={{marginBottom:'8px'}}>
+  <div style={{margin:'0 16px 8px 16px'}}>
     {/* Slim strip at top */}
     <div style={{
       display:'flex',alignItems:'center',justifyContent:'space-between',
@@ -4024,7 +4168,7 @@ return (
 
 {/* ── GET VERIFIED: unverified user banner ── */}
 {showGetVerifiedBanner && (
-  <div style={{marginBottom:'8px'}}>
+  <div style={{margin:'0 16px 8px 16px'}}>
     {/* Slim orange strip */}
     <div style={{
       display:'flex',alignItems:'center',justifyContent:'space-between',
@@ -4214,25 +4358,66 @@ return (
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
                {(item.photos && item.photos.length > 0) ? (
   <div style={{marginBottom:'10px'}}>
-    <img
-      src={item.photos[0]}
-      alt={item.title}
-      loading="lazy"
-     onClick={(e) => {
-  e.stopPropagation();
-  setFullScreenImage(item.photos[0]);
-  setFullScreenPhotos(item.photos);
-  setFullScreenIndex(0);
-  incrementViews(item.id);
-}}
-      style={{
-        width:'100%',
-        height:'280px',
-        objectFit:'cover',
-        borderRadius:'14px',
-        cursor:'pointer'
-      }}
-    />
+    {item.photos.length === 1 ? (
+      /* Single photo — full width */
+      <img
+        src={item.photos[0]}
+        alt={item.title}
+        loading="lazy"
+        onClick={(e) => {
+          e.stopPropagation();
+          setFullScreenImage(item.photos[0]);
+          setFullScreenPhotos(item.photos);
+          setFullScreenIndex(0);
+          incrementViews(item.id);
+        }}
+        style={{width:'100%',height:'280px',objectFit:'cover',borderRadius:'14px',cursor:'pointer',display:'block'}}
+      />
+    ) : (
+      /* Multiple photos — horizontal scroll strip */
+      <div style={{position:'relative'}}>
+        <div style={{
+          display:'flex',
+          gap:'6px',
+          overflowX:'auto',
+          scrollbarWidth:'none',
+          msOverflowStyle:'none',
+          borderRadius:'14px',
+          WebkitOverflowScrolling:'touch'
+        }}>
+          {item.photos.map((photo, idx) => (
+            <div key={idx} style={{position:'relative',flexShrink:0}}>
+              <img
+                src={photo}
+                alt=""
+                loading="lazy"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFullScreenImage(photo);
+                  setFullScreenPhotos(item.photos);
+                  setFullScreenIndex(idx);
+                  incrementViews(item.id);
+                }}
+                style={{
+                  width: item.photos.length === 2 ? 'calc(50vw - 30px)' : item.photos.length === 3 ? 'calc(33vw - 16px)' : '140px',
+                  height:'200px',
+                  objectFit:'cover',
+                  borderRadius:'12px',
+                  cursor:'pointer',
+                  display:'block'
+                }}
+              />
+              {/* photo count pill on last visible */}
+              {idx === 0 && item.photos.length > 3 && (
+                <div style={{position:'absolute',bottom:'6px',right:'6px',background:'rgba(0,0,0,0.55)',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'8px'}}>
+                  +{item.photos.length - 1} photos
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
   </div>
 ) : item.photoUrl ? (
   <div style={{marginBottom:'10px'}}>
@@ -5576,7 +5761,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
-                      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {col.collectionType || "order"}</div>
+                      <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                       <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
                       <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
                     </div>
@@ -5661,7 +5846,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       )}
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
-                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {col.collectionType || "order"}</div>
+                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                         <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
                         <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
                       </div>
@@ -5861,6 +6046,24 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <span style={{marginLeft:'8px',fontSize:'11px',background:'#fef3c7',color:'#92400e',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
               )}
             </div>
+
+            {/* ── Creator action bar ── */}
+            {user?.uid === viewingCollection.userId && (
+              <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+                <button
+                  onClick={() => setEditingCollection(!editingCollection)}
+                  style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'10px',background:'#eff6ff',color:'#1e40af',border:'1.5px solid #bfdbfe',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  onClick={() => deleteCollection(viewingCollection.id)}
+                  style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'10px',background:'#fee2e2',color:'#991b1b',border:'1.5px solid #fecaca',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            )}
             
             <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
 
@@ -5975,7 +6178,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 {/* STEP 1: Place Order — collapses after placed */}
                 {!myOrderId ? (
                   <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'12px'}}>
-                    <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>📝 Place Your Order</h3>
+                    <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>{(()=>{
+                      const ct = viewingCollection.collectionType || "order";
+                      const headers = { order:"📝 Place Your Order", event:"🎟 Register", contribution:"💰 Make a Contribution", freshers:"🎓 Join Support" };
+                      return headers[ct] || headers.order;
+                    })()}</h3>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Required amount: <strong>{viewingCollection.price?.toLocaleString()} TSh</strong></div>
                     
                     <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Your Name *</label><input type="text" value={orderFormData.studentName} onChange={e=>setOrderFormData({...orderFormData,studentName:e.target.value})} placeholder="Full name" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
@@ -5992,7 +6199,21 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       </div>
                     )}
 
-                    <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Placing...":"✓ Place Order"}</button>
+                    {(()=>{
+                      const ct = viewingCollection.collectionType || "order";
+                      const labels = {
+                        order: { idle: "✓ Place Order", loading: "Placing..." },
+                        event: { idle: "🎟 Register for Event", loading: "Registering..." },
+                        contribution: { idle: "💰 Contribute Now", loading: "Submitting..." },
+                        freshers: { idle: "🎓 Join Freshers Support", loading: "Joining..." },
+                      };
+                      const lbl = labels[ct] || labels.order;
+                      return (
+                        <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer',letterSpacing:'0.2px'}}>
+                          {uploading ? lbl.loading : lbl.idle}
+                        </button>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0',marginBottom:'12px'}}>
@@ -6060,7 +6281,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             )}
 
             {!user && viewingCollection.active && (
-              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'16px'}}>Sign in to Order</button>
+              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:'pointer',marginBottom:'16px'}}>
+                {(()=>{
+                  const ct = viewingCollection.collectionType || "order";
+                  const signInLabels = { order:"Sign in to Order", event:"Sign in to Register", contribution:"Sign in to Contribute", freshers:"Sign in to Join" };
+                  return "🔐 " + (signInLabels[ct] || signInLabels.order);
+                })()}
+              </button>
             )}
 
             {/* ORDERS LIST — visible to collection creator AND co-admins */}

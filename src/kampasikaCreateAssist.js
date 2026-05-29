@@ -35,6 +35,92 @@ function extractPrice(text) {
   return null;
 }
 
+function extractDeadline(text) {
+  // Match dates like "15 Juni", "June 15", "15/06/2025", "2025-06-15"
+  const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+    januari:1,februari:2,machi:3,aprili:4,mei:5,juni:6,julai:7,agosti:8,septemba:9,oktoba:10,novemba:11,desemba:12 };
+  const now = new Date();
+  const year = now.getFullYear();
+
+  // ISO format
+  let m = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (m) return m[1];
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  m = text.match(/\b(\d{1,2})[-](\d{1,2})[-](\d{4})\b/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+
+  // "15 Juni" or "Juni 15"
+  m = text.match(/\b(\d{1,2})\s+([a-z]+)\b/i) || text.match(/\b([a-z]+)\s+(\d{1,2})\b/i);
+  if (m) {
+    const dayStr = m[1].match(/\d/) ? m[1] : m[2];
+    const monStr = m[1].match(/\d/) ? m[2] : m[1];
+    const mon = months[monStr.toLowerCase()];
+    if (mon) {
+      const day = parseInt(dayStr);
+      return `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+  }
+  return null;
+}
+
+function extractExpectedPeople(text) {
+  const m = text.match(/\b(\d+)\s*(?:watu|people|persons|members|students|wanafunzi|wanachama)\b/i)
+    || text.match(/\b(?:watu|people|students)\s*(\d+)\b/i)
+    || text.match(/\btotal\s*(?:of\s*)?(\d+)\b/i)
+    || text.match(/\b(\d+)\s*(?:spots?|slots?|nafasi)\b/i);
+  return m ? parseInt(m[1]) : null;
+}
+
+function extractCommunityName(text) {
+  const m = text.match(/\b(?:class|darasa|group|jamii|community|club|kanisa|church|hostel|year|batch)\s+([A-Za-z0-9\s]+?)(?:\s*,|\s*\.|$)/i)
+    || text.match(/([A-Z][A-Za-z\s]+(?:Year|Class|Club|Community|Church|Association)[\s\d]*)/);
+  return m ? m[1].trim() : null;
+}
+
+function extractCommunityType(text) {
+  const t = text.toLowerCase();
+  if (/\b(class|darasa|year|batch|students?|wanafunzi)\b/.test(t)) return "class";
+  if (/\b(church|kanisa|parokia|msalaba|catholic|christian|islamic|mosque)\b/.test(t)) return "church";
+  if (/\b(club|timu|team|association|society)\b/.test(t)) return "club";
+  if (/\b(hostel|dormitory|nyumba|chumba)\b/.test(t)) return "hostel";
+  if (/\b(freshers|wapya|newcomers)\b/.test(t)) return "freshers";
+  return "other";
+}
+
+function extractCollectionType(text) {
+  const t = text.toLowerCase();
+  if (/\b(event|tiketi|ticket|usajili|registration|tamasha|sherehe|party|graduation|convocation)\b/.test(t)) return "event";
+  if (/\b(mchango|contribution|donate|donation|fundraiser|msaada|support)\b/.test(t)) return "contribution";
+  if (/\b(freshers|wapya)\b/.test(t)) return "freshers";
+  // default for t-shirts, group orders etc
+  return "order";
+}
+
+function extractOptions(text) {
+  // sizes
+  const sizeMatch = text.match(/\b(sizes?|ukubwa)[:\s]+([A-Za-z0-9,\s/]+)/i);
+  if (sizeMatch) return sizeMatch[2].split(/[,/]/).map(s => s.trim()).filter(Boolean);
+  if (/\b(XS|S|M|L|XL|XXL)\b/.test(text)) {
+    return text.match(/\b(XS|S|M|L|XL|XXL)\b/g);
+  }
+  return [];
+}
+
+function extractPayment(text) {
+  const networks = ["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","Mpesa","Tigopesa"];
+  let payNetwork = null;
+  for (const n of networks) {
+    if (text.toLowerCase().includes(n.toLowerCase())) { payNetwork = n; break; }
+  }
+  const numMatch = text.match(/\b(0[67]\d{8}|255[67]\d{8})\b/);
+  const payNumber = numMatch ? numMatch[1] : null;
+  // name after "jina" or after the number
+  const nameMatch = text.match(/(?:jina|name|akaunti)[:\s]+([A-Za-z\s]+?)(?:\s*,|\s*\.|$)/i);
+  const payName = nameMatch ? nameMatch[1].trim() : null;
+  return { payNetwork, payNumber, payName };
+}
+
 function guessCategory(text) {
   const t = text.toLowerCase();
   if (/\b(iphone|samsung|laptop|phone|calculator|charger|earphone|tablet|electronics)\b/.test(t)) return "electronics";
@@ -60,17 +146,20 @@ export function localParseCreate(query) {
   const raw = (query || "").trim();
   const lower = raw.toLowerCase();
 
-  const isCollection = /\b(collection|jamii|community|class order|group order|event registration|graduation|t-shirt|contribution|kukusanya|oda ya)\b/i.test(lower);
+  const isCollection = /\b(collection|jamii|community|class order|group order|event|graduation|t-shirt|kaptula|contribution|mchango|kukusanya|oda ya|usajili)\b/i.test(lower);
 
   const price = extractPrice(raw);
+  const deadline = extractDeadline(raw);
+  const expectedPeople = extractExpectedPeople(raw);
+  const communityName = extractCommunityName(raw);
+  const communityType = extractCommunityType(raw);
+  const collectionType = extractCollectionType(raw);
+  const options = extractOptions(raw);
+  const { payNetwork, payNumber, payName } = extractPayment(raw);
 
   let location = null;
   const locMatch = raw.match(/(?:pale|pickup|location|karibu na|at|@)\s+([^,.\n]+)/i);
   if (locMatch) location = locMatch[1].trim();
-
-  let communityName = null;
-  const commMatch = raw.match(/(?:jamii|community|class|group)\s+([^,.\n]+)/i);
-  if (commMatch) communityName = commMatch[1].trim();
 
   let title = raw
     .replace(/\b(nauza|nataka kuuza|sell|selling|chapisha|post|listing|collection)\b/gi, "")
@@ -89,7 +178,14 @@ export function localParseCreate(query) {
     category: guessCategory(raw),
     location,
     communityName,
-    collectionType: /\bevent\b/i.test(lower) ? "event" : "order",
+    communityType,
+    collectionType,
+    expectedPeople,
+    deadline,
+    options: options.length > 0 ? options : undefined,
+    payNumber,
+    payNetwork,
+    payName,
     local: true,
   };
 }
