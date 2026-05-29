@@ -14,6 +14,11 @@ import {
   AISearchBadge,
 } from './kampasikaSearch';
 import {
+  localParseCreate,
+  shouldUseCreateAI,
+  parseCreateWithAI,
+} from './kampasikaCreateAssist';
+import {
   compressImage,
   COMPRESSION_PRESETS,
   validateVideo,
@@ -48,6 +53,14 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 
 const ENABLE_COLLECTIONS = true;  // Communities & events (group orders)
 // ====================================
+
+function WhatsAppIcon({ size = 16, color = '#fff' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+  );
+}
 
 const SERVICE_TAGS = [
   { id: "phone_repair", label: "Phone Repair", icon: "📱" },
@@ -172,6 +185,7 @@ function App() {
   const [page, setPageRaw] = useState("home");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
+  const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["home"]);
   const isGoingBack = useRef(false)
 
@@ -237,8 +251,11 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
-  const [showMenuVerifyBanner, setShowMenuVerifyBanner] = useState(false);
+  const [createAssistText, setCreateAssistText] = useState("");
+  const [createAssistLoading, setCreateAssistLoading] = useState(false);
   const [showAboutBanner, setShowAboutBanner] = useState(false);
+  const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
+  const [showGetVerifiedBanner, setShowGetVerifiedBanner] = useState(false);
   const [showSafetyMessage, setShowSafetyMessage] = useState(true);
   const [showChatTip, setShowChatTip] = useState(true);
   // Services state
@@ -887,6 +904,62 @@ useEffect(() => {
     return n.toLocaleString() + " TSh";
   };
 
+  const applyCreateDraft = useCallback((draft) => {
+    if (draft.type === "collection") {
+      setCreateCollectionData((prev) => ({
+        ...prev,
+        title: draft.title || prev.title,
+        desc: draft.description || prev.desc,
+        price: draft.price != null ? String(draft.price) : prev.price,
+        communityName: draft.communityName || prev.communityName,
+        collectionType: draft.collectionType || prev.collectionType,
+      }));
+      setPage("createCollection");
+    } else {
+      setCreateData((prev) => ({
+        ...prev,
+        cat: draft.category || prev.cat,
+        title: draft.title || prev.title,
+        desc: draft.description || prev.desc,
+        price: draft.price != null ? String(draft.price) : prev.price,
+        location: draft.location || prev.location,
+      }));
+      setPage("create");
+    }
+    setSuccess("Form filled — review, add photos, then publish.");
+    setTimeout(() => setSuccess(""), 5000);
+  }, [setPage]);
+
+  const handleCreateAssist = async (preferredTarget) => {
+    const text = createAssistText.trim();
+    if (!text) return;
+    if (!canPerformAction()) return;
+    setCreateAssistLoading(true);
+    setError("");
+    try {
+      let draft = localParseCreate(text);
+      if (shouldUseCreateAI(text)) {
+        try {
+          const aiDraft = await parseCreateWithAI(app, text);
+          if (aiDraft && typeof aiDraft === "object") {
+            draft = { ...draft, ...aiDraft, price: aiDraft.price ?? draft.price };
+          }
+        } catch (err) {
+          console.warn("Create assist AI unavailable, using local parse:", err);
+        }
+      }
+      if (preferredTarget === "listing") draft = { ...draft, type: "listing" };
+      if (preferredTarget === "collection") draft = { ...draft, type: "collection" };
+      applyCreateDraft(draft);
+    } catch (err) {
+      console.error(err);
+      setError('Jaribu: "Nauza iPhone 11 bei 400k pale Mlimani"');
+      setTimeout(() => setError(""), 4000);
+    } finally {
+      setCreateAssistLoading(false);
+    }
+  };
+
   // Reusable empty-results component for any tab.
   // Three states:
   //   1. No query yet → fallback message ("Be the first to post")
@@ -903,7 +976,7 @@ useEffect(() => {
     if (!u || !u.isVerified) return null;
     const badge = u.verificationBadge || "student";
     const variants = {
-      student: { icon: "🎓", label: "Verified Student", bg: "#f0fdfa", color: "#0f766e", border: "#99f6e4" },
+      student: { icon: "🎓", label: "Verified Student", bg: "#f0fffe", color: "#0d9488", border: "#99f0ee" },
       provider: { icon: "💼", label: "Verified Provider", bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
       landlord: { icon: "🏠", label: "Verified Landlord", bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
     };
@@ -954,15 +1027,15 @@ useEffect(() => {
     // not just a grayed-out button next to "Hakuna matokeo" (that read as a dead-end).
     if (alreadySaved) {
       return (
-        <div style={{textAlign:'center',padding:'40px 20px',background:'#f0fdfa',borderRadius:'14px',border:'1px solid #99f6e4'}}>
+        <div style={{textAlign:'center',padding:'40px 20px',background:'#f0fffe',borderRadius:'14px',border:'1px solid #99f0ee'}}>
           <div style={{fontSize:'40px',marginBottom:'12px'}}>✓</div>
-          <div style={{fontSize:'15px',fontWeight:'700',color:'#0f766e',marginBottom:'6px'}}>
+          <div style={{fontSize:'15px',fontWeight:'700',color:'#0d9488',marginBottom:'6px'}}>
             Tumeshakuhifadhi
           </div>
-          <div style={{fontSize:'13px',color:'#0f766e',lineHeight:1.5,marginBottom:'4px'}}>
+          <div style={{fontSize:'13px',color:'#0d9488',lineHeight:1.5,marginBottom:'4px'}}>
             Utapata ujumbe "{query.length > 30 ? query.slice(0,30) + '…' : query}" itakapopatikana.
           </div>
-          <div style={{fontSize:'11px',color:'#0d9488',opacity:0.7,marginTop:'8px',marginBottom:'16px'}}>
+          <div style={{fontSize:'11px',color:'#0ea5a0',opacity:0.7,marginTop:'8px',marginBottom:'16px'}}>
             (We'll reach you when this is listed)
           </div>
           <button
@@ -976,8 +1049,8 @@ useEffect(() => {
             style={{
               padding:'10px 24px',
               background:'#fff',
-              color:'#0f766e',
-              border:'1.5px solid #99f6e4',
+              color:'#0d9488',
+              border:'1.5px solid #99f0ee',
               borderRadius:'20px',
               fontSize:'13px',
               fontWeight:'600',
@@ -996,8 +1069,8 @@ useEffect(() => {
       <>
         {/* Cross-category hint banner */}
         {crossHints.length > 0 && (
-          <div style={{background:'linear-gradient(90deg,#f0fdfa,#ecfeff)',borderRadius:'12px',border:'1px solid #99f6e4',padding:'14px 16px',marginBottom:'10px'}}>
-            <div style={{fontSize:'13px',color:'#0f766e',fontWeight:'600',marginBottom:'10px',lineHeight:1.4}}>
+          <div style={{background:'linear-gradient(90deg,#f0fffe,#f0fffe)',borderRadius:'12px',border:'1px solid #99f0ee',padding:'14px 16px',marginBottom:'10px'}}>
+            <div style={{fontSize:'13px',color:'#0d9488',fontWeight:'600',marginBottom:'10px',lineHeight:1.4}}>
               ✨ Tumepata "{query.length > 30 ? query.slice(0,30) + '…' : query}" katika sehemu nyingine:
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
@@ -1011,11 +1084,11 @@ useEffect(() => {
                     justifyContent:'space-between',
                     padding:'10px 14px',
                     background:'#fff',
-                    border:'1px solid #99f6e4',
+                    border:'1px solid #99f0ee',
                     borderRadius:'10px',
                     fontSize:'13px',
                     fontWeight:'600',
-                    color:'#0f766e',
+                    color:'#0d9488',
                     cursor:'pointer',
                     textAlign:'left',
                   }}>
@@ -1047,14 +1120,14 @@ useEffect(() => {
               disabled={savingAlert}
               style={{
                 padding:'12px 24px',
-                background: 'linear-gradient(135deg,#0f766e,#0d9488)',
+                background: 'linear-gradient(135deg,#0d9488,#0ea5a0)',
                 color: '#fff',
                 border:'none',
                 borderRadius:'24px',
                 fontSize:'14px',
                 fontWeight:'700',
                 cursor: savingAlert ? 'wait' : 'pointer',
-                boxShadow: '0 2px 10px rgba(15,118,110,0.2)',
+                boxShadow: '0 2px 10px rgba(13,148,136,0.2)',
               }}>
               {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
             </button>
@@ -1313,12 +1386,19 @@ useEffect(() => {
 
     if (snap.exists()) {
       const data = snap.data();
-
       setEnableRooms(data.rooms === true);
+      // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
+    } else {
+      setEnableRooms(false);
+      setRequireIdentityVerification(false);
     }
   } catch (err) {
     console.error("Error loading feature flags:", err);
+    setEnableRooms(false);
+    setRequireIdentityVerification(false);
+  } finally {
+    setFeatureFlagsLoaded(true);
   }
 };
 
@@ -1893,6 +1973,87 @@ createdAt: serverTimestamp()
     }
   };
 
+  const sendImageMessage = async (file) => {
+    if (!file || !activeConversation) return;
+    const tempId = 'temp_img_' + Date.now();
+    const localPreview = URL.createObjectURL(file);
+    // Optimistic bubble
+    setMessages(prev => [...prev, {
+      id: tempId,
+      senderId: user.uid,
+      senderName: userName,
+      imageUrl: localPreview,
+      text: '',
+      createdAt: new Date(),
+      _pending: true
+    }]);
+    try {
+      const { file: compressed } = await safeCompress(file, COMPRESSION_PRESETS.listing);
+      const storageRef = ref(storage, `chat/${Date.now()}_${user.uid}.jpg`);
+      const snap = await uploadBytes(storageRef, compressed);
+      const imageUrl = await getDownloadURL(snap.ref);
+
+      let convId = activeConversation.id;
+      if (!convId) {
+        const convRef = doc(collection(db, "conversations"));
+        const msgRef = doc(collection(db, "conversations", convRef.id, "messages"));
+        const isFromBuyer = user.uid === activeConversation.buyerId;
+        const batch = writeBatch(db);
+        batch.set(convRef, {
+          listingId: activeConversation.listingId,
+          listingTitle: activeConversation.listingTitle,
+          listingPrice: activeConversation.listingPrice,
+          listingPhoto: activeConversation.listingPhoto || null,
+          buyerId: activeConversation.buyerId,
+          buyerName: activeConversation.buyerName,
+          buyerAvatar: activeConversation.buyerAvatar || null,
+          sellerId: activeConversation.sellerId,
+          sellerName: activeConversation.sellerName,
+          sellerAvatar: activeConversation.sellerAvatar || null,
+          lastMessage: '📷 Photo',
+          lastMessageAt: serverTimestamp(),
+          buyerUnread: 0,
+          sellerUnread: isFromBuyer ? 1 : 0,
+          createdAt: serverTimestamp()
+        });
+        batch.set(msgRef, {
+          senderId: user.uid,
+          senderName: userName,
+          text: '',
+          imageUrl,
+          status: "sent",
+          readBy: [user.uid],
+          createdAt: serverTimestamp()
+        });
+        await batch.commit();
+        setActiveConversation(prev => ({ ...prev, id: convRef.id, _draft: false }));
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        return;
+      }
+
+      await addDoc(collection(db, "conversations", convId, "messages"), {
+        senderId: user.uid,
+        senderName: userName,
+        text: '',
+        imageUrl,
+        status: "sent",
+        readBy: [user.uid],
+        createdAt: serverTimestamp()
+      });
+      const isFromBuyer = user.uid === activeConversation.buyerId;
+      await updateDoc(doc(db, "conversations", convId), {
+        lastMessage: '📷 Photo',
+        lastMessageAt: serverTimestamp(),
+        [isFromBuyer ? "sellerUnread" : "buyerUnread"]: increment(1)
+      });
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } catch (err) {
+      console.error("Error sending image:", err);
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setError("Failed to send photo. Try again.");
+    }
+  };
+
   const markAsRead = async (conversationId) => {
     if (!user) return;
     try {
@@ -2329,6 +2490,7 @@ useEffect(() => {
 
       setUserName(signupName.trim());
       setSelectedUni(chosenUni);
+      setLoading(false);
       setSuccess(isStudent
         ? "Account created! Welcome to Kampasika 🎉"
         : "Akaunti yako imeundwa! Sasa wanafunzi wanaweza kukupata.");
@@ -2364,6 +2526,7 @@ useEffect(() => {
 
       await signInWithEmailAndPassword(auth, cleanEmail, password);
 
+      setLoading(false);
       setSuccess("Logged in successfully!");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
@@ -2537,6 +2700,14 @@ useEffect(() => {
     setShowCreateSuccess(true);
     setSuccess("Listing created successfully!");
     setTimeout(() => setSuccess(""), 4000);
+    // Auto-dismiss celebration after 3 seconds
+    setTimeout(() => {
+      setShowCreateSuccess(false);
+      setLastCreatedListing(null);
+      setPage("home");
+      pageHistory.current = ["home"];
+      window.history.replaceState({ page: "home" }, "", "/");
+    }, 3000);
     // Store last listing info for the share prompt
     const lastListing = {
       title: createData.title.trim(),
@@ -2691,7 +2862,7 @@ useEffect(() => {
 
   const handleCreateCollection = async () => {
     if (!canPerformAction("createCommunityOrder")) return;
-    if (REQUIRE_IDENTITY_VERIFICATION && !isVerified) {
+    if (featureFlagsLoaded && REQUIRE_IDENTITY_VERIFICATION && !isVerified) {
       setError("Please verify your account before creating a community order or event.");
       setShowVerifyModal(true);
       return;
@@ -3276,12 +3447,12 @@ if (loading) {
         width:'42px',
         height:'42px',
         borderRadius:'50%',
-        border:'1.5px solid rgba(45,212,191,0.45)',
+        border:'1.5px solid rgba(6,214,199,0.45)',
         display:'flex',
         alignItems:'center',
         justifyContent:'center',
-        boxShadow:'0 0 14px rgba(45,212,191,0.18)',
-        color:'#0f766e',
+        boxShadow:'0 0 14px rgba(6,214,199,0.18)',
+        color:'#0d9488',
         fontSize:'18px',
         background:'#fff'
       }}>
@@ -3300,7 +3471,7 @@ if (loading) {
         color:'#fff',
         letterSpacing:'0'
       }}>
-        Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
+        Kam<em style={{color:'#06d6c7'}}>pa</em>sika
       </div>
     </div>
   );
@@ -3565,7 +3736,7 @@ return (
             display:'flex',
             alignItems:'center',
             justifyContent:'center',
-            color:'#0f766e',
+            color:'#0d9488',
             fontSize:'18px',
             background:'#fff',
             cursor:'pointer',
@@ -3596,9 +3767,14 @@ return (
                 type="button"
                 onClick={() => {
                   setShowAppMenu(false);
-                  setShowMenuVerifyBanner(true);
                   setShowAboutBanner(false);
-                  if (page !== 'home') setPage('home');
+                  if (isVerified) {
+                    setShowGetVerifiedBanner(false);
+                    setShowVerifiedBanner(true);
+                  } else {
+                    setShowVerifiedBanner(false);
+                    setShowGetVerifiedBanner(true);
+                  }
                 }}
                 style={{
                   width:'100%',
@@ -3612,14 +3788,13 @@ return (
                   cursor:'pointer'
                 }}
               >
-                ✓ Get Verified
+                {isVerified ? '✓ Uko Verified' : '✓ Get Verified'}
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setShowAppMenu(false);
                   setShowAboutBanner(true);
-                  setShowMenuVerifyBanner(false);
                   if (page !== 'home') setPage('home');
                 }}
                 style={{
@@ -3661,7 +3836,7 @@ return (
         <div style={{fontSize:'11px',fontWeight:'700',color:'#0f1b2d'}}>
           {getTimeGreeting()}
         </div>
-        <div style={{fontSize:'14px',fontWeight:'700',color:'#0f766e'}}>
+        <div style={{fontSize:'14px',fontWeight:'700',color:'#0d9488'}}>
           {getFirstName()}
         </div>
       </div>
@@ -3670,7 +3845,7 @@ return (
     activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
   ) : (
     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
-      Kam<em style={{color:'#2dd4bf'}}>pa</em>sika
+      Kam<em style={{color:'#06d6c7'}}>pa</em>sika
     </div>
   )}
 </div>
@@ -3723,7 +3898,7 @@ return (
       
     )}
     {!user && page === "home" && (
-      <button onClick={()=>setShowAuthModal(true)} style={{padding:'8px 14px',background:'linear-gradient(135deg,#0f766e,#0d9488)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(15,118,110,0.25)'}}>Sign In</button>
+      <button onClick={()=>{setAuthMode("signup");setShowAuthModal(true);}} style={{padding:'8px 14px',background:'linear-gradient(135deg,#0d9488,#0ea5a0)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(13,148,136,0.25)'}}>Sign Up</button>
     )}
   </div>
 )}
@@ -3742,324 +3917,167 @@ return (
          {showAboutBanner && (
   <div style={{
     position:'relative',
-    borderRadius:'20px',
-    marginBottom:'16px',
+    borderRadius:'14px',
+    marginBottom:'12px',
     overflow:'hidden',
-    boxShadow:'0 12px 32px rgba(15,27,45,0.22)',
-    border:'1px solid rgba(45,212,191,0.25)'
+    boxShadow:'0 4px 16px rgba(15,27,45,0.14)',
+    border:'1px solid rgba(6,214,199,0.2)',
+    maxHeight:'22vh'
   }}>
     <div style={{
       position:'absolute',
       inset:0,
-      background:'linear-gradient(145deg, #0f1b2d 0%, #134e4a 45%, #0f766e 100%)'
+      background:'linear-gradient(135deg, #0f1b2d 0%, #0d9488 100%)'
     }} />
-    <div style={{
-      position:'absolute',
-      top:'-28px',
-      right:'-20px',
-      width:'110px',
-      height:'110px',
-      borderRadius:'50%',
-      background:'rgba(45,212,191,0.18)',
-      filter:'blur(2px)'
-    }} />
-    <div style={{
-      position:'absolute',
-      bottom:'-36px',
-      left:'-24px',
-      width:'90px',
-      height:'90px',
-      borderRadius:'50%',
-      background:'rgba(251,191,36,0.12)'
-    }} />
-    <div style={{position:'relative',padding:'22px 18px 18px'}}>
+    <div style={{position:'relative',padding:'12px 14px',display:'flex',alignItems:'flex-start',gap:'10px'}}>
+      <div style={{
+        width:'36px',
+        height:'36px',
+        minWidth:'36px',
+        minHeight:'36px',
+        borderRadius:'50%',
+        background:'rgba(255,255,255,0.15)',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        fontSize:'16px',
+        flexShrink:0
+      }}>✧</div>
+      <div style={{flex:1,minWidth:0,paddingRight:'28px'}}>
+        <div style={{fontFamily:'serif',fontSize:'17px',fontWeight:'700',color:'#fff',lineHeight:1.2,marginBottom:'4px'}}>
+          Kam<em style={{color:'#5eead4',fontStyle:'normal'}}>pa</em>sika
+        </div>
+        <p style={{color:'rgba(255,255,255,0.9)',fontSize:'11px',lineHeight:'1.45',margin:0}}>
+          Soko la wanafunzi — ambapo unaweza kununua, kuuza, kutoa huduma, na kukutana na jamii za chuo. Salama na haraka.
+        </p>
+        <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'8px'}}>
+          {['Goods', 'Services', 'Communities', 'Verified'].map(tag => (
+            <span key={tag} style={{fontSize:'9px',fontWeight:'700',color:'#fff',background:'rgba(255,255,255,0.12)',padding:'3px 7px',borderRadius:'6px'}}>{tag}</span>
+          ))}
+        </div>
+      </div>
       <button
         type="button"
         aria-label="Close"
         onClick={() => setShowAboutBanner(false)}
         style={{
           position:'absolute',
-          top:'14px',
-          right:'14px',
+          top:'10px',
+          right:'10px',
           background:'rgba(255,255,255,0.12)',
-          border:'1px solid rgba(255,255,255,0.2)',
+          border:'none',
           borderRadius:'50%',
-          width:'30px',
-          height:'30px',
+          width:'24px',
+          height:'24px',
           color:'#fff',
           cursor:'pointer',
-          fontSize:'16px',
-          lineHeight:1,
-          backdropFilter:'blur(4px)'
+          fontSize:'14px',
+          lineHeight:1
         }}
       >×</button>
-      <div style={{
-        width:'48px',
-        height:'48px',
-        borderRadius:'14px',
-        background:'rgba(255,255,255,0.14)',
-        border:'1px solid rgba(255,255,255,0.22)',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        fontSize:'22px',
-        marginBottom:'12px',
-        boxShadow:'0 4px 14px rgba(0,0,0,0.15)'
-      }}>✧</div>
-      <div style={{fontFamily:'serif',fontSize:'26px',fontWeight:'700',color:'#fff',marginBottom:'4px',letterSpacing:'-0.02em'}}>
-        Kam<em style={{color:'#5eead4',fontStyle:'normal'}}>pa</em>sika
-      </div>
-      <div style={{fontSize:'12px',fontWeight:'600',color:'rgba(255,255,255,0.75)',marginBottom:'14px',letterSpacing:'0.04em',textTransform:'uppercase'}}>
-        Campus marketplace for students
-      </div>
-      <p style={{color:'rgba(255,255,255,0.92)',fontSize:'13px',lineHeight:'1.65',margin:'0 0 14px'}}>
-        Kampasika ni soko la wanafunzi kwenye chuo — nunua, uza, na pata huduma karibu na kampus yako.
-        Fuatilia oda za jamii, matukio, na malipo kwa urahisi na usalama.
-      </p>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'14px'}}>
-        {[
-          { icon:'🛍️', label:'Buy & sell goods' },
-          { icon:'🛠️', label:'Find services' },
-          { icon:'🏫', label:'Communities & events' },
-          { icon:'✓', label:'Verified sellers' },
-        ].map(item => (
-          <div key={item.label} style={{
-            background:'rgba(255,255,255,0.1)',
-            border:'1px solid rgba(255,255,255,0.14)',
-            borderRadius:'12px',
-            padding:'10px',
-            display:'flex',
-            alignItems:'center',
-            gap:'8px'
-          }}>
-            <span style={{fontSize:'16px'}}>{item.icon}</span>
-            <span style={{fontSize:'11px',fontWeight:'600',color:'#fff',lineHeight:1.3}}>{item.label}</span>
+    </div>
+  </div>
+)}
+
+{/* ── SLIM STRIP: already verified ── */}
+{showVerifiedBanner && (
+  <div style={{marginBottom:'8px'}}>
+    {/* Slim strip at top */}
+    <div style={{
+      display:'flex',alignItems:'center',justifyContent:'space-between',
+      padding:'8px 14px',
+      background:'linear-gradient(90deg,#0d9488,#0f766e)',
+      borderRadius:'10px 10px 0 0'
+    }}>
+      <span style={{fontSize:'12px',fontWeight:'700',color:'#fff',display:'flex',alignItems:'center',gap:'6px'}}>
+        ✦ Uko Verified — akaunti yako imethibitishwa
+      </span>
+      <button type="button" onClick={()=>setShowVerifiedBanner(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'50%',width:'20px',height:'20px',color:'#fff',cursor:'pointer',fontSize:'12px',lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+    </div>
+    {/* Full card below strip */}
+    <div style={{
+      background:'linear-gradient(135deg,#042f2e 0%,#134e4a 60%,#0f766e 100%)',
+      borderRadius:'0 0 14px 14px',
+      padding:'16px 16px 18px',
+      position:'relative',
+      overflow:'hidden'
+    }}>
+      {/* decorative circle */}
+      <div style={{position:'absolute',top:'-20px',right:'-20px',width:'100px',height:'100px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}} />
+      <div style={{display:'flex',alignItems:'flex-start',gap:'14px'}}>
+        <div style={{width:'44px',height:'44px',minWidth:'44px',borderRadius:'14px',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0}}>🏆</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:'17px',fontWeight:'800',color:'#fff',marginBottom:'4px',lineHeight:1.2}}>Uko Verified! 🎉</div>
+          <p style={{color:'rgba(255,255,255,0.85)',fontSize:'12px',lineHeight:'1.55',margin:'0 0 12px'}}>
+            Listings na huduma zako zinaonyesha badge ya uthibitisho — wanunuzi wanakuamini zaidi, na unauza haraka zaidi.
+          </p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
+            {['🏅 Trusted badge', '👁 More views', '⚡ Faster sales'].map(b => (
+              <span key={b} style={{fontSize:'10px',fontWeight:'700',color:'#5eead4',background:'rgba(255,255,255,0.1)',padding:'4px 9px',borderRadius:'8px'}}>{b}</span>
+            ))}
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* ── GET VERIFIED: unverified user banner ── */}
+{showGetVerifiedBanner && (
+  <div style={{marginBottom:'8px'}}>
+    {/* Slim orange strip */}
+    <div style={{
+      display:'flex',alignItems:'center',justifyContent:'space-between',
+      padding:'8px 14px',
+      background:'linear-gradient(90deg,#0ea5a0,#06d6c7)',
+      borderRadius:'10px 10px 0 0'
+    }}>
+      <span style={{fontSize:'12px',fontWeight:'700',color:'#fff',display:'flex',alignItems:'center',gap:'6px'}}>
+        ⚡ Thibitisha akaunti yako — inakuwezesha kuuza zaidi
+      </span>
+      <button type="button" onClick={()=>setShowGetVerifiedBanner(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:'20px',height:'20px',color:'#fff',cursor:'pointer',fontSize:'12px',lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+    </div>
+    {/* Full card */}
+    <div style={{
+      background:'linear-gradient(135deg,#042f2e 0%,#0f766e 55%,#0ea5a0 100%)',
+      borderRadius:'0 0 14px 14px',
+      padding:'16px 16px 18px',
+      position:'relative',
+      overflow:'hidden'
+    }}>
+      <div style={{position:'absolute',top:'-20px',right:'-20px',width:'100px',height:'100px',borderRadius:'50%',background:'rgba(255,255,255,0.05)'}} />
+      <div style={{display:'flex',alignItems:'flex-start',gap:'14px',marginBottom:'14px'}}>
+        <div style={{width:'44px',height:'44px',minWidth:'44px',borderRadius:'14px',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',flexShrink:0}}>🛡️</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:'17px',fontWeight:'800',color:'#fff',marginBottom:'4px',lineHeight:1.2}}>Pata Verified Badge</div>
+          <p style={{color:'rgba(255,255,255,0.85)',fontSize:'12px',lineHeight:'1.55',margin:0}}>
+            Wanunuzi wanakuamini zaidi ukiwa na badge. Listings zako zinaonekana juu zaidi — inahitaji dakika chache tu.
+          </p>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+        {['🏅 Verified badge', '👁 More visibility', '💬 More messages', '⚡ Faster sales'].map(b => (
+          <span key={b} style={{fontSize:'10px',fontWeight:'700',color:'#99f0ee',background:'rgba(255,255,255,0.12)',padding:'4px 9px',borderRadius:'8px'}}>{b}</span>
         ))}
       </div>
-      <div style={{
-        fontSize:'11px',
-        color:'rgba(255,255,255,0.7)',
-        textAlign:'center',
-        paddingTop:'4px',
-        borderTop:'1px solid rgba(255,255,255,0.12)'
-      }}>
-        Built for students · Safe · Fast · On campus
-      </div>
-    </div>
-  </div>
-)}
-
-         {showMenuVerifyBanner && (
-  <div style={{
-    background: verificationStatus === "pending"
-      ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'
-      : verificationStatus === "rejected"
-      ? 'linear-gradient(135deg, #f87171, #ef4444)'
-      : isVerified
-      ? 'linear-gradient(135deg, #10b981, #059669)'
-      : 'linear-gradient(135deg, #0f766e, #0d9488)',
-    borderRadius:'16px',
-    padding:'20px',
-    marginBottom:'16px',
-    boxShadow:'0 4px 12px rgba(245,158,11,0.2)',
-    position:'relative'
-  }}>
-    <button
-      type="button"
-      aria-label="Close"
-      onClick={() => setShowMenuVerifyBanner(false)}
-      style={{
-        position:'absolute',
-        top:'12px',
-        right:'12px',
-        background:'rgba(255,255,255,0.2)',
-        border:'none',
-        borderRadius:'50%',
-        width:'28px',
-        height:'28px',
-        color:'#fff',
-        cursor:'pointer',
-        fontSize:'16px',
-        lineHeight:1
-      }}
-    >×</button>
-    <div style={{fontSize:'20px',fontWeight:'700',color:'#fff',marginBottom:'8px',display:'flex',alignItems:'center',gap:'8px'}}>
-      {isVerified ? (
-        <><span>✓</span><span>Uko verified!</span></>
-      ) : verificationStatus === "pending" ? (
-        <><span>⏳</span><span>Inakaguliwa...</span></>
-      ) : verificationStatus === "rejected" ? (
-        <><span>❌</span><span>Ombi halikukubalika</span></>
-      ) : (
-        <><span>✨</span><span>Pata Verified badge</span></>
-      )}
-    </div>
-    <p style={{color:'rgba(255,255,255,0.95)',fontSize:'13px',lineHeight:'1.5',marginBottom:'12px'}}>
-      {isVerified
-        ? "Alama yako ya Verified inaonyesha wanafunzi wengine unaweza kuaminika. Asante kwa kuthibitisha akaunti yako."
-        : verificationStatus === "pending"
-        ? "Tunakagua ombi lako. Tutakuthibitisha ndani ya saa 12-24."
-        : verificationStatus === "rejected"
-        ? "Ombi lako halikukubalika. Unaweza kuwasilisha tena na picha bora."
-        : "Wanafunzi watakuamini zaidi ukiwa na alama ya Verified. Pakia kitambulisho chako — inachukua dakika 2 tu."}
-    </p>
-    {!isVerified && verificationStatus !== "pending" && (
       <button
         type="button"
-        onClick={() => setShowVerifyModal(true)}
+        onClick={()=>{ setShowGetVerifiedBanner(false); setShowVerifyModal(true); }}
         style={{
-          background:'#fff',
-          color: verificationStatus === "rejected" ? '#ef4444' : '#0f766e',
-          padding:'10px 20px',
-          borderRadius:'10px',
-          border:'none',
-          fontSize:'14px',
-          fontWeight:'600',
-          cursor:'pointer',
-          width:'100%'
+          width:'100%',padding:'12px',
+          background:'linear-gradient(135deg,#06d6c7,#5eead4)',
+          color:'#fff',border:'none',borderRadius:'10px',
+          fontSize:'14px',fontWeight:'800',cursor:'pointer',
+          boxShadow:'0 4px 14px rgba(6,214,199,0.4)',
+          letterSpacing:'0.3px'
         }}
       >
-        {verificationStatus === "rejected" ? '🔄 Wasilisha tena' : '✓ Anza uthibitishaji'}
+        Anza Sasa — Thibitisha Akaunti →
       </button>
-    )}
+    </div>
   </div>
 )}
 
-         {user && profileLoaded && !isVerified && !showMenuVerifyBanner && (
-  <div style={{
-    background: verificationStatus === "pending" 
-      ? 'linear-gradient(135deg, #60a5fa, #3b82f6)'  // Blue for pending
-      : verificationStatus === "rejected"
-      ? 'linear-gradient(135deg, #f87171, #ef4444)'  // Red for rejected
-      : 'linear-gradient(135deg, #0f766e, #0d9488)',  // Teal for not submitted (brand color)
-    borderRadius:'16px',
-    padding:'20px',
-    marginBottom:'16px',
-    boxShadow:'0 4px 12px rgba(245,158,11,0.2)'
-  }}>
-    <div style={{
-      fontSize:'20px',
-      fontWeight:'700',
-      color:'#fff',
-      marginBottom:'8px',
-      display:'flex',
-      alignItems:'center',
-      gap:'8px'
-    }}>
-      {verificationStatus === "pending" && (
-        <>
-          <span>⏳</span>
-          <span>Inakaguliwa...</span>
-        </>
-      )}
-      {verificationStatus === "rejected" && (
-        <>
-          <span>❌</span>
-          <span>Ombi halikukubalika</span>
-        </>
-      )}
-      {!verificationStatus && (
-        <>
-          <span>✨</span>
-          <span>Pata Verified badge</span>
-        </>
-      )}
-    </div>
-    
-    <p style={{
-      color:'rgba(255,255,255,0.95)',
-      fontSize:'13px',
-      lineHeight:'1.5',
-      marginBottom:'12px'
-    }}>
-      {verificationStatus === "pending" && 
-        "Tunakagua ombi lako. Tutakuthibitisha ndani ya saa 12-24."
-      }
-      {verificationStatus === "rejected" && 
-        "Ombi lako halikukubalika. Unaweza kuwasilisha tena na picha bora."
-      }
-      {!verificationStatus && 
-        "Wanafunzi watakuamini zaidi ukiwa na alama ya Verified. Inachukua dakika 2 tu."
-      }
-    </p>
-    
-    <div style={{
-      display:'flex',
-      gap:'8px',
-      marginBottom:'12px'
-    }}>
-      {/* Show verify button only if not pending */}
-      {verificationStatus !== "pending" && (
-        <button 
-          onClick={() => setShowVerifyModal(true)}
-          style={{
-            background:'#fff',
-            color: verificationStatus === "rejected" ? '#ef4444' : '#f59e0b',
-            padding:'10px 20px',
-            borderRadius:'10px',
-            border:'none',
-            fontSize:'14px',
-            fontWeight:'600',
-            cursor:'pointer',
-            flex:1
-          }}
-        >
-          {verificationStatus === "rejected" ? '🔄 Wasilisha tena' : '✓ Anza sasa'}
-        </button>
-      )}
-      
-      {/* Show pending message if pending */}
-      {verificationStatus === "pending" && (
-        <div style={{
-          background:'rgba(255,255,255,0.2)',
-          padding:'10px 20px',
-          borderRadius:'10px',
-          fontSize:'14px',
-          fontWeight:'600',
-          flex:1,
-          textAlign:'center',
-          color:'#fff'
-        }}>
-          ⏳ Inakaguliwa
-        </div>
-      )}
-      
-      <button 
-        onClick={() => {
-          const text = `Join kampasika - ${selectedUni?.short}'s marketplace for students! Buy, sell & trade on campus. https://kampasika.netlify.app`;
-          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-        }}
-        style={{
-          background:'#25D366',
-          color:'#fff',
-          padding:'10px 20px',
-          borderRadius:'10px',
-          border:'none',
-          fontSize:'14px',
-          fontWeight:'600',
-          cursor:'pointer',
-          flex:1,
-          display:'flex',
-          alignItems:'center',
-          justifyContent:'center',
-          gap:'6px'
-        }}
-      >
-        <span>📱</span>
-        <span>Invite Friends</span>
-      </button>
-    </div>
-    
-    <div style={{
-      fontSize:'12px',
-      color:'rgba(255,255,255,0.8)',
-      textAlign:'center'
-    }}>
-      💡 More students = more items to trade!
-    </div>
-  </div>
-)}
 {/* ===== AIRBNB-STYLE TOP TAB BAR ===== */}
 <div style={{
   display:'flex',
@@ -4124,7 +4142,7 @@ return (
   onClear={() => { clearAISearch(); setSearchQ(""); setCommittedSearchQ(""); }}
 />
 {aiSearching && (
-  <div style={{padding:'8px 16px',fontSize:'12px',color:'#0f766e'}}>
+  <div style={{padding:'8px 16px',fontSize:'12px',color:'#0d9488'}}>
     ✨ AI is thinking...
   </div>
 )}
@@ -4140,16 +4158,16 @@ return (
   <span style={{fontSize:'16px',color:'rgba(15,27,45,0.4)',fontWeight:'600'}}>→</span>
 </div>}
 
-{REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
+{featureFlagsLoaded && REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
   <div style={{margin:'0 16px 12px 16px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'14px',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',boxShadow:'0 2px 10px rgba(79,70,229,0.08)'}}>
     <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
-      <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'#4f46e5',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
+      <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'#0d9488',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
       <div style={{minWidth:0}}>
         <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Verify your identity</div>
         <div style={{fontSize:'10px',color:'rgba(15,27,45,0.58)',marginTop:'1px'}}>Required before using main app features</div>
       </div>
     </div>
-    <button onClick={()=>setPage("verification")} style={{padding:'7px 10px',background:'#4f46e5',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
+    <button type="button" onClick={()=>setShowVerifyModal(true)} style={{padding:'7px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
   </div>
 )}
 {/* ===== GOODS TAB CONTENT ===== */}
@@ -4183,7 +4201,7 @@ return (
               filteredListings.map((item,idx)=>(
                 <div key={item.id}  style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:'1px solid #f0f0f0',boxShadow:'0 1px 6px rgba(0,0,0,0.04)'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
-                    <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#2dd4bf':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                    <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',minWidth:'36px',minHeight:'36px',flexShrink:0,aspectRatio:'1 / 1',borderRadius:'50%',overflow:'hidden',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#06d6c7':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
                     {item.userIsVerified && (
                       <VerifiedBadge user={{ isVerified: true, verificationBadge: item.userVerificationBadge || "student" }} size="xs" />
@@ -4246,7 +4264,7 @@ return (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(68px, 1fr))',gap:'6px',width:'100%'}}>
               {item.whatsapp && item.userId !== user?.uid && (
                 <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{minWidth:0,padding:'9px 6px',background:'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
-                  <span>📱</span><span>WhatsApp</span>
+                  <WhatsAppIcon size={15} /><span>WhatsApp</span>
                 </button>
               )}
 
@@ -4259,7 +4277,7 @@ return (
               </button>
 
               {item.userId !== user?.uid && (
-                <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#ecfeff',color:'#0f766e',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
+                <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
                   <span>💬</span><span>Message</span>
                 </button>
               )}
@@ -4290,14 +4308,14 @@ return (
     <button type="button" onClick={() => commitServicesSearch(serviceSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'16px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
   </div>
   <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
-  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
     {SERVICE_CATEGORIES.map(c=>(
-      <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#7c3aed':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #7c3aed':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+      <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px'}}>
-    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
   </div>
   {(()=>{
     let filtered = services;
@@ -4322,7 +4340,7 @@ return (
               fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
             {!committedServiceSearchQ?.trim() && (
               <div style={{textAlign:'center',marginTop:'12px'}}>
-                <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
               </div>
             )}
           </div>
@@ -4334,14 +4352,14 @@ return (
               ) : svc.photoUrl ? (
                 <img src={svc.photoUrl} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
               ) : (
-                <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
+                <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#0d9488,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
                   {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
                 </div>
               )}
               <div style={{padding:'10px'}}>
                 <div style={{fontSize:'13px',fontWeight:'600',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
                 <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'4px'}}>
-                  <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#7c3aed':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
+                  <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#0d9488':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
                     {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
                   </div>
                   <span style={{fontSize:'11px',color:'#6b7280'}}>{svc.userName}</span>
@@ -4349,7 +4367,7 @@ return (
                 {svc.accountType === "provider" ? (
                   <div style={{fontSize:'10px',color:'#6b7280',marginBottom:'4px'}}>💼 Near campus{svc.providerLocation ? ` · ${svc.providerLocation}` : ''}</div>
                 ) : (
-                  <div style={{fontSize:'10px',color:'#0f766e',fontWeight:'600',marginBottom:'4px'}}>🎓 {svc.universityName || 'ARU'} Student</div>
+                  <div style={{fontSize:'10px',color:'#0d9488',fontWeight:'600',marginBottom:'4px'}}>🎓 {svc.universityName || 'ARU'} Student</div>
                 )}
                 <div style={{fontSize:'12px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
               </div>
@@ -4377,14 +4395,14 @@ return (
     <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
   </div>
   <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
-  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
     {ROOM_TYPES.map(t=>(
-      <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
+      <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#06d6c7':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
-    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
     <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
   </div>
   {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
@@ -4422,7 +4440,7 @@ return (
           fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
         {!committedRoomSearchQ?.trim() && (
           <div style={{textAlign:'center',marginTop:'12px'}}>
-            <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+            <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
           </div>
         )}
       </div>
@@ -4433,7 +4451,7 @@ return (
             {room.photoUrl ? (
               <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
             ) : (
-              <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
+              <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
             )}
             <div style={{padding:'12px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'6px'}}>
@@ -4441,7 +4459,7 @@ return (
                   <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                   <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0ea5e9'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#06d6c7'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
               </div>
               <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
               {room.amenities && room.amenities.length > 0 && (
@@ -4536,6 +4554,27 @@ return (
               </div>
             ):(
               <>
+                <div style={{background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
+                  <div style={{fontSize:'13px',fontWeight:'700',color:'#0d9488',marginBottom:'8px'}}>✨ Andika kwa maneno yako</div>
+                  <textarea
+                    value={createAssistText}
+                    onChange={e => setCreateAssistText(e.target.value)}
+                    placeholder='Mfano: Nauza iPhone 11 bei 400k pale Mlimani'
+                    rows={3}
+                    style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:'8px'}}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleCreateAssist('listing')}
+                    disabled={createAssistLoading || !createAssistText.trim()}
+                    style={{width:'100%',padding:'10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:createAssistLoading?'wait':'pointer',opacity:!createAssistText.trim()?0.6:1}}
+                  >
+                    {createAssistLoading ? 'Inaelewa...' : 'Nijazie Fomu'}
+                  </button>
+                  <div style={{fontSize:'11px',color:'#6b7280',marginTop:'8px',lineHeight:1.4}}>
+                    Works in Swahili or English. You still add photos and tap Create Listing.
+                  </div>
+                </div>
                 <input 
   type="file" 
   id="listing-photo" 
@@ -4668,15 +4707,15 @@ return (
             <div style={{
               width:'72px',
               height:'72px',
-              border:'2px dashed #2dd4bf',
+              border:'2px dashed #06d6c7',
               borderRadius:'10px',
               display:'flex',
               alignItems:'center',
               justifyContent:'center',
-              background:'#f0fdfa',
+              background:'#f0fffe',
               flexShrink:0
             }}>
-              <span style={{fontSize:'24px',color:'#2dd4bf'}}>+</span>
+              <span style={{fontSize:'24px',color:'#06d6c7'}}>+</span>
             </div>
           )}
         </div>
@@ -4686,16 +4725,16 @@ return (
       {createData.photoPreviews.length === 1 && createData.photoPreviews.length < 5 && (
         <div style={{
           height:'48px',
-          border:'2px dashed #2dd4bf',
+          border:'2px dashed #06d6c7',
           borderRadius:'10px',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
-          background:'#f0fdfa',
+          background:'#f0fffe',
           gap:'6px'
         }}>
-          <span style={{fontSize:'18px',color:'#2dd4bf'}}>+</span>
-          <span style={{fontSize:'13px',color:'#2dd4bf',fontWeight:'600'}}>Add more photos</span>
+          <span style={{fontSize:'18px',color:'#06d6c7'}}>+</span>
+          <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>Add more photos</span>
         </div>
       )}
     </div>
@@ -4730,7 +4769,7 @@ return (
                     style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}
                   />
                   {createData.price && (
-                    <div style={{fontSize:'11px',color:formatPriceHint(createData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                    <div style={{fontSize:'11px',color:formatPriceHint(createData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
                       {formatPriceHint(createData.price) || '⚠ Bei haisomeki — andika mfano: 25000, 25k, 25,000'}
                     </div>
                   )}
@@ -4738,7 +4777,7 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="New">New</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
-                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
+                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
               </>
             )}
           </div>
@@ -4786,7 +4825,7 @@ return (
               height:'48px',
               borderRadius:'50%',
               backgroundImage:otherPerson.avatar?`url(${otherPerson.avatar})`:'none',
-              backgroundColor:!otherPerson.avatar?'#2dd4bf':'transparent',
+              backgroundColor:!otherPerson.avatar?'#06d6c7':'transparent',
               backgroundSize:'cover',
               backgroundPosition:'center',
               display:'flex',
@@ -4804,7 +4843,7 @@ return (
                 <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
                 {conv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(conv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
               </div>
-              <div style={{fontSize:'12px',color:'#2dd4bf',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+              <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
               <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
             </div>
             {unread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#ef4444',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,alignSelf:'center'}}>{unread}</div>}
@@ -4921,7 +4960,7 @@ return (
               height:'40px',
               borderRadius:'50%',
              backgroundImage:otherUser.avatar?`url(${otherUser.avatar})`:'none',
-              backgroundColor:!otherUser.avatar?'#2dd4bf':'transparent',
+              backgroundColor:!otherUser.avatar?'#06d6c7':'transparent',
               backgroundSize:'cover',
               backgroundPosition:'center',
               display:'flex',
@@ -5023,7 +5062,23 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               boxShadow:'0 1px 1px rgba(0,0,0,0.08)'
             }}>
               {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
-              <div style={{wordBreak:'break-word'}}>{msg.text}</div>
+              {msg.imageUrl && (
+                <img
+                  src={msg.imageUrl}
+                  alt=""
+                  onClick={()=>setFullScreenImage(msg.imageUrl)}
+                  style={{
+                    maxWidth:'220px',
+                    width:'100%',
+                    borderRadius:'10px',
+                    display:'block',
+                    cursor:'pointer',
+                    opacity: msg._pending ? 0.6 : 1,
+                    marginBottom: msg.text ? '6px' : '0'
+                  }}
+                />
+              )}
+              {msg.text && <div style={{wordBreak:'break-word'}}>{msg.text}</div>}
              <div style={{fontSize:'10px',marginTop:'4px',opacity:0.65,textAlign:'right'}}>
   {msg.createdAt ? (() => {
     try {
@@ -5034,7 +5089,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     }
   })() : ''}
   {isMine && (
-    <span style={{marginLeft:'6px',color:wasRead?'#0f766e':'inherit',fontWeight:wasRead?'600':'400'}}>
+    <span style={{marginLeft:'6px',color:wasRead?'#0d9488':'inherit',fontWeight:wasRead?'600':'400'}}>
       {statusText}
     </span>
   )}
@@ -5056,6 +5111,42 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       alignItems:'center',
       flexShrink:0
     }}>
+      {/* Hidden file input for photo */}
+      <input
+        type="file"
+        id="chat-photo-input"
+        accept="image/*"
+        style={{display:'none'}}
+        onChange={e => {
+          const file = e.target.files[0];
+          if (!file) return;
+          if (!file.type.startsWith('image/')) { setError("Please select an image."); return; }
+          if (file.size > 10 * 1024 * 1024) { setError("Image too large. Max 10MB."); return; }
+          e.target.value = '';
+          sendImageMessage(file);
+        }}
+      />
+      {/* Photo button */}
+      <button
+        type="button"
+        onClick={() => document.getElementById('chat-photo-input').click()}
+        style={{
+          width:'40px',
+          height:'40px',
+          borderRadius:'50%',
+          background:'#f4f6f8',
+          border:'1.5px solid #e2e6ea',
+          display:'flex',
+          alignItems:'center',
+          justifyContent:'center',
+          fontSize:'18px',
+          cursor:'pointer',
+          flexShrink:0
+        }}
+        title="Send photo"
+      >
+        📷
+      </button>
       <input 
         type="text" 
         value={messageText} 
@@ -5079,7 +5170,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           width:'42px',
           height:'42px',
           borderRadius:'50%',
-          background:messageText.trim()?'#2dd4bf':'#e2e6ea',
+          background:messageText.trim()?'#06d6c7':'#e2e6ea',
           color:messageText.trim()?'#0f1b2d':'#8a9bb0',
           border:'none',
           fontSize:'20px',
@@ -5134,11 +5225,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
           {/* Services Hero */}
-          <div style={{background:'linear-gradient(135deg,#7c3aed 0%,#a78bfa 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
+          <div style={{background:'linear-gradient(135deg,#0d9488 0%,#a78bfa 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',boxSizing:'border-box',width:'calc(100% - 32px)'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>Campus Services</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Book haircuts, order food, hire photographers & more — all from fellow students.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#fff',color:'#7c3aed',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+              <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#fff',color:'#0d9488',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
             </div>
           </div>
 
@@ -5157,12 +5248,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <button type="button" onClick={() => commitServicesSearch(serviceSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'16px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
           </div>
           <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
-          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
 
           {/* Category Filter */}
           <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px'}}>
             {SERVICE_CATEGORIES.map(c=>(
-              <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#7c3aed':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #7c3aed':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+              <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
             ))}
           </div>
 
@@ -5190,7 +5281,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
                     {!committedServiceSearchQ?.trim() && (
                       <div style={{textAlign:'center',marginTop:'12px'}}>
-                        <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                        <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
                       </div>
                     )}
                   </div>
@@ -5202,20 +5293,20 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       ) : svc.photoUrl ? (
                         <img src={svc.photoUrl} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
                       ) : (
-                        <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
+                        <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#0d9488,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>
                           {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
                         </div>
                       )}
                       <div style={{padding:'10px'}}>
                         <div style={{fontSize:'13px',fontWeight:'600',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
                         <div style={{display:'flex',alignItems:'center',gap:'4px',marginBottom:'6px'}}>
-                          <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#7c3aed':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
+                          <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#0d9488':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
                             {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
                           </div>
                           <span style={{fontSize:'11px',color:'#8a9bb0'}}>{svc.userName}</span>
                         </div>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                          <span style={{fontFamily:'serif',fontSize:'15px',fontWeight:'700',color:'#7c3aed'}}>{svc.price?.toLocaleString()} TSh</span>
+                          <span style={{fontFamily:'serif',fontSize:'15px',fontWeight:'700',color:'#0d9488'}}>{svc.price?.toLocaleString()} TSh</span>
                           <span style={{fontSize:'10px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{svc.priceType === "starting" ? "from" : ""}</span>
                         </div>
                       </div>
@@ -5238,7 +5329,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>Service listed!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and book you</div>
-                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("services");}} style={{width:'100%',padding:'14px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Services</button>
+                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("services");}} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Services</button>
                 <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Go to Home</button>
               </div>
             ) : (
@@ -5257,8 +5348,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           </div>
                         ))}
                         {createServiceData.photoPreviews.length < 3 && (
-                          <div style={{width:'60px',height:'60px',border:'2px dashed #7c3aed',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f5f3ff',flexShrink:0}}>
-                            <span style={{fontSize:'20px',color:'#7c3aed'}}>+</span>
+                          <div style={{width:'60px',height:'60px',border:'2px dashed #0d9488',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#e6fffe',flexShrink:0}}>
+                            <span style={{fontSize:'20px',color:'#0d9488'}}>+</span>
                           </div>
                         )}
                       </div>
@@ -5290,7 +5381,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
                     />
                     {createServiceData.price && (
-                      <div style={{fontSize:'11px',color:formatPriceHint(createServiceData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                      <div style={{fontSize:'11px',color:formatPriceHint(createServiceData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
                         {formatPriceHint(createServiceData.price) || '⚠ Bei haisomeki'}
                       </div>
                     )}
@@ -5304,7 +5395,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createServiceData.whatsapp} onChange={e=>setCreateServiceData({...createServiceData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let customers contact you directly on WhatsApp</div></div>
 
-                <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
+                <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
               </>
             )}
           </div>
@@ -5325,7 +5416,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           ) : viewingService.photoUrl ? (
             <img src={viewingService.photoUrl} alt={viewingService.title} onClick={()=>setFullScreenImage(viewingService.photoUrl)} style={{width:'100%',height:'300px',objectFit:'cover',cursor:'pointer'}}/>
           ) : (
-            <div style={{width:'100%',height:'200px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>
+            <div style={{width:'100%',height:'200px',background:'linear-gradient(135deg,#0d9488,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>
               {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.icon || '⚡'}
             </div>
           )}
@@ -5341,13 +5432,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
           <div style={{padding:'20px'}}>
             {/* Category Badge */}
-            <span style={{fontSize:'12px',background:'#f5f3ff',color:'#7c3aed',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>
+            <span style={{fontSize:'12px',background:'#e6fffe',color:'#0d9488',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>
               {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.icon} {SERVICE_CATEGORIES.find(c=>c.id===viewingService.category)?.name}
             </span>
 
             <h1 style={{fontSize:'24px',fontWeight:'700',margin:'12px 0 8px',color:'#0f1b2d'}}>{viewingService.title}</h1>
             
-            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#7c3aed',marginBottom:'16px'}}>
+            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#0d9488',marginBottom:'16px'}}>
               {viewingService.priceType === "starting" ? "From " : ""}{viewingService.price?.toLocaleString()} TSh
               {viewingService.priceType === "negotiable" && <span style={{fontSize:'14px',color:'#8a9bb0',fontFamily:'system-ui',fontWeight:'400'}}> (negotiable)</span>}
             </div>
@@ -5355,7 +5446,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             {/* Meta */}
             <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
               <span style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'20px',color:'#6b7280'}}>🎓 {viewingService.universityName}</span>
-              {viewingService.location && <span style={{fontSize:'12px',background:'#f0fdfa',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
+              {viewingService.location && <span style={{fontSize:'12px',background:'#f0fffe',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
               {viewingService.availability && <span style={{fontSize:'12px',background:'#fef3c7',padding:'6px 12px',borderRadius:'20px',color:'#92400e',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
             </div>
 
@@ -5371,7 +5462,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
               <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Service Provider</h4>
               <div style={{display:'flex',alignItems:'center',gap:'12px'}} onClick={()=>{setViewingService(null);loadPublicSellerProfile(viewingService.userId);}}>
-                <div style={{width:'52px',height:'52px',borderRadius:'50%',background:viewingService.userAvatar?`url(${viewingService.userAvatar})`:'linear-gradient(135deg,#7c3aed,#a78bfa)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>
+                <div style={{width:'52px',height:'52px',minWidth:'52px',minHeight:'52px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',background:viewingService.userAvatar?`url(${viewingService.userAvatar})`:'linear-gradient(135deg,#0d9488,#a78bfa)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>
                   {!viewingService.userAvatar && viewingService.userName.split(" ").map(n=>n[0]).join("")}
                 </div>
                 <div>
@@ -5391,7 +5482,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     const num = viewingService.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');
                     const msg = `Hi! I'm interested in your service "${viewingService.title}" on Kampasika.`;
                     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
-                  }} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
+                  }} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><WhatsAppIcon size={18} /> WhatsApp</button>
                 ) : null}
                 <button onClick={()=>{
                   // Create a dummy listing-like object for conversation
@@ -5406,11 +5497,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   };
                   setViewingService(null);
                   requireAuth("message",()=>startConversation(svcAsListing));
-                }} style={{flex:1,padding:'16px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>💬 Message</button>
+                }} style={{flex:1,padding:'16px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>💬 Message</button>
               </>
             ) : (
               <div style={{width:'100%',display:'flex',gap:'8px'}}>
-                <div style={{flex:1,textAlign:'center',padding:'12px',background:'#f5f3ff',borderRadius:'10px',color:'#7c3aed',fontSize:'14px',fontWeight:'600'}}>This is your service</div>
+                <div style={{flex:1,textAlign:'center',padding:'12px',background:'#e6fffe',borderRadius:'10px',color:'#0d9488',fontSize:'14px',fontWeight:'600'}}>This is your service</div>
                 <button onClick={()=>{setViewingService(null);deleteService(viewingService.id);}} style={{padding:'12px 20px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
               </div>
             )}
@@ -5467,8 +5558,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ COMMUNITY DETAIL ============ */}
       {page==="communityDetail"&&viewingCommunity&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          <div style={{margin:'0 16px 12px 16px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'14px',padding:'14px'}}>
-            <h3 style={{margin:0,fontSize:'18px',fontWeight:'700',color:'#9a3412'}}>{viewingCommunity.name}</h3>
+          <div style={{margin:'0 16px 12px 16px',background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'14px',padding:'14px'}}>
+            <h3 style={{margin:0,fontSize:'18px',fontWeight:'700',color:'#0f766e'}}>{viewingCommunity.name}</h3>
             <div style={{marginTop:'6px',fontSize:'12px',color:'#7c2d12'}}>{viewingCommunity.items.length} active collections</div>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -5536,7 +5627,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <button type="button" onClick={() => commitCollectionsSearch(collectionSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
               </div>
               <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }} />
-              {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+              {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
             </>
           )}
 
@@ -5624,6 +5715,28 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   📋 <strong>For class reps & councils:</strong> Create an order or event under your community name — t-shirts, tickets, contributions, and more. Students join from your community page and you track payments.
                 </div>
 
+                <div style={{background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
+                  <div style={{fontSize:'13px',fontWeight:'700',color:'#0f766e',marginBottom:'8px'}}>✨ Andika kwa maneno yako</div>
+                  <textarea
+                    value={createAssistText}
+                    onChange={e => setCreateAssistText(e.target.value)}
+                    placeholder='Mfano: Oda ya t-shirt za ARU Catholic Community bei 15000 kwa mtu'
+                    rows={3}
+                    style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:'8px'}}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleCreateAssist('collection')}
+                    disabled={createAssistLoading || !createAssistText.trim()}
+                    style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:createAssistLoading?'wait':'pointer',opacity:!createAssistText.trim()?0.6:1}}
+                  >
+                    {createAssistLoading ? 'Inaelewa...' : 'Nijazie Fomu'}
+                  </button>
+                  <div style={{fontSize:'11px',color:'#6b7280',marginTop:'8px',lineHeight:1.4}}>
+                    Describe the group order or event — we fill the form, you check and publish.
+                  </div>
+                </div>
+
                 <input type="file" id="collection-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleCollectionPhotoSelect}/>
                 <label htmlFor="collection-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
                   {createCollectionData.photoPreviews.length > 0 ? (
@@ -5662,7 +5775,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
                   />
                   {createCollectionData.price && (
-                    <div style={{fontSize:'11px',color:formatPriceHint(createCollectionData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                    <div style={{fontSize:'11px',color:formatPriceHint(createCollectionData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
                       {formatPriceHint(createCollectionData.price) || '⚠ Bei haisomeki'}
                     </div>
                   )}
@@ -5992,7 +6105,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                               {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
                               {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
                               {order.phone && <span>{order.phone} • </span>}
-                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0f766e',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
+                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
                             </div>
                           </div>
                           
@@ -6055,7 +6168,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     </div>
                     {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
                     {order.paymentRef && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Ref: {order.paymentRef}</div>}
-                    {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:'12px',color:'#0f766e',fontWeight:'700',marginTop:'4px'}}>View payment proof</a>}
+                    {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:'12px',color:'#0d9488',fontWeight:'700',marginTop:'4px'}}>View payment proof</a>}
                   </div>
                 ))}
               </div>
@@ -6068,11 +6181,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {ENABLE_ROOMS && page==="rooms"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
-          <div style={{background:'linear-gradient(135deg,#0ea5e9 0%,#38bdf8 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+          <div style={{background:'linear-gradient(135deg,#06d6c7 0%,#38bdf8 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>🏠 Find a Room</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#fff',color:'#0ea5e9',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#fff',color:'#06d6c7',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
               <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
             </div>
           </div>
@@ -6092,10 +6205,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
           </div>
           <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
-          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0f766e'}}>✨ AI is thinking...</div>}
+          {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
           <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
             {ROOM_TYPES.map(t=>(
-              <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#0ea5e9':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
+              <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#06d6c7':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
             ))}
           </div>
           {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
@@ -6135,7 +6248,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
                 {!committedRoomSearchQ?.trim() && (
                   <div style={{textAlign:'center',marginTop:'12px'}}>
-                    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+                    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
                   </div>
                 )}
               </div>
@@ -6146,7 +6259,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {room.photoUrl ? (
                       <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
                     ) : (
-                      <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
+                      <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
                     )}
                     <div style={{padding:'12px'}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'6px'}}>
@@ -6154,7 +6267,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                           <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                         </div>
-                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0ea5e9'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#06d6c7'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
                       </div>
                       <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
                       {room.amenities && room.amenities.length > 0 && (
@@ -6182,7 +6295,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and contact you</div>
-                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
@@ -6192,7 +6305,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <label htmlFor="room-photo" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
                   {createRoomData.photoPreviews.length > 0 ? (
                     <div><img src={createRoomData.photoPreviews[0]} alt="" style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'12px',marginBottom:'6px'}}/>
-                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #0ea5e9',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'#0ea5e9'}}>+</span></div>}</div>
+                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #06d6c7',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'#06d6c7'}}>+</span></div>}</div>
                     </div>
                   ) : (
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
@@ -6209,8 +6322,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {createRoomData.videoPreview ? (
                     <div style={{position:'relative'}}><video src={createRoomData.videoPreview} style={{width:'100%',height:'120px',objectFit:'cover',borderRadius:'10px'}} controls/><div style={{position:'absolute',top:'6px',right:'6px',background:'rgba(0,0,0,0.6)',color:'#fff',padding:'2px 8px',borderRadius:'6px',fontSize:'11px'}}>🎥 Video added</div></div>
                   ) : (
-                    <div style={{border:'1.5px dashed #0ea5e9',borderRadius:'10px',padding:'12px',textAlign:'center',background:'#f0f9ff'}}>
-                      <span style={{fontSize:'13px',color:'#0ea5e9',fontWeight:'600'}}>🎥 Add a Video Tour (optional, max 50MB)</span>
+                    <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'12px',textAlign:'center',background:'#f0f9ff'}}>
+                      <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>🎥 Add a Video Tour (optional, max 50MB)</span>
                     </div>
                   )}
                 </label>
@@ -6222,7 +6335,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Room Type *</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
-                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #0ea5e9':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'#fff',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
+                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'#fff',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
                     ))}
                   </div>
                 </div>
@@ -6238,7 +6351,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
                   />
                   {createRoomData.price && (
-                    <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0f766e' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                    <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
                       {formatPriceHint(createRoomData.price) ? formatPriceHint(createRoomData.price) + ' kwa mwezi' : '⚠ Bei haisomeki'}
                     </div>
                   )}
@@ -6251,14 +6364,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_AMENITIES.map(a=>{const sel=(createRoomData.amenities||[]).includes(a.id);return(
-                      <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #0ea5e9':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'#fff',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
+                      <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'#fff',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
                     );})}
                   </div>
                 </div>
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label><textarea placeholder="Any extra details — available date, rules, what's nearby..." value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
 
-                <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"🏠 List Room"}</button>
+                <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"🏠 List Room"}</button>
               </>
             )}
           </div>
@@ -6283,7 +6396,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               )}
             </div>
           ) : (
-            <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#0ea5e9,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
+            <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
           )}
 
           {viewingRoom.videoUrl && (
@@ -6293,7 +6406,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           <div style={{padding:'20px'}}>
             <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
             
-            <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#0ea5e9',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+            <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#06d6c7',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
             
             {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
             
@@ -6322,7 +6435,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
           <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
             <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
-            <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
+            <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
           </div>
         </div>
       )}
@@ -6346,7 +6459,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <input type="date" placeholder="Move date" value={createRoommateData.moveDate} onChange={e=>setCreateRoommateData({...createRoommateData,moveDate:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none'}}/>
                 </div>
                 <textarea placeholder="Anything else — habits, preferences, course..." value={createRoommateData.desc} onChange={e=>setCreateRoommateData({...createRoommateData,desc:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',minHeight:'60px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'10px'}}/>
-                <button onClick={handleCreateRoommatePost} disabled={uploading} style={{width:'100%',padding:'12px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Posting...":"Post"}</button>
+                <button onClick={handleCreateRoommatePost} disabled={uploading} style={{width:'100%',padding:'12px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Posting...":"Post"}</button>
               </div>
             )}
 
@@ -6358,7 +6471,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 {roommatePosts.map(post=>(
                   <div key={post.id} style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
-                      <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:post.userAvatar?`url(${post.userAvatar})`:'none',backgroundColor:!post.userAvatar?'#0ea5e9':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',color:'#fff'}}>{!post.userAvatar&&(post.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
+                      <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:post.userAvatar?`url(${post.userAvatar})`:'none',backgroundColor:!post.userAvatar?'#06d6c7':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',color:'#fff'}}>{!post.userAvatar&&(post.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                       <div><div style={{fontSize:'14px',fontWeight:'600'}}>{post.userName}</div><div style={{fontSize:'11px',color:'#8a9bb0'}}>{post.universityName}</div></div>
                     </div>
                     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
@@ -6384,80 +6497,75 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{textAlign:'center',padding:'60px',color:'#8a9bb0'}}>Loading seller profile...</div>
           ) : (
           <>
-          {/* Seller Hero */}
-          <div style={{background:'linear-gradient(135deg,#0f1b2d 0%,#1a3350 100%)',padding:'28px 20px',textAlign:'center'}}>
-            <div style={{width:'80px',height:'80px',borderRadius:'50%',margin:'0 auto 12px',backgroundImage:publicSeller.avatarUrl?`url(${publicSeller.avatarUrl})`:'none',backgroundColor:!publicSeller.avatarUrl?'#2dd4bf':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:'700',color:'#0f1b2d',border:'3px solid rgba(255,255,255,0.2)'}}>
-              {!publicSeller.avatarUrl&&publicSeller.name.split(" ").map(n=>n[0]).join("")}
+          {/* Seller Hero - Instagram style */}
+          <div style={{background:'#fff',padding:'20px 18px',borderBottom:'1px solid #f0f2f5'}}>
+            {/* Top row: avatar + stats */}
+            <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
+              <div style={{position:'relative',flexShrink:0}}>
+                <div style={{width:'76px',height:'76px',borderRadius:'50%',backgroundImage:publicSeller.avatarUrl?`url(${publicSeller.avatarUrl})`:'none',backgroundColor:!publicSeller.avatarUrl?'#06d6c7':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',fontWeight:'700',color:'#0f1b2d',border:'2.5px solid #f0fffe'}}>
+                  {!publicSeller.avatarUrl&&publicSeller.name.split(" ").map(n=>n[0]).join("")}
+                </div>
+                {publicSeller.isVerified && (
+                  <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'22px',height:'22px',borderRadius:'50%',background:'#06d6c7',border:'2.5px solid #fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',color:'#0f1b2d',fontWeight:'700'}}>✓</div>
+                )}
+              </div>
+              {/* Stats */}
+              <div style={{display:'flex',gap:'16px',flex:1,justifyContent:'space-around'}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{publicSellerListings.length}</div>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Goods</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{publicSellerServices.length}</div>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Services</div>
+                </div>
+                {publicSellerStats && publicSellerStats.sold > 0 && (
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:'18px',fontWeight:'700',color:'#06d6c7',lineHeight:1.1}}>{publicSellerStats.sold}</div>
+                    <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Sold</div>
+                  </div>
+                )}
+              </div>
             </div>
-            <h1 style={{fontFamily:'serif',fontSize:'24px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{publicSeller.name}</h1>
-            
-            {/* Account type badge — student gets brand color, provider gets neutral */}
-            {publicSeller.accountType === "provider" ? (
-              <div style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'rgba(255,255,255,0.12)',padding:'4px 12px',borderRadius:'14px',fontSize:'12px',color:'rgba(255,255,255,0.85)',fontWeight:'500',marginBottom:'8px'}}>
-                <span>💼</span>
-                <span>Near campus</span>
-                {publicSeller.location && <span style={{opacity:0.75}}>· {publicSeller.location}</span>}
-              </div>
-            ) : (
-              <div style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'rgba(45,212,191,0.18)',padding:'4px 12px',borderRadius:'14px',fontSize:'12px',color:'#2dd4bf',fontWeight:'600',marginBottom:'8px'}}>
-                <span>🎓</span>
-                <span>{publicSeller.universityName || 'ARU'} Student</span>
-              </div>
-            )}
-            
-            {/* Bio — HIDDEN FOR NOW, uncomment to re-enable */}
-            {/* {publicSeller.bio && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.75)',marginBottom:'12px',lineHeight:'1.5',maxWidth:'320px',margin:'0 auto 12px'}}>{publicSeller.bio}</div>} */}
-            
+            {/* Name + badge */}
+            <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'2px'}}>
+              <span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{publicSeller.name}</span>
+              {publicSeller.isVerified && <VerifiedBadge user={publicSeller} size="xs" />}
+            </div>
+            <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>
+              {publicSeller.accountType === "provider" ? `💼 Service Provider${publicSeller.location ? ' · ' + publicSeller.location : ''}` : `🎓 ${publicSeller.universityName || 'ARU'} Student`}
+            </div>
             {/* Service Tags */}
             {publicSeller.services && publicSeller.services.length > 0 && (
-              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',justifyContent:'center',marginBottom:'16px'}}>
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}>
                 {publicSeller.services.map(sId => {
                   const tag = SERVICE_TAGS.find(t=>t.id===sId);
-                  return tag ? <span key={sId} style={{fontSize:'12px',background:'rgba(255,255,255,0.15)',padding:'4px 12px',borderRadius:'20px',color:'#fff',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span> : null;
+                  return tag ? <span key={sId} style={{fontSize:'11px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span> : null;
                 })}
               </div>
             )}
-            
-            {/* Stats row */}
-            <div style={{display:'flex',justifyContent:'center',gap:'20px',marginBottom:'16px'}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:'20px',fontWeight:'700',color:'#fff'}}>{publicSellerListings.length}</div>
-                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Goods</div>
-              </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:'20px',fontWeight:'700',color:'#fff'}}>{publicSellerServices.length}</div>
-                <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Services</div>
-              </div>
-              {publicSellerStats && publicSellerStats.sold > 0 && (
-                <div style={{textAlign:'center'}}>
-                  <div style={{fontSize:'20px',fontWeight:'700',color:'#2dd4bf'}}>{publicSellerStats.sold}</div>
-                  <div style={{fontSize:'11px',color:'rgba(255,255,255,0.6)'}}>Sold</div>
-                </div>
-              )}
-            </div>
-
             {/* Action buttons */}
-            <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:'8px'}}>
               <button onClick={()=>{
                 if (!publicSellerListings.length) return;
                 requireAuth("message", () => startConversation(publicSellerListings[0]));
-              }} style={{padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
-                💬 Message Seller
+              }} style={{flex:1,padding:'9px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
+                💬 Message
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
                 const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
-                const msg = `Check out ${publicSeller.name}'s listings on Kampasika (${publicSeller.universityName || 'student'} seller)!\n\n${profileUrl}`;
+                const msg = `Check out ${publicSeller.name}'s listings on Kampasika!\n\n${profileUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-              }} style={{padding:'10px 20px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px'}}>
-                📲 Share Profile
+              }} style={{flex:1,padding:'9px',background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
+                📲 Share
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
                 const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
                 navigator.clipboard?.writeText(profileUrl).then(()=>{setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000);}).catch(()=>{});
-              }} style={{padding:'10px 20px',background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
-                🔗 Copy Link
+              }} style={{padding:'9px 14px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
+                🔗
               </button>
             </div>
           </div>
@@ -6537,7 +6645,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price?.toLocaleString()} TSh</div>
                       <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
                         {item.condition && <span style={{fontSize:'11px',color:'#6b7280',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.condition}</span>}
-                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'#2dd4bf',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
+                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'#06d6c7',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
                         <button onClick={()=>shareOnWhatsApp(item)} style={{fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📲</button>
                       </div>
                     </div>
@@ -6562,14 +6670,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {cover ? (
                         <img src={cover} alt={svc.title} style={{width:'100%',height:'110px',objectFit:'cover'}}/>
                       ) : (
-                        <div style={{width:'100%',height:'110px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'36px'}}>
+                        <div style={{width:'100%',height:'110px',background:'linear-gradient(135deg,#0d9488,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'36px'}}>
                           {cat?.icon || '⚡'}
                         </div>
                       )}
                       <div style={{padding:'10px'}}>
-                        <div style={{fontSize:'12px',color:'#7c3aed',fontWeight:'600',marginBottom:'2px'}}>{cat?.name}</div>
+                        <div style={{fontSize:'12px',color:'#0d9488',fontWeight:'600',marginBottom:'2px'}}>{cat?.name}</div>
                         <div style={{fontSize:'13px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{svc.title}</div>
-                        <div style={{fontSize:'13px',fontWeight:'700',color:'#7c3aed'}}>
+                        <div style={{fontSize:'13px',fontWeight:'700',color:'#0d9488'}}>
                           {svc.priceType==="starting"?"From ":""}{svc.price?.toLocaleString()} TSh
                           {svc.priceType==="negotiable" && <span style={{fontSize:'10px',color:'#8a9bb0',fontWeight:'400'}}> · negotiable</span>}
                         </div>
@@ -6585,7 +6693,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           <div style={{padding:'16px',textAlign:'center',fontSize:'12px',color:'#8a9bb0',lineHeight:'1.6'}}>
             <p>{publicSeller.name} is a student seller on Kampasika, the campus marketplace. Browse their listings, message them directly, or share their profile with friends.</p>
             <p style={{marginTop:'8px'}}>
-              <span style={{fontFamily:'serif',fontWeight:'700',color:'#0f1b2d'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
+              <span style={{fontFamily:'serif',fontWeight:'700',color:'#0f1b2d'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
             </p>
           </div>
           </>
@@ -6618,9 +6726,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 {adminStats && (
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'24px'}}>
                     {[
-                      {label:'Users', data: adminStats.users, color:'#0f766e'},
-                      {label:'Search Alerts', data: adminStats.alerts, color:'#0ea5e9'},
-                      {label:'Listings (Goods)', data: adminStats.listings, color:'#7c3aed'},
+                      {label:'Users', data: adminStats.users, color:'#0d9488'},
+                      {label:'Search Alerts', data: adminStats.alerts, color:'#06d6c7'},
+                      {label:'Listings (Goods)', data: adminStats.listings, color:'#0d9488'},
                       {label:'Services', data: adminStats.services, color:'#f59e0b'},
                       {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
                     ].map(stat => (
@@ -6784,7 +6892,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                   </div>
                                 ) : (
                                   <div style={{display:'flex',gap:'6px'}}>
-                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
+                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
                                     <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'#fff',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
                                   </div>
                                 )
@@ -6861,7 +6969,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                             {/* User info */}
                             <div style={{fontSize:'11px',color:'#6b7280',marginBottom:'10px',lineHeight:1.5}}>
                               <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no email'}</div>
-                              {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0f766e',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
+                              {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0d9488',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
                             </div>
                             {/* Status + actions */}
                             <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -6870,7 +6978,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                               ) : alert.routedAt ? (
                                 <>
                                   <span style={{padding:'5px 10px',background:'#fef3c7',color:'#92400e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
-                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
+                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
                                 </>
                               ) : (
                                 <button onClick={()=>markAlertRouted(alert)} style={{padding:'5px 10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
@@ -6904,31 +7012,130 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     boxSizing:'border-box',
     padding:'0 16px 88px 16px'
   }}>
-          <div style={{background:'linear-gradient(135deg,#0f1b2d,#1a3350)',borderRadius:'16px',padding:'24px 18px',marginBottom:'16px',display:'flex',gap:'16px',alignItems:'center'}}>
-           <div style={{position:'relative',width:'60px',height:'60px',boxSizing:'border-box'}}>
-  <div style={{width:'60px',height:'60px',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
-backgroundColor:!userAvatar?'#2dd4bf':'transparent',
+          {!user ? (
+            <div style={{
+              marginTop:'24px',
+              background:'#fff',
+              borderRadius:'20px',
+              padding:'36px 24px',
+              textAlign:'center',
+              boxShadow:'0 4px 20px rgba(15,27,45,0.08)',
+              border:'1px solid #e8ecf0'
+            }}>
+              <div style={{
+                width:'80px',
+                height:'80px',
+                margin:'0 auto 20px',
+                borderRadius:'50%',
+                background:'linear-gradient(135deg,#0f1b2d,#0d9488)',
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                fontSize:'36px',
+                color:'#fff',
+                boxShadow:'0 8px 24px rgba(13,148,136,0.25)'
+              }}>👤</div>
+              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',margin:'0 0 8px'}}>
+                You don&apos;t have a profile yet
+              </h2>
+              <p style={{fontSize:'14px',color:'#6b7280',lineHeight:1.6,margin:'0 0 24px',maxWidth:'280px',marginLeft:'auto',marginRight:'auto'}}>
+                Join Kampasika to create your campus profile — sell items, offer services, message buyers, and save listings.
+              </p>
+              <button
+                type="button"
+                onClick={()=>{ setAuthMode('signup'); setShowAuthModal(true); }}
+                style={{
+                  width:'100%',
+                  maxWidth:'280px',
+                  padding:'14px 20px',
+                  background:'linear-gradient(135deg,#0d9488,#0ea5a0)',
+                  color:'#fff',
+                  border:'none',
+                  borderRadius:'12px',
+                  fontSize:'16px',
+                  fontWeight:'700',
+                  cursor:'pointer',
+                  marginBottom:'10px',
+                  boxShadow:'0 4px 14px rgba(13,148,136,0.3)'
+                }}
+              >
+                Join Kampasika — it&apos;s free
+              </button>
+              <button
+                type="button"
+                onClick={()=>{ setAuthMode('login'); setShowAuthModal(true); }}
+                style={{
+                  width:'100%',
+                  maxWidth:'280px',
+                  padding:'12px 20px',
+                  background:'#f4f6f8',
+                  color:'#0f1b2d',
+                  border:'none',
+                  borderRadius:'12px',
+                  fontSize:'15px',
+                  fontWeight:'600',
+                  cursor:'pointer'
+                }}
+              >
+                Already have an account? Sign in
+              </button>
+              <div style={{marginTop:'28px',paddingTop:'20px',borderTop:'1px solid #eef2f5',display:'flex',flexDirection:'column',gap:'10px',textAlign:'left'}}>
+                {[
+                  { icon:'🛍️', text:'Buy and sell on campus' },
+                  { icon:'💬', text:'Chat with sellers safely' },
+                  { icon:'✓', text:'Optional verified badge' },
+                ].map(row => (
+                  <div key={row.text} style={{display:'flex',alignItems:'center',gap:'10px',fontSize:'13px',color:'#4a5568'}}>
+                    <span style={{fontSize:'18px'}}>{row.icon}</span>
+                    <span>{row.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+          <>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px'}}>
+           {/* Top row: avatar + stats */}
+           <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
+             <div style={{position:'relative',flexShrink:0}}>
+  <div style={{width:'72px',height:'72px',minWidth:'72px',minHeight:'72px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
+backgroundColor:!userAvatar?'#06d6c7':'transparent',
 backgroundSize:'cover',
-backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px',fontWeight:'700',color:'#0f1b2d'}}>
+backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:'700',color:'#0f1b2d',border:'2.5px solid #f0fffe'}}>
     {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
   </div>
   {isVerified && (
-    <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'24px',height:'24px',borderRadius:'50%',background:'#2dd4bf',border:'3px solid #fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px'}}>
+    <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'22px',height:'22px',borderRadius:'50%',background:'#06d6c7',border:'2.5px solid #fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',color:'#0f1b2d',fontWeight:'700'}}>
       ✓
     </div>
   )}
 </div>
-            <div style={{flex:1}}>
-              <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#fff'}}>{userName}</div>
-                {isVerified && (
-                  <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
-                )}
-              </div>
-              {/* BIO HIDDEN FOR NOW */}
-              {/* {userBio && <div style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',marginTop:'4px',lineHeight:'1.4'}}>{userBio}</div>} */}
-              <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{marginTop:'8px',padding:'6px 12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
-            </div>
+             {/* Stats */}
+             <div style={{display:'flex',gap:'20px',flex:1,justifyContent:'space-around'}}>
+               <div style={{textAlign:'center'}}>
+                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myActiveListings.length}</div>
+                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Listings</div>
+               </div>
+               <div style={{textAlign:'center'}}>
+                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myServices.length}</div>
+                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Services</div>
+               </div>
+               <div style={{textAlign:'center'}}>
+                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{cart.length}</div>
+                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Saved</div>
+               </div>
+             </div>
+           </div>
+           {/* Name + verified badge */}
+           <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+             <div style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>{userName}</div>
+             {isVerified && (
+               <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
+             )}
+           </div>
+           <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>{userAccountType === "provider" ? "Service Provider" : "Student · " + (selectedUni?.short || "ARU")}</div>
+           {/* Edit profile button */}
+           <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{width:'100%',padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
           </div>
           
           {/* Service Tags */}
@@ -6945,8 +7152,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
             <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>
-            <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#7c3aed':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>
-            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#0ea5e9':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
+            <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>
+            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
             <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>Saved ({cart.length})</button>
           </div>
           
@@ -6973,7 +7180,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 </div>
               </div>}
 
-              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
+              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
             </>
           )}
           
@@ -6984,7 +7191,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   <div style={{fontSize:'40px'}}>⚡</div>
                   <div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No services listed</div>
                   <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Offer your skills to fellow students</div>
-                  <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                  <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
                 </div>
               ) : (
                 <>
@@ -6994,20 +7201,20 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                         {(svc.photos && svc.photos.length > 0) ? (
                           <img src={svc.photos[0]} alt="" style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
                         ) : (
-                          <div style={{width:'60px',height:'60px',borderRadius:'10px',background:'linear-gradient(135deg,#7c3aed,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>
+                          <div style={{width:'60px',height:'60px',borderRadius:'10px',background:'linear-gradient(135deg,#0d9488,#a78bfa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>
                             {SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.icon || '⚡'}
                           </div>
                         )}
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{svc.title}</div>
-                          <div style={{fontSize:'13px',color:'#7c3aed',fontWeight:'600'}}>{svc.price?.toLocaleString()} TSh</div>
+                          <div style={{fontSize:'13px',color:'#0d9488',fontWeight:'600'}}>{svc.price?.toLocaleString()} TSh</div>
                           <div style={{fontSize:'11px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
                         </div>
                       </div>
                       <button onClick={()=>deleteService(svc.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
                     </div>
                   ))}
-                  <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
+                  <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
                 </>
               )}
             </div>
@@ -7019,7 +7226,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>
                   My Rooms ({myAllRooms.length})
                 </h3>
-                <button onClick={()=>setPage("createRoom")} style={{padding:'8px 14px',background:'#0ea5e9',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
+                <button onClick={()=>setPage("createRoom")} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
               </div>
 
               {myAllRooms.length === 0 ? (
@@ -7051,8 +7258,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                           <div style={{
                             display:'inline-block',
                             fontSize:'10px',fontWeight:'600',
-                            color: isAvailable ? '#0f766e' : '#9ca3af',
-                            background: isAvailable ? '#f0fdfa' : '#f3f4f6',
+                            color: isAvailable ? '#0d9488' : '#9ca3af',
+                            background: isAvailable ? '#f0fffe' : '#f3f4f6',
                             padding:'2px 8px',borderRadius:'10px',marginTop:'2px'
                           }}>
                             {isAvailable ? '● KIPO WAZI' : '● KIMEPANGISHWA'}
@@ -7069,7 +7276,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                               borderRadius:'8px',
                               border:'none',
                               cursor:'pointer',
-                              background: isAvailable ? '#0ea5e9' : '#10b981',
+                              background: isAvailable ? '#06d6c7' : '#10b981',
                               color:'#fff'
                             }}>
                             {isAvailable ? 'Weka Kimepangishwa' : 'Rudisha Kipo Wazi'}
@@ -7123,7 +7330,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </button>
           )}
 
-          <button onClick={handleLogout} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'16px'}}>🚪 Logout</button>
+          {/* Instagram-style subtle logout */}
+          <div style={{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid #f0f2f5',display:'flex',justifyContent:'center'}}>
+            <button type="button" onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:'none',color:'#8a9bb0',border:'1px solid #e2e6ea',borderRadius:'20px',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>
+              🚪 <span>Log out</span>
+            </button>
+          </div>
+          </>
+          )}
         </div>
       )}
       
@@ -7139,7 +7353,7 @@ backgroundColor:!editProfileData.avatarPreview?'#f4f6f8':'transparent',
 backgroundSize:'cover',
 backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
                 {!editProfileData.avatarPreview && <span style={{fontSize:'32px'}}>📷</span>}
-                <div style={{position:'absolute',bottom:'0',background:'rgba(45,212,191,0.9)',color:'#0f1b2d',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
+                <div style={{position:'absolute',bottom:'0',background:'rgba(6,214,199,0.9)',color:'#0f1b2d',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
               </div>
             </label>
             
@@ -7170,7 +7384,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       } else if (current.length < 3) {
                         setEditProfileData({...editProfileData, services: [...current, tag.id]});
                       }
-                    }} style={{padding:'6px 12px',borderRadius:'20px',border: selected ? '2px solid #2dd4bf' : '1.5px solid #e2e6ea',background: selected ? '#f0fdfa' : '#fff',color: selected ? '#0f1b2d' : '#6b7280',fontSize:'12px',fontWeight:'500',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',opacity: !selected && (editProfileData.services||[]).length >= 3 ? 0.4 : 1}}>
+                    }} style={{padding:'6px 12px',borderRadius:'20px',border: selected ? '2px solid #06d6c7' : '1.5px solid #e2e6ea',background: selected ? '#f0fffe' : '#fff',color: selected ? '#0f1b2d' : '#6b7280',fontSize:'12px',fontWeight:'500',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',opacity: !selected && (editProfileData.services||[]).length >= 3 ? 0.4 : 1}}>
                       {tag.icon} {tag.label}
                     </button>
                   );
@@ -7178,7 +7392,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
             </div>
             
-            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#2dd4bf',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
+            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
             <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
@@ -7335,7 +7549,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               objectFit:'cover',
               borderRadius:'8px',
               cursor:'pointer',
-              border:(photoIndex || 0) === idx ? '2px solid #2dd4bf' : '2px solid transparent',
+              border:(photoIndex || 0) === idx ? '2px solid #06d6c7' : '2px solid transparent',
               flexShrink:0
             }}
           />
@@ -7375,7 +7589,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           fontFamily:'serif',
           fontSize:'32px',
           fontWeight:'700',
-          color:'#2dd4bf',
+          color:'#06d6c7',
           marginBottom:'16px'
         }}>
           {viewingListing.price.toLocaleString()} TSh
@@ -7403,7 +7617,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {viewingListing.location && (
             <span style={{
               fontSize:'12px',
-              background:'#f0fdfa',
+              background:'#f0fffe',
               padding:'6px 12px',
               borderRadius:'20px',
               color:'#0f1b2d',
@@ -7489,8 +7703,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <div style={{
                 width:'56px',
                 height:'56px',
+                minWidth:'56px',
+                minHeight:'56px',
+                flexShrink:0,
+                aspectRatio:'1 / 1',
+                overflow:'hidden',
                 borderRadius:'50%',
-                background:viewingListing.userAvatar?`url(${viewingListing.userAvatar})`:'linear-gradient(135deg,#2dd4bf,#0f1b2d)',
+                background:viewingListing.userAvatar?`url(${viewingListing.userAvatar})`:'linear-gradient(135deg,#06d6c7,#0f1b2d)',
                 backgroundSize:'cover',
                 backgroundPosition:'center',
                 display:'flex',
@@ -7549,7 +7768,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   cursor:'pointer'
                 }}
               >
-                <span style={{fontSize:'18px'}}>📱</span>
+                <WhatsAppIcon size={22} color="#25D366" />
                 <div>
                   <div style={{fontSize:'13px',fontWeight:'600',color:'#166534'}}>WhatsApp Available</div>
                   <div style={{fontSize:'12px',color:'#6b7280'}}>Tap to chat directly with seller</div>
@@ -7611,7 +7830,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             style={{
               flex:2,
               padding:'16px',
-              background:'#2dd4bf',
+              background:'#06d6c7',
               color:'#0f1b2d',
               border:'none',
               borderRadius:'10px',
@@ -7638,10 +7857,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 borderRadius:'10px',
                 fontSize:'15px',
                 fontWeight:'600',
-                cursor:'pointer'
+                cursor:'pointer',
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                gap:'8px'
               }}
             >
-              📱 WhatsApp
+              <WhatsAppIcon size={18} /> WhatsApp
             </button>
           )}
           <button 
@@ -7870,7 +8093,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     padding:'12px',
     background: verificationStatus === "pending" 
       ? '#d1d5db' 
-      : (studentIdFile && !uploading ? '#0f766e' : '#e2e6ea'),
+      : (studentIdFile && !uploading ? '#0d9488' : '#e2e6ea'),
     color: verificationStatus === "pending"
       ? '#6b7280'
       : (studentIdFile && !uploading ? '#fff' : '#8a9bb0'),
@@ -8162,7 +8385,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               onKeyDown={e=>{ if (e.key==='Enter') submitPhoneAndSaveAlert(); }}
               style={{width:'100%',padding:'14px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'12px'}}
             />
-            <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'#0f766e',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
+            <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
               Hifadhi na uniarifu
             </button>
             <button onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }} style={{width:'100%',padding:'10px',background:'transparent',color:'#6b7280',border:'none',fontSize:'13px',cursor:'pointer'}}>
@@ -8177,7 +8400,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{setShowAuthModal(false);setError("");}}>
           <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px',maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}}>
-              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700'}}>Kam<em style={{color:'#2dd4bf'}}>pa</em>sika</h2>
+              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</h2>
               <button onClick={()=>{setShowAuthModal(false);setError("");}} style={{background:'none',border:'none',fontSize:'24px',cursor:'pointer',color:'#8a9bb0'}}>×</button>
             </div>
             {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
@@ -8232,7 +8455,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 )}
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"Create Account"}</button>
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
               </>
             ):(
               <>
@@ -8240,7 +8463,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#2dd4bf',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
               </>
             )}
           </div>
@@ -8270,7 +8493,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <div style={{display:'flex', alignItems:'center', gap:'12px', marginBottom:'12px'}}>
             <div style={{
               width:'44px', height:'44px', borderRadius:'12px',
-              background:'linear-gradient(135deg, #2dd4bf, #14b8a6)',
+              background:'linear-gradient(135deg, #06d6c7, #06d6c7)',
               display:'flex', alignItems:'center', justifyContent:'center',
               fontSize:'20px', flexShrink:0
             }}>📲</div>
@@ -8301,7 +8524,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           ) : (
             <button onClick={handleInstallClick} style={{
               width:'100%', padding:'12px', border:'none', borderRadius:'10px',
-              background:'linear-gradient(135deg, #2dd4bf, #14b8a6)',
+              background:'linear-gradient(135deg, #06d6c7, #06d6c7)',
               color:'#fff', fontSize:'15px', fontWeight:'700',
               cursor:'pointer', letterSpacing:'0.3px'
             }}>
@@ -8339,17 +8562,22 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   boxSizing:'border-box',
   padding:'6px 0 env(safe-area-inset-bottom, 8px) 0'
 }}>
-        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#2dd4bf':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#2dd4bf':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#2dd4bf':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#2dd4bf':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
-        <button onClick={()=>{setPage("home");handleTabTap("services");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"&&homeTab==="services"?'#7c3aed':'#8a9bb0',transition:'color 0.2s ease'}}>⚡</span><span style={{fontSize:'10px',color:page==="home"&&homeTab==="services"?'#7c3aed':'#8a9bb0',fontWeight:page==="home"&&homeTab==="services"?'700':'500',transition:'all 0.2s ease'}}>Services</span></button>
-        <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#2dd4bf,#14b8a6)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(45,212,191,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#2dd4bf',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#2dd4bf':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#2dd4bf':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
+        <button onClick={()=>{setPage("home");handleTabTap("services");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',transition:'color 0.2s ease'}}>⚡</span><span style={{fontSize:'10px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',fontWeight:page==="home"&&homeTab==="services"?'700':'500',transition:'all 0.2s ease'}}>Services</span></button>
+        <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
+        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
     width:'24px',
     height:'24px',
+    minWidth:'24px',
+    minHeight:'24px',
+    flexShrink:0,
+    aspectRatio:'1 / 1',
     borderRadius:'50%',
+    overflow:'hidden',
     backgroundImage:userAvatar?`url(${userAvatar})`:'none',
-    backgroundColor:userAvatar?'transparent':(page==="profile"?'#2dd4bf':'#8a9bb0'),
+    backgroundColor:userAvatar?'transparent':(page==="profile"?'#06d6c7':'#8a9bb0'),
     backgroundSize:'cover',
     backgroundPosition:'center',
     display:'flex',
@@ -8358,13 +8586,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     color:'#fff',
     fontSize:'10px',
     fontWeight:'700',
-    border:page==="profile"?'2px solid #2dd4bf':'2px solid transparent',
+    border:page==="profile"?'2px solid #06d6c7':'2px solid transparent',
     boxSizing:'border-box',
     transition:'all 0.2s ease'
   }}>
     {!userAvatar && (userName ? userName.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase() : "👤")}
   </span>
-  <span style={{fontSize:'10px',color:page==="profile"?'#2dd4bf':'#8a9bb0',fontWeight:page==="profile"?'700':'500',transition:'all 0.2s ease'}}>Profile</span>
+  <span style={{fontSize:'10px',color:page==="profile"?'#06d6c7':'#8a9bb0',fontWeight:page==="profile"?'700':'500',transition:'all 0.2s ease'}}>Profile</span>
 </button>
       
     </div>
