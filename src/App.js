@@ -254,6 +254,15 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
+  // Collection payment QR scanner
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [showAdvancedCollection, setShowAdvancedCollection] = useState(false);
+  const [scanResult, setScanResult] = useState(null); // { order, studentName, paid, collectionTitle }
+  const [scanError, setScanError] = useState("");
+  const [scanLoading, setScanLoading] = useState(false);
+  const scanVideoRef = useRef(null);
+  const scanStreamRef = useRef(null);
+  const scanAnimRef = useRef(null);
   const [createAssistText, setCreateAssistText] = useState("");
   const [createAssistLoading, setCreateAssistLoading] = useState(false);
   const [showAboutBanner, setShowAboutBanner] = useState(false);
@@ -2235,6 +2244,26 @@ await updateDoc(convRef, {
       const userId = path.replace('/u/', '').trim();
       if (userId) loadPublicSellerProfile(userId);
     }
+    if (path.startsWith('/verify/')) {
+      const parts = path.replace('/verify/', '').split('/');
+      if (parts.length === 2) handleVerifyScan(parts[0], parts[1]);
+    }
+    if (path.startsWith('/c/')) {
+      const colId = path.replace('/c/', '').trim();
+      if (colId) {
+        getDoc(doc(db, "collections", colId)).then(snap => {
+          if (snap.exists()) {
+            const col = { id: snap.id, ...snap.data() };
+            setViewingCollection(col);
+            setMyOrderId(null);
+            setPaymentConfirmed(false);
+            loadCollectionOrders(col.id);
+            setOrderFormData(prev => ({...prev, selectedOption:"", paymentRef:"", amountPaid:"", payerName:"", studentName:userName, paymentProofFile:null, paymentProofPreview:null}));
+            setPage("collectionDetail");
+          }
+        }).catch(console.error);
+      }
+    }
     
     // Push initial state so browser back works step-by-step
     window.history.replaceState({ page: 'home' }, '', window.location.pathname);
@@ -2366,6 +2395,109 @@ await updateDoc(convRef, {
   const [tokenRequested, setTokenRequested] = useState(false);
 
 // Notification permission is now deferred in onAuthStateChanged above
+
+  // ─── QR Payment Scanner ───
+  const loadJsQR = () => new Promise((resolve, reject) => {
+    if (window.jsQR) { resolve(window.jsQR); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+    s.onload = () => resolve(window.jsQR);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+
+  const stopScanner = () => {
+    if (scanAnimRef.current) { cancelAnimationFrame(scanAnimRef.current); scanAnimRef.current = null; }
+    if (scanStreamRef.current) { scanStreamRef.current.getTracks().forEach(t => t.stop()); scanStreamRef.current = null; }
+    setShowQRScanner(false);
+    setScanResult(null);
+    setScanError("");
+    setScanLoading(false);
+  };
+
+  const openScanner = async () => {
+    setScanResult(null);
+    setScanError("");
+    setScanLoading(true);
+    setShowQRScanner(true);
+    try {
+      const [jsQR, stream] = await Promise.all([
+        loadJsQR(),
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      ]);
+      scanStreamRef.current = stream;
+      setScanLoading(false);
+      // Wait one tick for the video element to mount
+      setTimeout(() => {
+        const video = scanVideoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        video.play();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const tick = () => {
+          if (!scanStreamRef.current) return;
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+            if (code && code.data.includes('/verify/')) {
+              // Parse kampasika.org/verify/{collectionId}/{orderId}
+              const parts = code.data.split('/verify/')[1]?.split('/');
+              if (parts && parts.length === 2) {
+                const [colId, ordId] = parts;
+                cancelAnimationFrame(scanAnimRef.current);
+                scanStreamRef.current.getTracks().forEach(t => t.stop());
+                scanStreamRef.current = null;
+                handleVerifyScan(colId, ordId);
+                return;
+              }
+            }
+          }
+          scanAnimRef.current = requestAnimationFrame(tick);
+        };
+        scanAnimRef.current = requestAnimationFrame(tick);
+      }, 300);
+    } catch (err) {
+      setScanLoading(false);
+      setScanError(err.name === 'NotAllowedError' ? 'Camera permission denied. Please allow camera access and try again.' : 'Could not open camera: ' + err.message);
+    }
+  };
+
+  const handleVerifyScan = async (collectionId, orderId) => {
+    setScanLoading(true);
+    setScanError("");
+    try {
+      const orderSnap = await getDoc(doc(db, "collections", collectionId, "orders", orderId));
+      const colSnap = await getDoc(doc(db, "collections", collectionId));
+      if (!orderSnap.exists()) { setScanError("Order not found. This QR may be invalid."); setScanLoading(false); return; }
+      const order = { id: orderSnap.id, ...orderSnap.data() };
+      const colData = colSnap.exists() ? colSnap.data() : {};
+      setScanResult({ order, collectionTitle: colData.title || "Collection", collectionId, orderId });
+    } catch (err) {
+      setScanError("Failed to verify: " + err.message);
+    } finally { setScanLoading(false); }
+  };
+
+  const confirmScanPayment = async () => {
+    if (!scanResult) return;
+    const { collectionId, orderId, order } = scanResult;
+    try {
+      setScanLoading(true);
+      await updateDoc(doc(db, "collections", collectionId, "orders", orderId), {
+        paid: true, status: "paid", amountPaid: order.amount, verifiedByQR: true, verifiedAt: serverTimestamp()
+      });
+      if (!order.paid) {
+        await updateDoc(doc(db, "collections", collectionId), { totalPaid: increment(1), totalCollected: increment(order.amount) });
+      }
+      setScanResult({ ...scanResult, order: { ...order, paid: true } });
+      loadCollectionOrders(collectionId);
+    } catch (err) {
+      setScanError("Failed to confirm: " + err.message);
+    } finally { setScanLoading(false); }
+  };
 
   // PWA Install Prompt logic
   useEffect(() => {
@@ -2984,12 +3116,29 @@ useEffect(() => {
     try {
       const q = query(collection(db, "collections", collectionId, "orders"), orderBy("createdAt", "desc"));
       unsubCollectionOrders.current = onSnapshot(q, (snap) => {
-        setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+        const orders = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+        setCollectionOrders(orders);
+        // Restore this user's order state if they already placed one
+        if (user) {
+          const myOrder = orders.find(o => o.userId === user.uid);
+          if (myOrder) {
+            setMyOrderId(prev => prev || myOrder.id);
+            if (myOrder.paid) setPaymentConfirmed(true);
+          }
+        }
       }, (err) => {
         console.error("Orders listener error:", err);
         const q2 = query(collection(db, "collections", collectionId, "orders"));
         unsubCollectionOrders.current = onSnapshot(q2, (snap) => {
-          setCollectionOrders(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+          const orders = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+          setCollectionOrders(orders);
+          if (user) {
+            const myOrder = orders.find(o => o.userId === user.uid);
+            if (myOrder) {
+              setMyOrderId(prev => prev || myOrder.id);
+              if (myOrder.paid) setPaymentConfirmed(true);
+            }
+          }
         });
       });
     } catch(e) { console.error("Error setting up orders listener:", e); }
@@ -3180,7 +3329,7 @@ useEffect(() => {
       await deleteDoc(doc(db, "collections", collectionId));
       setViewingCollection(null);
       setCollectionOrders([]);
-      goBack();
+      setPage("communities");
       setSuccess("Collection deleted.");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -3194,6 +3343,8 @@ useEffect(() => {
       await updateDoc(doc(db, "collections", collectionId), { active: false });
       loadCollections();
       setViewingCollection(null);
+      setCollectionOrders([]);
+      setPage("communities");
       setSuccess("Collection closed!");
     } catch (err) { setError("Failed to close collection"); }
   };
@@ -5892,11 +6043,29 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Created successfully!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
-                  <button onClick={()=>{
-                    const link = `https://kampasika.netlify.app/collection/${lastCreatedCollectionId}`;
-                    const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
-                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
-                  }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
+                  <>
+                    <button onClick={()=>{
+                      const link = `https://kampasika.org/c/${lastCreatedCollectionId}`;
+                      const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+                    }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
+
+                    {/* Community entry QR */}
+                    <div style={{background:'#f4f6f8',borderRadius:'16px',padding:'20px',marginBottom:'12px',textAlign:'center'}}>
+                      <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>📲 Community Entry QR</div>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'14px'}}>Students scan this to find and join the collection</div>
+                      <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #e2e6ea'}}>
+                        <QRCodeSVG
+                          value={`https://kampasika.org/c/${lastCreatedCollectionId}`}
+                          size={160}
+                          bgColor="#ffffff"
+                          fgColor="#0f1b2d"
+                          level="M"
+                        />
+                      </div>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'10px'}}>Print this or show it on your phone — anyone who scans it lands directly on this collection</div>
+                    </div>
+                  </>
                 )}
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Communities & Events</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
@@ -5904,9 +6073,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <>
                 <div style={{background:'#fef3c7',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#92400e',lineHeight:1.5}}>
-                  📋 <strong>For class reps & councils:</strong> Create an order or event under your community name — t-shirts, tickets, contributions, and more. Students join from your community page and you track payments.
+                  📋 <strong>For class reps & councils:</strong> Create an order or event — t-shirts, tickets, contributions. Students join by scanning your QR or link.
                 </div>
 
+                {/* AI ASSISTANT */}
                 <div style={{background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
                   <div style={{fontSize:'13px',fontWeight:'700',color:'#0f766e',marginBottom:'8px'}}>✨ Andika kwa maneno yako</div>
                   <textarea
@@ -5929,6 +6099,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
+                {/* PHOTO */}
                 <input type="file" id="collection-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleCollectionPhotoSelect}/>
                 <label htmlFor="collection-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
                   {createCollectionData.photoPreviews.length > 0 ? (
@@ -5936,97 +6107,115 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   ) : (
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'24px',textAlign:'center',background:'#f9fafb'}}>
                       <div style={{fontSize:'36px',marginBottom:'8px'}}>📸</div>
-                      <div style={{fontSize:'14px',fontWeight:'600'}}>Add a photo</div>
+                      <div style={{fontSize:'14px',fontWeight:'600'}}>Add a photo (optional)</div>
                       <div style={{fontSize:'12px',color:'#8a9bb0'}}>e.g. the t-shirt design, event poster</div>
                     </div>
                   )}
                 </label>
 
-                <div style={{marginBottom:'16px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community / group name</label>
-                  <input type="text" placeholder="e.g. TUCASA ARU Community, Architecture Year 1, CSN 1" value={createCollectionData.communityName} onChange={e=>setCreateCollectionData({...createCollectionData,communityName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
-                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Helps students find orders/events from their people.</div>
+                {/* SIMPLE REQUIRED FIELDS */}
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Title *</label>
+                  <input type="text" placeholder="e.g. ARU Catholic T-Shirt Order, Bagamoyo Trip" value={createCollectionData.title} onChange={e=>setCreateCollectionData({...createCollectionData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                 </div>
 
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
-                  <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community type</label><select value={createCollectionData.communityType} onChange={e=>setCreateCollectionData({...createCollectionData,communityType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="class">Class / Year</option><option value="church">Church</option><option value="club">Club</option><option value="hostel">Hostel</option><option value="freshers">Freshers</option><option value="other">Other</option></select></div>
-                  <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Type</label><select value={createCollectionData.collectionType} onChange={e=>setCreateCollectionData({...createCollectionData,collectionType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="order">Group order</option><option value="event">Event registration</option><option value="contribution">Contribution</option><option value="freshers">Freshers support</option></select></div>
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Price per person (TSh) *</label>
+                  <input type="number" placeholder="e.g. 15000" value={createCollectionData.price} onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                 </div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>What are you collecting for? *</label><input type="text" placeholder="e.g. Year 3 Graduation T-Shirts, Field Trip Bus" value={createCollectionData.title} onChange={e=>setCreateCollectionData({...createCollectionData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Details — deadline, what's included, pickup info..." value={createCollectionData.desc} onChange={e=>setCreateCollectionData({...createCollectionData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+                {/* PAYMENT METHOD — simple single field */}
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Payment number (M-Pesa / Tigo / Airtel) *</label>
+                  <input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.paymentMethods[0]?.number||''} onChange={e=>{const updated=[{network:createCollectionData.paymentMethods[0]?.network||'M-Pesa',number:e.target.value,name:createCollectionData.paymentMethods[0]?.name||'',saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                  <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+                    {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa"].map(net=>(
+                      <button key={net} type="button" onClick={()=>{const updated=[{...(createCollectionData.paymentMethods[0]||{}),network:net,saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'5px 12px',borderRadius:'8px',border:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'#fef3c7':'#fff',fontSize:'12px',cursor:'pointer',fontWeight:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'700':'400'}}>{net}</button>
+                    ))}
+                  </div>
+                </div>
 
-                <div style={{marginBottom:'16px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price per person (TSh) *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="e.g. 15,000 or 15k"
-                    value={createCollectionData.price}
-                    onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})}
-                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
-                  />
-                  {createCollectionData.price && (
-                    <div style={{fontSize:'11px',color:formatPriceHint(createCollectionData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
-                      {formatPriceHint(createCollectionData.price) || '⚠ Bei haisomeki'}
+                {/* OPTIONS — clear and bold */}
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}>Options (optional)</label>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'6px'}}>e.g. for t-shirts: <strong>S, M, L, XL</strong> — or leave blank if no options needed</div>
+                  <input type="text" placeholder="S, M, L, XL  or  Chicken, Beef, Vegetarian" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>
+                  {createCollectionData.options.trim() && (
+                    <div style={{marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      {createCollectionData.options.split(',').map(o=>o.trim()).filter(o=>o).map((o,i)=>(
+                        <span key={i} style={{padding:'5px 12px',background:'#fef3c7',color:'#92400e',borderRadius:'8px',fontSize:'13px',fontWeight:'700',border:'1.5px solid #fde68a'}}>{o}</span>
+                      ))}
                     </div>
                   )}
                 </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Expected number of people (optional)</label><input type="number" placeholder="e.g. 45" value={createCollectionData.expectedPeople} onChange={e=>setCreateCollectionData({...createCollectionData,expectedPeople:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>How many people in your class/group? This helps calculate the expected total amount{createCollectionData.price && createCollectionData.expectedPeople && parsePrice(createCollectionData.price) ? ` — Expected: ${(parsePrice(createCollectionData.price) * parseInt(createCollectionData.expectedPeople)).toLocaleString()} TSh` : ''}</div></div>
+                {/* ADVANCED TOGGLE */}
+                <button type="button" onClick={()=>setShowAdvancedCollection(v=>!v)} style={{width:'100%',padding:'10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',marginBottom:'14px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                  {showAdvancedCollection ? '▲ Hide advanced options' : '▼ Advanced options (community, deadline, co-admins...)'}
+                </button>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Options (comma separated, optional)</label><input type="text" placeholder="e.g. Size S, Size M, Size L, Size XL" value={createCollectionData.options} onChange={e=>setCreateCollectionData({...createCollectionData,options:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Sizes, colors, quantities — anything students need to pick</div></div>
+                {showAdvancedCollection && (
+                  <div style={{marginBottom:'14px',display:'flex',flexDirection:'column',gap:'14px'}}>
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Community / group name</label>
+                      <input type="text" placeholder="e.g. TUCASA ARU Community, Architecture Year 1" value={createCollectionData.communityName} onChange={e=>setCreateCollectionData({...createCollectionData,communityName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Helps students find orders from their people.</div>
+                    </div>
 
-                {/* PAYMENT METHODS — multiple */}
-                <div style={{marginBottom:'16px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>💰 Payment Methods</label>
-                  <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'10px'}}>Add all the ways students can pay (M-Pesa, bank, etc.)</div>
-                  
-                  {createCollectionData.paymentMethods.map((pm, idx) => (
-                    pm.saved ? (
-                      <div key={idx} style={{background:'#f0fdf4',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1px solid #bbf7d0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                        <div>
-                          <div style={{fontSize:'14px',fontWeight:'600',color:'#166534'}}>✅ {pm.network}: {pm.number}</div>
-                          {pm.name && <div style={{fontSize:'12px',color:'#6b7280'}}>{pm.name}</div>}
-                        </div>
-                        <div style={{display:'flex',gap:'8px'}}>
-                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], saved: false}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#3b82f6',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>Edit</button>
-                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div key={idx} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #f59e0b'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
-                          <span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx + 1}</span>
-                          <button onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated.splice(idx, 1); setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Cancel</button>
-                        </div>
-                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>
-                          {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","MixxbyYAS","CRDB","NMB","NBC","Selcom","Other"].map(net=>(
-                            <button key={net} onClick={()=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], network: net}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>
-                          ))}
-                        </div>
-                        <input type="tel" placeholder="Number / Account" value={pm.number} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], number: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
-                        <input type="text" placeholder="Account name (e.g. JOHN MWANGI)" value={pm.name} onChange={e=>{const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], name: e.target.value}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
-                        <button onClick={()=>{
-                          if (!pm.number.trim()) { setError("Please enter a payment number"); return; }
-                          const updated = [...createCollectionData.paymentMethods]; updated[idx] = {...updated[idx], saved: true}; setCreateCollectionData({...createCollectionData, paymentMethods: updated});
-                        }} style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save Payment Method</button>
-                      </div>
-                    )
-                  ))}
-                  
-                  {/* Show Add button only when no unsaved method is open */}
-                  {(createCollectionData.paymentMethods.length === 0 || createCollectionData.paymentMethods.every(pm => pm.saved)) && (
-                    <button onClick={()=>setCreateCollectionData({...createCollectionData, paymentMethods: [...createCollectionData.paymentMethods, { network: "M-Pesa", number: "", name: "", saved: false }]})} style={{padding:'10px 16px',background:createCollectionData.paymentMethods.length===0?'#f59e0b':'#fff',color:createCollectionData.paymentMethods.length===0?'#0f1b2d':'#f59e0b',border:createCollectionData.paymentMethods.length===0?'none':'1.5px dashed #f59e0b',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',width:'100%'}}>
-                      {createCollectionData.paymentMethods.length === 0 ? '+ Add Payment Method' : '+ Add Another Payment Method'}
-                    </button>
-                  )}
-                </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+                      <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Community type</label><select value={createCollectionData.communityType} onChange={e=>setCreateCollectionData({...createCollectionData,communityType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="class">Class / Year</option><option value="church">Church</option><option value="club">Club</option><option value="hostel">Hostel</option><option value="freshers">Freshers</option><option value="other">Other</option></select></div>
+                      <div><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Type</label><select value={createCollectionData.collectionType} onChange={e=>setCreateCollectionData({...createCollectionData,collectionType:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}><option value="order">Group order</option><option value="event">Event registration</option><option value="contribution">Contribution</option><option value="freshers">Freshers support</option></select></div>
+                    </div>
 
-                {/* ADMIN EMAILS */}
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>👥 Co-admins (optional)</label><input type="text" placeholder="e.g. john@gmail.com, amina@gmail.com" value={createCollectionData.adminEmails} onChange={e=>setCreateCollectionData({...createCollectionData,adminEmails:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Comma-separated emails of other SRC members who can view orders and mark payments. They must have a Kampasika account with the same email.</div></div>
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label>
+                      <textarea placeholder="More details about the order or event..." value={createCollectionData.desc} onChange={e=>setCreateCollectionData({...createCollectionData,desc:e.target.value})} rows={3} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box',resize:'vertical',fontFamily:'inherit'}}/>
+                    </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label><input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Expected number of people</label>
+                      <input type="number" placeholder="e.g. 50" value={createCollectionData.expectedPeople} onChange={e=>setCreateCollectionData({...createCollectionData,expectedPeople:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                    </div>
+
+                    {/* Additional payment methods */}
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Additional payment methods</label>
+                      {createCollectionData.paymentMethods.slice(1).map((pm,idx)=>
+                        pm.saved ? (
+                          <div key={idx+1} style={{background:'#f0fdf4',borderRadius:'8px',padding:'10px',marginBottom:'8px',border:'1px solid #bbf7d0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                            <span style={{fontSize:'13px',fontWeight:'600'}}>{pm.network}: {pm.number}{pm.name?` (${pm.name})`:''}</span>
+                            <div style={{display:'flex',gap:'8px'}}>
+                              <button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:false};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#3b82f6',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>Edit</button>
+                              <button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated.splice(idx+1,1);setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={idx+1} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #f59e0b'}}>
+                            <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}><span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx+2}</span><button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated.splice(idx+1,1);setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Cancel</button></div>
+                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>{["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","CRDB","NMB"].map(net=>(<button key={net} type="button" onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],network:net};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>))}</div>
+                            <input type="tel" placeholder="Number" value={pm.number} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],number:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
+                            <input type="text" placeholder="Account name" value={pm.name} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],name:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
+                            <button onClick={()=>{if(!pm.number.trim()){setError("Please enter a payment number");return;}const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:true};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save</button>
+                          </div>
+                        )
+                      )}
+                      {createCollectionData.paymentMethods.length < 2 && (
+                        <button type="button" onClick={()=>setCreateCollectionData({...createCollectionData,paymentMethods:[...createCollectionData.paymentMethods,{network:"Tigo Pesa",number:"",name:"",saved:false}]})} style={{padding:'10px 16px',background:'#fff',color:'#f59e0b',border:'1.5px dashed #f59e0b',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
+                      )}
+                    </div>
+
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>👥 Co-admins (optional)</label>
+                      <input type="text" placeholder="e.g. john@gmail.com, amina@gmail.com" value={createCollectionData.adminEmails} onChange={e=>setCreateCollectionData({...createCollectionData,adminEmails:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Comma-separated emails of others who can manage orders.</div>
+                    </div>
+
+                    <div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Deadline (optional)</label>
+                      <input type="date" value={createCollectionData.deadline} onChange={e=>setCreateCollectionData({...createCollectionData,deadline:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                    </div>
+                  </div>
+                )}
 
                 <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
               </>
@@ -6187,7 +6376,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'12px'}}>
                     <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>{(()=>{
                       const ct = viewingCollection.collectionType || "order";
-                      const headers = { order:"📝 Place Your Order", event:"🎟 Register", contribution:"💰 Make a Contribution", freshers:"🎓 Join Support" };
+                      const headers = { order:"📝 Place Your Order", event:"🎟 Register for Event", contribution:"💰 Add Yourself", freshers:"🎓 Join Support" };
                       return headers[ct] || headers.order;
                     })()}</h3>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Required amount: <strong>{viewingCollection.price?.toLocaleString()} TSh</strong></div>
@@ -6197,12 +6386,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Phone (optional)</label><input type="tel" value={orderFormData.phone} onChange={e=>setOrderFormData({...orderFormData,phone:e.target.value})} placeholder="0712345678" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/></div>
 
                     {viewingCollection.options && viewingCollection.options.length > 0 && (
-                      <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Select Option *</label>
-                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                      <div style={{marginBottom:'12px'}}>
+                        <label style={{display:'block',fontSize:'13px',fontWeight:'800',marginBottom:'8px',color:'#0f1b2d'}}>
+                          Select Option *
+                          <span style={{fontWeight:'400',color:'#ef4444',marginLeft:'4px'}}>— required</span>
+                        </label>
+                        <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
                           {viewingCollection.options.map((opt,i)=>(
-                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'8px 16px',borderRadius:'8px',border:orderFormData.selectedOption===opt?'2px solid #f59e0b':'1.5px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'14px',fontWeight:'500',cursor:'pointer'}}>{opt}</button>
+                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'10px 18px',borderRadius:'10px',border:orderFormData.selectedOption===opt?'2.5px solid #f59e0b':'2px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'15px',fontWeight:'800',cursor:'pointer',transition:'all 0.1s',boxShadow:orderFormData.selectedOption===opt?'0 2px 8px rgba(245,158,11,0.3)':'none'}}>{opt}</button>
                           ))}
                         </div>
+                        {!orderFormData.selectedOption && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'6px',fontWeight:'600'}}>⚠ Please select an option above</div>}
                       </div>
                     )}
 
@@ -6211,7 +6405,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       const labels = {
                         order: { idle: "✓ Place Order", loading: "Placing..." },
                         event: { idle: "🎟 Register for Event", loading: "Registering..." },
-                        contribution: { idle: "💰 Contribute Now", loading: "Submitting..." },
+                        contribution: { idle: "💰 Add Myself to Collection", loading: "Adding..." },
                         freshers: { idle: "🎓 Join Freshers Support", loading: "Joining..." },
                       };
                       const lbl = labels[ct] || labels.order;
@@ -6226,22 +6420,24 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0',marginBottom:'12px'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                       <span style={{fontSize:'20px'}}>✅</span>
-                      <span style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>Order Placed!</span>
+                      <span style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>{(()=>{const ct=viewingCollection.collectionType||"order";return ct==="event"?"Registered!":ct==="contribution"?"Added to collection!":ct==="freshers"?"Joined!":"Order Placed!";})()}</span>
                     </div>
                     <div style={{fontSize:'13px',color:'#166534',marginBottom:'10px'}}>
                       {(()=>{
                         const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber }] : []);
                         return methods.length > 0 ? (
                           <>Send <strong>{viewingCollection.price?.toLocaleString()} TSh</strong> to any of these and confirm below:<br/>{methods.map((m,i)=><span key={i} style={{display:'block',marginTop:'4px'}}>• <strong>{m.network}:</strong> {m.number}{m.name ? ` (${m.name})` : ''}</span>)}</>
-                        ) : 'Your order has been registered. Confirm your payment below when ready.';
+                        ) : 'You\'ve been added. Confirm your payment below when ready.';
                       })()}
                     </div>
-                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:"",paymentRef:"",amountPaid:"",payerName:"",paymentProofFile:null,paymentProofPreview:null});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ Place Another Order</button>
+                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:"",paymentRef:"",amountPaid:"",payerName:"",paymentProofFile:null,paymentProofPreview:null});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
+                      {(()=>{const ct=viewingCollection.collectionType||"order";return ct==="event"?"+ Register Another Person":ct==="contribution"?"+ Add Another Person":"+ Place Another Order";})()}
+                    </button>
                   </div>
                 )}
 
                 {/* STEP 2: Confirm Payment — only shows after order is placed */}
-                {myOrderId && !paymentConfirmed && (
+                {myOrderId && !paymentConfirmed && !collectionOrders.find(o=>o.userId===user?.uid)?.paid && (
                   <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #10b981'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'16px'}}>💰</span><span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>Confirm Payment</span></div>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Already sent the money? Fill in your payment details so the rep can verify</div>
@@ -6305,11 +6501,19 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {viewingCollection.active && <button onClick={()=>closeCollection(viewingCollection.id)} style={{padding:'6px 14px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Close Collection</button>}
                 </div>
 
-                {/* Search orders */}
-                {collectionOrders.length > 3 && (
-                  <div style={{marginBottom:'10px',display:'flex',alignItems:'center',background:'#f4f6f8',borderRadius:'8px',padding:'8px 10px'}}>
-                    <input type="text" placeholder="Search by name, phone, ref code..." value={orderSearchQ} onChange={e=>setOrderSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'13px'}}/>
-                    <span style={{fontSize:'14px'}}>🔍</span>
+                {/* Search orders + Scan QR */}
+                {collectionOrders.length > 0 && (
+                  <div style={{marginBottom:'10px',display:'flex',gap:'8px',alignItems:'center'}}>
+                    {collectionOrders.length > 3 && (
+                      <div style={{flex:1,display:'flex',alignItems:'center',background:'#f4f6f8',borderRadius:'8px',padding:'8px 10px'}}>
+                        <input type="text" placeholder="Search by name, phone, ref code..." value={orderSearchQ} onChange={e=>setOrderSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'13px'}}/>
+                        <span style={{fontSize:'14px'}}>🔍</span>
+                      </div>
+                    )}
+                    <button onClick={openScanner} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap',flexShrink:0}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+                      Scan QR
+                    </button>
                   </div>
                 )}
                 
@@ -6403,6 +6607,24 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
                     {order.paymentRef && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'2px'}}>Ref: {order.paymentRef}</div>}
                     {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" style={{display:'inline-block',fontSize:'12px',color:'#0d9488',fontWeight:'700',marginTop:'4px'}}>View payment proof</a>}
+
+                    {/* QR TICKET — only shown when admin has confirmed payment */}
+                    {order.paid && (
+                      <div style={{marginTop:'14px',paddingTop:'14px',borderTop:'1px solid #6ee7b7',textAlign:'center'}}>
+                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show this at the door</div>
+                        <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #6ee7b7'}}>
+                          <QRCodeSVG
+                            value={`https://kampasika.org/verify/${viewingCollection.id}/${order.id}`}
+                            size={160}
+                            bgColor="#ffffff"
+                            fgColor="#065f46"
+                            level="M"
+                          />
+                        </div>
+                        <div style={{fontSize:'11px',color:'#6b7280',marginTop:'8px'}}>{order.studentName}</div>
+                        <div style={{fontSize:'10px',color:'#9ca3af',marginTop:'2px'}}>{viewingCollection.title}</div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -7572,7 +7794,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
           {/* Instagram-style subtle logout */}
           <div style={{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid #f0f2f5',display:'flex',justifyContent:'center'}}>
-            <button type="button" onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:'none',color:'#8a9bb0',border:'1px solid #e2e6ea',borderRadius:'20px',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>
+            <button type="button" onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:'#fee2e2',color:'#dc2626',border:'1px solid #fca5a5',borderRadius:'20px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
               🚪 <span>Log out</span>
             </button>
           </div>
@@ -7581,6 +7803,77 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
       
+      {/* ============ QR PAYMENT SCANNER MODAL ============ */}
+      {showQRScanner && (
+        <div style={{position:'fixed',inset:0,background:'#0f1b2d',zIndex:4000,display:'flex',flexDirection:'column'}}>
+          {/* Header */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px',background:'rgba(0,0,0,0.4)'}}>
+            <div style={{color:'#fff',fontSize:'16px',fontWeight:'700'}}>Scan Payment QR</div>
+            <button onClick={stopScanner} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:'8px',padding:'8px 14px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Close</button>
+          </div>
+
+          {/* Camera or result */}
+          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+
+            {scanLoading && !scanResult && (
+              <div style={{textAlign:'center',color:'#fff'}}>
+                <div style={{fontSize:'40px',marginBottom:'12px'}}>📷</div>
+                <div style={{fontSize:'15px',fontWeight:'600'}}>Opening camera...</div>
+              </div>
+            )}
+
+            {scanError && (
+              <div style={{textAlign:'center',color:'#fff',maxWidth:'300px'}}>
+                <div style={{fontSize:'40px',marginBottom:'12px'}}>⚠️</div>
+                <div style={{fontSize:'14px',lineHeight:1.6,marginBottom:'20px'}}>{scanError}</div>
+                <button onClick={()=>{setScanError("");openScanner();}} style={{padding:'12px 24px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>Try Again</button>
+              </div>
+            )}
+
+            {/* Live camera feed */}
+            {!scanResult && !scanError && (
+              <div style={{position:'relative',width:'100%',maxWidth:'360px'}}>
+                <video ref={scanVideoRef} style={{width:'100%',borderRadius:'16px',background:'#000'}} playsInline muted/>
+                {/* Scanning overlay */}
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+                  <div style={{width:'200px',height:'200px',border:'3px solid #06d6c7',borderRadius:'16px',boxShadow:'0 0 0 9999px rgba(15,27,45,0.55)'}}>
+                    {/* Corner accents */}
+                    {[['0','0','borderTopLeftRadius'],['0','auto','borderTopRightRadius'],['auto','0','borderBottomLeftRadius'],['auto','auto','borderBottomRightRadius']].map(([t,r,_],i)=>(
+                      <div key={i} style={{position:'absolute',top:t==='0'?-3:'auto',bottom:t==='auto'?-3:'auto',left:r==='0'?-3:'auto',right:r==='auto'?-3:'auto',width:'20px',height:'20px',border:'4px solid #06d6c7',borderTop:i<2?'4px solid #06d6c7':'none',borderBottom:i>=2?'4px solid #06d6c7':'none',borderLeft:r==='0'?'4px solid #06d6c7':'none',borderRight:r==='auto'?'4px solid #06d6c7':'none'}}/>
+                    ))}
+                  </div>
+                </div>
+                <div style={{textAlign:'center',marginTop:'16px',color:'rgba(255,255,255,0.7)',fontSize:'13px'}}>Point camera at student's QR code</div>
+              </div>
+            )}
+
+            {/* Scan result */}
+            {scanResult && (
+              <div style={{width:'100%',maxWidth:'340px',background:'#fff',borderRadius:'20px',padding:'24px',textAlign:'center'}}>
+                <div style={{fontSize:'48px',marginBottom:'8px'}}>{scanResult.order.paid ? '✅' : '⏳'}</div>
+                <div style={{fontSize:'18px',fontWeight:'800',color: scanResult.order.paid ? '#065f46' : '#92400e',marginBottom:'4px'}}>
+                  {scanResult.order.paid ? 'CONFIRMED PAID' : 'NOT YET PAID'}
+                </div>
+                <div style={{fontSize:'20px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
+                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
+                {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#fef3c7',color:'#92400e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
+                {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'#166534',background:'#f0fdf4',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
+                <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+                  {!scanResult.order.paid && (
+                    <button onClick={confirmScanPayment} disabled={scanLoading} style={{flex:1,padding:'12px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>
+                      {scanLoading ? 'Confirming...' : '✓ Mark as Paid'}
+                    </button>
+                  )}
+                  <button onClick={()=>{setScanResult(null);setScanError("");openScanner();}} style={{flex:1,padding:'12px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>
+                    Scan Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ============ QR CODE MODAL ============ */}
       {showQRModal && user && (
         <div
@@ -8920,7 +9213,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
         <button onClick={()=>{setPage("home");handleTabTap("services");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',transition:'color 0.2s ease'}}>⚡</span><span style={{fontSize:'10px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',fontWeight:page==="home"&&homeTab==="services"?'700':'500',transition:'all 0.2s ease'}}>Services</span></button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
-        <button onClick={()=>setPage("messages")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
     width:'24px',
