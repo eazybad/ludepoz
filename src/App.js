@@ -4,6 +4,8 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, on
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { QRCodeSVG } from 'qrcode.react';
+
 
 import {
   useKampasikaSearch,
@@ -251,6 +253,7 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
   const [createAssistText, setCreateAssistText] = useState("");
   const [createAssistLoading, setCreateAssistLoading] = useState(false);
   const [showAboutBanner, setShowAboutBanner] = useState(false);
@@ -2226,8 +2229,12 @@ await updateDoc(convRef, {
       loadCollections().catch(() => {});
     } catch(_) {}
     
-    // Check URL for /seller/ route (public seller profiles)
+    // Check URL for /seller/ or /u/ route (public seller profiles)
     const path = window.location.pathname;
+    if (path.startsWith('/u/')) {
+      const userId = path.replace('/u/', '').trim();
+      if (userId) loadPublicSellerProfile(userId);
+    }
     
     // Push initial state so browser back works step-by-step
     window.history.replaceState({ page: 'home' }, '', window.location.pathname);
@@ -2250,7 +2257,7 @@ await updateDoc(convRef, {
         return;
       }
 
-      if (p.startsWith('/seller/') || p.startsWith('/collection/')) {
+      if (p.startsWith('/seller/') || p.startsWith('/collection/') || p.startsWith('/u/')) {
         setPublicSeller(null);
         setViewingCollection(null);
         setCollectionOrders([]);
@@ -4343,7 +4350,7 @@ return (
                 fallbackTitle="No listings yet" fallbackHint={`Be the first to post in ${selectedUni?.short}!`} />
             ):(
               filteredListings.map((item,idx)=>(
-                <div key={item.id}  style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:'1px solid #f0f0f0',boxShadow:'0 1px 6px rgba(0,0,0,0.04)'}}>
+                <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:openListingId===item.id?'1.5px solid #06d6c7':'1px solid #f0f0f0',boxShadow:openListingId===item.id?'0 4px 16px rgba(6,214,199,0.12)':'0 1px 6px rgba(0,0,0,0.04)',transition:'border 0.15s ease,box-shadow 0.15s ease'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',minWidth:'36px',minHeight:'36px',flexShrink:0,aspectRatio:'1 / 1',borderRadius:'50%',overflow:'hidden',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#06d6c7':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
@@ -4441,34 +4448,34 @@ return (
   </div>
 ) : null}
           <div style={{paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom:'10px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom: openListingId===item.id ? '10px' : '0'}}>
               <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',lineHeight:1.1}}>{item.price.toLocaleString()} TSh</div>
               {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />}
+              {openListingId!==item.id && <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>Tap for options</span>}
             </div>
 
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(68px, 1fr))',gap:'6px',width:'100%'}}>
-              {item.whatsapp && item.userId !== user?.uid && (
-                <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{minWidth:0,padding:'9px 6px',background:'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
-                  <WhatsAppIcon size={15} /><span>WhatsApp</span>
+            {openListingId===item.id && (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(68px, 1fr))',gap:'6px',width:'100%'}}>
+                {item.whatsapp && item.userId !== user?.uid && (
+                  <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{minWidth:0,padding:'9px 6px',background:'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                    <WhatsAppIcon size={15} /><span>WhatsApp</span>
+                  </button>
+                )}
+                <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                  <span>📲</span><span>Share</span>
                 </button>
-              )}
-
-              <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
-                <span>📲</span><span>Share</span>
-              </button>
-
-              <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'#fff',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
-                <span>📋</span><span>Details</span>
-              </button>
-
-              {item.userId !== user?.uid && (
-                <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
-                  <span>💬</span><span>Message</span>
+                <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'#fff',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                  <span>📋</span><span>Details</span>
                 </button>
-              )}
-            </div>
+                {item.userId !== user?.uid && (
+                  <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
+                    <span>💬</span><span>Message</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-                  {user && item.userId===user.uid&&!item.sold&&(<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>)}
+                  {user && item.userId===user.uid&&!item.sold&&openListingId===item.id&&(<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>)}
                 </div>
               ))
             )}
@@ -7361,8 +7368,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              )}
            </div>
            <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>{userAccountType === "provider" ? "Service Provider" : "Student · " + (selectedUni?.short || "ARU")}</div>
-           {/* Edit profile button */}
-           <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{width:'100%',padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
+           {/* Edit profile + QR buttons */}
+           <div style={{display:'flex',gap:'8px'}}>
+             <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
+             <button onClick={()=>setShowQRModal(true)} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
+               My QR
+             </button>
+           </div>
           </div>
           
           {/* Service Tags */}
@@ -7390,18 +7403,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'#10b981',marginBottom:'12px'}}>Active Listings ({myActiveListings.length})</h3>
                 <div style={{display:'flex',flexDirection:'column'}}>
                   {myActiveListings.map((item,idx)=>(
-                    <div key={item.id} style={{background:'#fff',borderBottom:idx===myActiveListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===myActiveListings.length-1?'0 0 12px 12px':'0'}}>
+                    <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'#fff',borderBottom:idx===myActiveListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===myActiveListings.length-1?'0 0 12px 12px':'0',cursor:'pointer',border:openListingId===item.id?'1.5px solid #06d6c7':'',transition:'border 0.15s ease'}}>
                       {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                       {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                        {/* VIEW COUNT HIDDEN FOR NOW */}
+                        {openListingId!==item.id && <span style={{fontSize:'11px',color:'#8a9bb0'}}>Tap to manage</span>}
                       </div>
-                     <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
-              {!item.sold&&<button onClick={()=>markAsSold(item.id)} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
-            <button onClick={()=>deleteListing(item.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
-             </div>
+                     {openListingId===item.id && <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+                        {!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
+                        <button onClick={(e)=>{e.stopPropagation();deleteListing(item.id);}} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
+                      </div>}
                     </div>
                   ))}
                 </div>
@@ -7568,6 +7581,121 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
       
+      {/* ============ QR CODE MODAL ============ */}
+      {showQRModal && user && (
+        <div
+          onClick={()=>setShowQRModal(false)}
+          style={{
+            position:'fixed',top:0,left:0,right:0,bottom:0,
+            background:'rgba(15,27,45,0.7)',
+            backdropFilter:'blur(6px)',
+            WebkitBackdropFilter:'blur(6px)',
+            zIndex:3000,
+            display:'flex',alignItems:'center',justifyContent:'center',
+            padding:'24px'
+          }}
+        >
+          <div
+            onClick={e=>e.stopPropagation()}
+            style={{
+              background:'#fff',
+              borderRadius:'24px',
+              padding:'28px 24px',
+              width:'100%',
+              maxWidth:'320px',
+              textAlign:'center',
+              boxShadow:'0 20px 60px rgba(0,0,0,0.3)',
+              position:'relative'
+            }}
+          >
+            <button
+              onClick={()=>setShowQRModal(false)}
+              style={{position:'absolute',top:'14px',right:'16px',background:'none',border:'none',fontSize:'22px',color:'#8a9bb0',cursor:'pointer',lineHeight:1}}
+            >×</button>
+
+            <div style={{
+              width:'56px',height:'56px',borderRadius:'50%',
+              backgroundImage:userAvatar?`url(${userAvatar})`:'none',
+              backgroundColor:!userAvatar?'#06d6c7':'transparent',
+              backgroundSize:'cover',backgroundPosition:'center',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:'20px',fontWeight:'700',color:'#0f1b2d',
+              margin:'0 auto 8px',
+              border:'2.5px solid #f0fffe'
+            }}>
+              {!userAvatar && userName.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase()}
+            </div>
+
+            <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>
+              {userName}
+              {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'#06d6c7'}}>✓</span>}
+            </div>
+            <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'20px'}}>
+              {userAccountType === "provider" ? "Service Provider" : `Student · ${selectedUni?.short || "ARU"}`}
+            </div>
+
+            <div style={{
+              display:'inline-block',
+              padding:'16px',
+              background:'#fff',
+              borderRadius:'16px',
+              border:'2px solid #e2e6ea',
+              marginBottom:'16px'
+            }}>
+              <QRCodeSVG
+                value={`https://kampasika.org/u/${user.uid}`}
+                size={180}
+                bgColor="#ffffff"
+                fgColor="#0f1b2d"
+                level="M"
+              />
+            </div>
+
+            <div style={{
+              fontSize:'11px',color:'#8a9bb0',
+              background:'#f4f6f8',borderRadius:'8px',
+              padding:'6px 10px',marginBottom:'16px',
+              wordBreak:'break-all',fontFamily:'monospace'
+            }}>
+              kampasika.org/u/{user.uid.substring(0,14)}...
+            </div>
+
+            <div style={{display:'flex',gap:'8px'}}>
+              <button
+                onClick={()=>{
+                  const url = `https://kampasika.org/u/${user.uid}`;
+                  if (navigator.share) {
+                    navigator.share({ title: `${userName} on Kampasika`, url });
+                  } else {
+                    navigator.clipboard?.writeText(url).then(()=>{
+                      setSuccess("Link copied!");
+                      setTimeout(()=>setSuccess(""),2000);
+                    }).catch(()=>{});
+                  }
+                }}
+                style={{flex:1,padding:'11px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}
+              >
+                🔗 Share Link
+              </button>
+              <button
+                onClick={()=>{
+                  const msg = `Check out my Kampasika profile!\nhttps://kampasika.org/u/${user.uid}`;
+                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                }}
+                style={{flex:1,padding:'11px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                WhatsApp
+              </button>
+            </div>
+
+            <p style={{fontSize:'11px',color:'#8a9bb0',marginTop:'14px',lineHeight:1.5,margin:'14px 0 0'}}>
+              Anyone who scans this will see your profile, listings and services on Kampasika.
+            </p>
+          </div>
+        </div>
+      )}
+
       {showEditProfile && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowEditProfile(false)}>
           <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
