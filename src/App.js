@@ -331,6 +331,7 @@ useEffect(() => {
 } = useKampasikaSearch(app);
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
+  const [showEntryQR, setShowEntryQR] = useState(false);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "", paymentProofFile: null, paymentProofPreview: null });
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
@@ -3202,6 +3203,7 @@ useEffect(() => {
         createdAt: serverTimestamp()
       });
       setLastCreatedCollectionId(newColRef.id);
+      setShowEntryQR(false);
       setShowCreateCollectionSuccess(true);
       setSuccess("Order / event created!");
       setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: [] });
@@ -6044,27 +6046,40 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'20px'}}>Share the link with your class or group</div>
                 {lastCreatedCollectionId && (
                   <>
+                    {/* PRIMARY — WhatsApp share */}
                     <button onClick={()=>{
                       const link = `https://kampasika.org/c/${lastCreatedCollectionId}`;
                       const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
-                    }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
+                    }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'8px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
 
-                    {/* Community entry QR */}
-                    <div style={{background:'#f4f6f8',borderRadius:'16px',padding:'20px',marginBottom:'12px',textAlign:'center'}}>
-                      <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>📲 Community Entry QR</div>
-                      <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'14px'}}>Students scan this to find and join the collection</div>
-                      <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #e2e6ea'}}>
-                        <QRCodeSVG
-                          value={`https://kampasika.org/c/${lastCreatedCollectionId}`}
-                          size={160}
-                          bgColor="#ffffff"
-                          fgColor="#0f1b2d"
-                          level="M"
-                        />
+                    {/* Copy link */}
+                    <button onClick={()=>{
+                      const link = `https://kampasika.org/c/${lastCreatedCollectionId}`;
+                      navigator.clipboard?.writeText(link).then(()=>{setSuccess("Link copied!");setTimeout(()=>setSuccess(""),2000);});
+                    }} style={{width:'100%',padding:'11px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'12px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>🔗 Copy Link</button>
+
+                    {/* SECONDARY — QR collapsible */}
+                    <button onClick={()=>setShowEntryQR(v=>!v)} style={{width:'100%',padding:'10px',background:'none',color:'#8a9bb0',border:'1px dashed #d1d5db',borderRadius:'10px',fontSize:'13px',fontWeight:'500',cursor:'pointer',marginBottom: showEntryQR ? '10px' : '12px'}}>
+                      {showEntryQR ? '▲ Hide QR code' : '▼ Show QR for printing / display'}
+                    </button>
+
+                    {showEntryQR && (
+                      <div style={{background:'#f4f6f8',borderRadius:'16px',padding:'20px',marginBottom:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>📋 Entry QR</div>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'14px'}}>Useful for posters, noticeboards, or projecting in a meeting</div>
+                        <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #e2e6ea'}}>
+                          <QRCodeSVG
+                            value={`https://kampasika.org/c/${lastCreatedCollectionId}`}
+                            size={180}
+                            bgColor="#ffffff"
+                            fgColor="#0f1b2d"
+                            level="M"
+                          />
+                        </div>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'10px'}}>Anyone who scans this with their camera lands directly on this collection</div>
                       </div>
-                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'10px'}}>Print this or show it on your phone — anyone who scans it lands directly on this collection</div>
-                    </div>
+                    )}
                   </>
                 )}
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Communities & Events</button>
@@ -6611,7 +6626,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {/* QR TICKET — only shown when admin has confirmed payment */}
                     {order.paid && (
                       <div style={{marginTop:'14px',paddingTop:'14px',borderTop:'1px solid #6ee7b7',textAlign:'center'}}>
-                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show this at the door</div>
+                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show this to the admin</div>
                         <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #6ee7b7'}}>
                           <QRCodeSVG
                             value={`https://kampasika.org/verify/${viewingCollection.id}/${order.id}`}
