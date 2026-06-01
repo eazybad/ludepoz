@@ -23,6 +23,7 @@ import {
 import {
   compressImage,
   COMPRESSION_PRESETS,
+  // eslint-disable-next-line no-unused-vars
   validateVideo,
 } from './imageCompression';
 import { computePriceSignal, PriceSignalBadge } from './priceSignal';
@@ -53,6 +54,7 @@ const DEFAULT_UNI = UNIVERSITIES[0];
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
 
+// eslint-disable-next-line no-unused-vars
 const ENABLE_COLLECTIONS = true;  // Communities & events (group orders)
 // ====================================
 
@@ -332,6 +334,7 @@ useEffect(() => {
   const [showCreateCollectionSuccess, setShowCreateCollectionSuccess] = useState(false);
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
   const [showEntryQR, setShowEntryQR] = useState(false);
+  const [showRoomIndoor, setShowRoomIndoor] = useState(false);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "", paymentProofFile: null, paymentProofPreview: null });
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
@@ -372,7 +375,7 @@ useEffect(() => {
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
   const [createRoomData, setCreateRoomData] = useState({
-    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null
+    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null
   });
   const [createRoommateData, setCreateRoommateData] = useState({
     budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: ""
@@ -1589,30 +1592,21 @@ useEffect(() => {
           photoUrls.push(await getDownloadURL(snapshot.ref));
         }
       }
+      // eslint-disable-next-line no-unused-vars
       let videoUrl = null;
-      if (createRoomData.videoFile) {
-        const vCheck = await validateVideo(createRoomData.videoFile);
-        if (!vCheck.ok) {
-          setError(vCheck.reason);
-          setUploading(false);
-          return;
-        }
-        const vRef = ref(storage, `rooms/vid_${Date.now()}.mp4`);
-        const vSnap = await uploadBytes(vRef, createRoomData.videoFile);
-        videoUrl = await getDownloadURL(vSnap.ref);
-      }
       await addDoc(collection(db, "rooms"), {
         landlordName: createRoomData.landlordName.trim(),
         landlordPhone: createRoomData.landlordPhone.trim(),
         roomType: createRoomData.roomType,
         price: parsedRoomPrice,
         location: createRoomData.location.trim(),
+        lat: createRoomData.lat || null,
+        lng: createRoomData.lng || null,
         nearUni: createRoomData.nearUni || "ARU",
         description: createRoomData.desc.trim(),
         amenities: createRoomData.amenities || [],
         photoUrl: photoUrls[0] || null,
         photos: photoUrls,
-        videoUrl: videoUrl,
         available: true,
         views: 0,
         userId: user ? user.uid : "anonymous",
@@ -1623,7 +1617,7 @@ useEffect(() => {
       });
       setShowCreateRoomSuccess(true);
       setSuccess("Room listed successfully!");
-      setCreateRoomData({ landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null });
+      setCreateRoomData({ landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [] });
       await loadRooms();
       loadMyAllRooms();
     } catch (err) {
@@ -1687,7 +1681,8 @@ useEffect(() => {
       reader.readAsDataURL(file);
     });
   };
-
+  
+  // eslint-disable-next-line no-unused-vars
   const handleRoomVideoSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -4450,18 +4445,6 @@ return (
     ✨ AI is thinking...
   </div>
 )}
-{/* Communities & Events compact strip */}
-{ENABLE_COLLECTIONS && <div style={{margin:'0 16px 14px 16px',background:'linear-gradient(135deg,#fbbf24 0%,#f59e0b 100%)',borderRadius:'14px',padding:'11px 14px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',boxShadow:'0 2px 10px rgba(245,158,11,0.15)',transition:'transform 0.2s ease'}} onClick={()=>setPage("communities")} onMouseDown={e=>e.currentTarget.style.transform='scale(0.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
-  <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-    <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'rgba(255,255,255,0.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}}>🏫</div>
-    <div>
-      <span style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d'}}>Communities & Events</span>
-      <div style={{fontSize:'10px',color:'rgba(15,27,45,0.55)',marginTop:'1px'}}>Browse groups, orders & campus events</div>
-    </div>
-  </div>
-  <span style={{fontSize:'16px',color:'rgba(15,27,45,0.4)',fontWeight:'600'}}>→</span>
-</div>}
-
 {featureFlagsLoaded && REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
   <div style={{margin:'0 16px 12px 16px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'14px',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',boxShadow:'0 2px 10px rgba(79,70,229,0.08)'}}>
     <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
@@ -4747,7 +4730,7 @@ return (
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
-    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+    <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
     <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
   </div>
   {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
@@ -4785,14 +4768,14 @@ return (
           fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
         {!committedRoomSearchQ?.trim() && (
           <div style={{textAlign:'center',marginTop:'12px'}}>
-            <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+            <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
           </div>
         )}
       </div>
     ) : (
       <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
         {filtered.map(room => (
-          <div key={room.id} onClick={()=>setViewingRoom(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+          <div key={room.id} onClick={()=>{setViewingRoom(room);setShowRoomIndoor(false);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
             {room.photoUrl ? (
               <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
             ) : (
@@ -5858,8 +5841,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="communities"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
-            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Communities & Events</h2>
-            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a community to see all active orders and events inside it.</p>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Groups</h2>
+            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a group to see all active orders/collections and events inside it.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
               <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
               <button onClick={()=>setPage("collections")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>View all</button>
@@ -5869,8 +5852,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {collections.length === 0 ? (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>🏫</div>
-              <div style={{fontSize:'16px',fontWeight:'600'}}>No active communities yet</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create an order or event under a community name and it will appear here.</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active groups yet</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create an order/collection or event under a group name and it will appear here.</div>
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -5950,7 +5933,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>All Orders & Events</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — browse everything or open a community first.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-              <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By community</button>
+              <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By group</button>
               <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
             </div>
           </div>
@@ -5980,7 +5963,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
               <div style={{fontSize:'16px',fontWeight:'600'}}>No active orders or events</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create group orders and event registrations for their community.</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create group orders and event registrations for their group.</div>
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -6082,7 +6065,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                   </>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Communities & Events</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
@@ -6626,7 +6609,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {/* QR TICKET — only shown when admin has confirmed payment */}
                     {order.paid && (
                       <div style={{marginTop:'14px',paddingTop:'14px',borderTop:'1px solid #6ee7b7',textAlign:'center'}}>
-                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show this to the admin</div>
+                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show the QR to the admin</div>
                         <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #6ee7b7'}}>
                           <QRCodeSVG
                             value={`https://kampasika.org/verify/${viewingCollection.id}/${order.id}`}
@@ -6656,7 +6639,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>🏠 Find a Room</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setPage("createRoom")} style={{padding:'10px 16px',background:'#fff',color:'#06d6c7',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'#fff',color:'#06d6c7',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
               <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
             </div>
           </div>
@@ -6719,14 +6702,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
                 {!committedRoomSearchQ?.trim() && (
                   <div style={{textAlign:'center',marginTop:'12px'}}>
-                    <button onClick={()=>setPage("createRoom")} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+                    <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
                   </div>
                 )}
               </div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
                 {filtered.map(room => (
-                  <div key={room.id} onClick={()=>setViewingRoom(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={room.id} onClick={()=>{setViewingRoom(room);setShowRoomIndoor(false);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     {room.photoUrl ? (
                       <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
                     ) : (
@@ -6760,7 +6743,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{showCreateRoomSuccess?"Room Listed!":"List a Room"}</h2>
-            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'16px'}}>No account needed — just fill in the details and students will contact you directly.</p>}
+            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'16px'}}>List your room and students will contact you directly.</p>}
             {showCreateRoomSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
@@ -6787,17 +6770,34 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   )}
                 </label>
 
-                {/* Video */}
-                <input type="file" id="room-video" accept="video/*" style={{display:'none'}} onChange={handleRoomVideoSelect}/>
-                <label htmlFor="room-video" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
-                  {createRoomData.videoPreview ? (
-                    <div style={{position:'relative'}}><video src={createRoomData.videoPreview} style={{width:'100%',height:'120px',objectFit:'cover',borderRadius:'10px'}} controls/><div style={{position:'absolute',top:'6px',right:'6px',background:'rgba(0,0,0,0.6)',color:'#fff',padding:'2px 8px',borderRadius:'6px',fontSize:'11px'}}>🎥 Video added</div></div>
-                  ) : (
-                    <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'12px',textAlign:'center',background:'#f0f9ff'}}>
-                      <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>🎥 Add a Video Tour (optional, max 50MB)</span>
-                    </div>
-                  )}
-                </label>
+                {/* Outdoor photo */}
+                <div style={{marginBottom:'16px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📸 Outdoor Photo / Picha ya mazingira ya nje (optional)</label>
+                  <input type="file" id="room-outdoor-photo" accept="image/*" style={{display:'none'}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    if (!file.type.startsWith('image/')) { setError("Must be an image file"); return; }
+                    setCreateRoomData(prev => ({
+                      ...prev,
+                      photoFiles: [file, ...prev.photoFiles.slice(1)],
+                      photoPreviews: [URL.createObjectURL(file), ...prev.photoPreviews.slice(1)]
+                    }));
+                  }}/>
+                  <label htmlFor="room-outdoor-photo" style={{display:'block',cursor:'pointer'}}>
+                    {createRoomData.photoPreviews[0] ? (
+                      <div style={{position:'relative'}}>
+                        <img src={createRoomData.photoPreviews[0]} alt="Outdoor" style={{width:'100%',height:'140px',objectFit:'cover',borderRadius:'10px'}}/>
+                        <div style={{position:'absolute',top:'6px',right:'6px',background:'rgba(0,0,0,0.6)',color:'#fff',padding:'2px 8px',borderRadius:'6px',fontSize:'11px'}}>🏠 Outdoor added</div>
+                      </div>
+                    ) : (
+                      <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'16px',textAlign:'center',background:'#f0fffe'}}>
+                        <div style={{fontSize:'24px',marginBottom:'4px'}}>🏠</div>
+                        <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
+                        <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'3px'}}>Helps students recognise the house from outside</div>
+                      </div>
+                    )}
+                  </label>
+                </div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
 
@@ -6828,7 +6828,35 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   )}
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label><input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label>
+                  <input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
+                  <button type="button" onClick={()=>{
+                    if (!navigator.geolocation) { setError("GPS not supported on this device"); return; }
+                    setSuccess("Getting your location...");
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        setCreateRoomData(prev => ({ ...prev, lat: latitude, lng: longitude }));
+                        setSuccess("📍 Location pinned! Map will show exact position.");
+                        setTimeout(() => setSuccess(""), 3000);
+                      },
+                      (err) => {
+                        setSuccess("");
+                        setError("Could not get location: " + (err.message || "Permission denied"));
+                      },
+                      { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                  }} style={{width:'100%',padding:'10px',background: createRoomData.lat ? '#d1fae5' : '#f4f6f8',color: createRoomData.lat ? '#065f46' : '#0f1b2d',border: createRoomData.lat ? '1.5px solid #6ee7b7' : '1px solid #e2e6ea',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                    {createRoomData.lat ? (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> GPS pinned — exact location saved</>
+                    ) : (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Pin exact location with GPS (optional)</>
+                    )}
+                  </button>
+                  {createRoomData.lat && <div style={{fontSize:'11px',color:'#6b7280',marginTop:'4px',fontFamily:'monospace'}}>Lat: {createRoomData.lat.toFixed(5)}, Lng: {createRoomData.lng.toFixed(5)}</div>}
+                  {!createRoomData.lat && <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
+                </div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
 
@@ -6852,62 +6880,154 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ ROOM DETAIL ============ */}
       {ENABLE_ROOMS && viewingRoom && (
         <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
+          {/* Header */}
           <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
-            <button onClick={()=>setViewingRoom(null)} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
-            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Room Details</div>
+            <button onClick={()=>{if(showRoomIndoor){setShowRoomIndoor(false);}else{setViewingRoom(null);}}} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
+            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
           </div>
 
-          {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
-            <div>
-              <img src={viewingRoom.photos[0]} alt="" onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}} style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer'}}/>
-              {viewingRoom.photos.length > 1 && (
-                <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto'}}>
-                  {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(i);}} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>)}
+          {!showRoomIndoor ? (
+            <>
+              {/* MAP — Google Maps embed via location text */}
+              <div style={{position:'relative',width:'100%',height:'340px',background:'#e2e6ea',overflow:'hidden'}}>
+                <iframe
+                  title="Room location map"
+                  width="100%"
+                  height="340"
+                  style={{border:'none',display:'block'}}
+                  loading="lazy"
+                  allowFullScreen
+                  src={viewingRoom.lat && viewingRoom.lng
+                    ? `https://maps.google.com/maps?q=${viewingRoom.lat},${viewingRoom.lng}&t=m&z=17&ie=UTF8&iwloc=&output=embed`
+                    : `https://maps.google.com/maps?q=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}&t=m&z=16&ie=UTF8&iwloc=&output=embed`
+                  }
+                />
+                {/* Location label overlay */}
+                <div style={{position:'absolute',bottom:'12px',left:'12px',background:'rgba(15,27,45,0.85)',color:'#fff',borderRadius:'10px',padding:'6px 12px',fontSize:'13px',fontWeight:'600',backdropFilter:'blur(4px)'}}>
+                  📍 {viewingRoom.location}
+                </div>
+                {/* Open in Google Maps button */}
+                <button
+                  onClick={()=>window.open(
+                    viewingRoom.lat && viewingRoom.lng
+                      ? `https://www.google.com/maps/search/?api=1&query=${viewingRoom.lat},${viewingRoom.lng}`
+                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}`,
+                    '_blank'
+                  )}
+                  style={{position:'absolute',top:'12px',right:'12px',background:'#fff',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  Open in Maps
+                </button>
+              </div>
+
+              {/* Room summary strip */}
+              <div style={{background:'#fff',padding:'14px 16px',borderBottom:'1px solid #e2e6ea',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
+                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
+                </div>
+                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#06d6c7'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/mo</span></div>
+              </div>
+
+              {/* Outdoor / Indoor cards */}
+              <div style={{padding:'16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+
+                {/* OUTDOOR card */}
+                <div style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'1px solid #e2e6ea',cursor:'default'}}>
+                  {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
+                    <img src={viewingRoom.photos[0]} alt="Outdoor" style={{width:'100%',height:'130px',objectFit:'cover'}} onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}}/>
+                  ) : (
+                    <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#a8edea,#fed6e3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>🏠</div>
+                  )}
+                  <div style={{padding:'10px 12px'}}>
+                    <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Outdoor</div>
+                    <div style={{fontSize:'11px',color:'#8a9bb0'}}>Exterior view</div>
+                  </div>
+                </div>
+
+                {/* INDOOR card — tappable */}
+                <div onClick={()=>setShowRoomIndoor(true)} style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
+                  {viewingRoom.photos && viewingRoom.photos.length > 1 ? (
+                    <img src={viewingRoom.photos[1]} alt="Indoor" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
+                  ) : (
+                    <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>🛏</div>
+                  )}
+                  <div style={{padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div>
+                      <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Indoor</div>
+                      <div style={{fontSize:'11px',color:'#0d9488',fontWeight:'600'}}>Tap to view details →</div>
+                    </div>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06d6c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Amenities preview */}
+              {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
+                <div style={{padding:'0 16px 16px'}}>
+                  <div style={{fontSize:'13px',fontWeight:'600',color:'#6b7280',marginBottom:'8px'}}>Amenities</div>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
+                  </div>
                 </div>
               )}
-            </div>
+
+              {/* Contact buttons */}
+              <div style={{padding:'0 16px 100px',display:'flex',gap:'8px'}}>
+                <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
+                <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
+              </div>
+            </>
           ) : (
-            <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
-          )}
+            /* ── INDOOR VIEW — full current detail ── */
+            <>
+              {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
+                <div>
+                  <img src={viewingRoom.photos[viewingRoom.photos.length > 1 ? 1 : 0]} alt="" onClick={()=>{setFullScreenImage(viewingRoom.photos[1]||viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(viewingRoom.photos.length>1?1:0);}} style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer'}}/>
+                  {viewingRoom.photos.length > 1 && (
+                    <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto'}}>
+                      {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(i);}} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
+              )}
 
-          {viewingRoom.videoUrl && (
-            <div style={{padding:'0 16px',marginTop:'8px'}}><video src={viewingRoom.videoUrl} controls style={{width:'100%',borderRadius:'12px',maxHeight:'250px'}}/></div>
-          )}
+              <div style={{padding:'20px'}}>
+                <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
+                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#06d6c7',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+                {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
+                <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
+                <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
 
-          <div style={{padding:'20px'}}>
-            <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
-            
-            <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#06d6c7',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
-            
-            {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
-            
-            <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
-            <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
+                {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
+                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
+                  </div>
+                )}
 
-            {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
-              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
-                {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
+                {viewingRoom.description && (
+                  <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                    <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>Details</h4>
+                    <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
+                  </div>
+                )}
+
+                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                  <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
+                  <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
+                  <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
+                </div>
               </div>
-            )}
 
-            {viewingRoom.description && (
-              <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-                <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>Details</h4>
-                <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
+              <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+                <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
+                <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
               </div>
-            )}
-
-            <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-              <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
-              <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
-              <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
-            </div>
-          </div>
-
-          <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
-            <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
-            <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -7703,7 +7823,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>
                   My Rooms ({myAllRooms.length})
                 </h3>
-                <button onClick={()=>setPage("createRoom")} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
+                <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
               </div>
 
               {myAllRooms.length === 0 ? (
@@ -9226,7 +9346,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   padding:'6px 0 env(safe-area-inset-bottom, 8px) 0'
 }}>
         <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
-        <button onClick={()=>{setPage("home");handleTabTap("services");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',transition:'color 0.2s ease'}}>⚡</span><span style={{fontSize:'10px',color:page==="home"&&homeTab==="services"?'#0d9488':'#8a9bb0',fontWeight:page==="home"&&homeTab==="services"?'700':'500',transition:'all 0.2s ease'}}>Services</span></button>
+        <button onClick={()=>{ if(!user){requireAuth("groups",()=>setPage("communities"));return;} setPage("communities"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
+        </button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
