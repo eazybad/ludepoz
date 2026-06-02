@@ -191,6 +191,8 @@ function App() {
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["home"]);
+  const pageRef = useRef("home");
+  useEffect(() => { pageRef.current = page; }, [page]);
   const isGoingBack = useRef(false)
 
   // Tracks whether any home-tab search is active. The back-button handler
@@ -259,6 +261,15 @@ function App() {
   // Collection payment QR scanner
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showAdvancedCollection, setShowAdvancedCollection] = useState(false);
+  // Groups
+  const [groups, setGroups] = useState([]);
+  const [viewingGroup, setViewingGroup] = useState(null);
+  const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class" });
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [groupAnnouncements, setGroupAnnouncements] = useState([]);
+  const [newAnnouncement, setNewAnnouncement] = useState("");
+  const [postingAnnouncement, setPostingAnnouncement] = useState(false);
+  const unsubGroupAnnouncements = useRef(null);
   const [scanResult, setScanResult] = useState(null); // { order, studentName, paid, collectionTitle }
   const [scanError, setScanError] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
@@ -290,7 +301,7 @@ function App() {
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
-    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: []
+    title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", groupId: "", photoFiles: [], photoPreviews: []
   });
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
 
@@ -1576,6 +1587,7 @@ useEffect(() => {
   }, []);
 
   const handleCreateRoom = async () => {
+    if (!user) { requireAuth("list a room", () => setPage("createRoom")); return; }
     const parsedRoomPrice = parsePrice(createRoomData.price);
     if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || parsedRoomPrice === null || !createRoomData.location.trim()) {
       setError("Please fill in name, phone, room type, price, and location"); return;
@@ -1609,10 +1621,10 @@ useEffect(() => {
         photos: photoUrls,
         available: true,
         views: 0,
-        userId: user ? user.uid : "anonymous",
-        listedBy: user ? user.uid : "anonymous",
-        listedByName: user ? userName : createRoomData.landlordName.trim(),
-        listedByAvatar: user ? userAvatar : null,
+        userId: user.uid,
+        listedBy: user.uid,
+        listedByName: userName || createRoomData.landlordName.trim(),
+        listedByAvatar: userAvatar || null,
         createdAt: serverTimestamp()
       });
       setShowCreateRoomSuccess(true);
@@ -2244,6 +2256,18 @@ await updateDoc(convRef, {
       const parts = path.replace('/verify/', '').split('/');
       if (parts.length === 2) handleVerifyScan(parts[0], parts[1]);
     }
+    if (path.startsWith('/g/')) {
+      const inviteCode = path.replace('/g/', '').trim();
+      if (inviteCode) {
+        const q = query(collection(db, "groups"), where("inviteCode", "==", inviteCode));
+        getDocs(q).then(snap => {
+          if (!snap.empty) {
+            const group = { id: snap.docs[0].id, ...snap.docs[0].data() };
+            openGroup(group);
+          }
+        }).catch(console.error);
+      }
+    }
     if (path.startsWith('/c/')) {
       const colId = path.replace('/c/', '').trim();
       if (colId) {
@@ -2268,8 +2292,7 @@ await updateDoc(convRef, {
     const handlePopState = (e) => {
       const p = window.location.pathname;
 
-      // If there's an active search on the home page, clearing it is the
-      // expected back-button behavior — not navigating away.
+      // If there's an active search on the home page, clear it first
       const active = activeSearchRef.current;
       if (active && active.kind) {
         if (active.kind === "listing") { setSearchQ(""); setCommittedSearchQ(""); }
@@ -2277,11 +2300,14 @@ await updateDoc(convRef, {
         else if (active.kind === "room") { setRoomSearchQ(""); setCommittedRoomSearchQ(""); }
         clearAISearch();
         activeSearchRef.current = { kind: null, query: "" };
-        // Re-push so the next back press can still go back through pages
         window.history.pushState({ page: 'app' }, '', '/');
         return;
       }
 
+      // Use pageRef to get current page without stale closure
+      const currentPage = pageRef?.current || "home";
+
+      // Deep link paths — reset to home
       if (p.startsWith('/seller/') || p.startsWith('/collection/') || p.startsWith('/u/')) {
         setPublicSeller(null);
         setViewingCollection(null);
@@ -2290,20 +2316,27 @@ await updateDoc(convRef, {
         pageHistory.current = ["home"];
         window.history.replaceState({ page: 'home' }, '', '/');
         document.title = 'Kampasika - Student Marketplace';
-      } else {
-        if (pageHistory.current.length > 1) {
-  pageHistory.current.pop();
-  const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
-
-  if (prev !== "chat") {
-    setActiveConversation(null);
-    setMessages([]);
-  }
-
-  setPageRaw(prev);
-}
-        window.history.pushState({ page: 'app' }, '', '/');
+        return;
       }
+
+      // Mirror the back button logic exactly
+      if (currentPage === "seller") { closeSellerProfile(); }
+      else if (currentPage === "collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); setPageRaw("communities"); }
+      else if (currentPage === "groupDetail") { if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current(); setViewingGroup(null); setGroupAnnouncements([]); setPageRaw("communities"); }
+      else if (currentPage === "communityDetail") { setViewingCommunity(null); setPageRaw("communities"); }
+      else if (currentPage === "createCollection") { setShowCreateCollectionSuccess(false); setPageRaw("communities"); }
+      else if (currentPage === "createRoom") { setShowCreateRoomSuccess(false); setPageRaw("rooms"); }
+      else if (currentPage === "createService") { setShowCreateServiceSuccess(false); setPageRaw("services"); }
+      else if (currentPage === "create") setPageRaw("home");
+      else if (currentPage === "collections") setPageRaw("communities");
+      else if (currentPage === "rooms" || currentPage === "roommates") setPageRaw("home");
+      else if (currentPage === "services") setPageRaw("home");
+      else if (currentPage === "communities") setPageRaw("home");
+      else if (currentPage === "messages" || currentPage === "profile" || currentPage === "saved" || currentPage === "admin") setPageRaw("home");
+      else if (currentPage === "chat") { setActiveConversation(null); setMessages([]); setPageRaw("messages"); }
+      else { setPageRaw("home"); }
+
+      window.history.pushState({ page: 'app' }, '', '/');
     };
     window.addEventListener('popstate', handlePopState);
     
@@ -2353,6 +2386,7 @@ await updateDoc(convRef, {
         loadListings();
         loadServices();
         loadCollections();
+        loadGroups();
         // Handle deep links for non-authenticated users
         if (path.startsWith('/collection/')) {
           const colId = path.replace('/collection/', '');
@@ -2495,6 +2529,84 @@ await updateDoc(convRef, {
     } finally { setScanLoading(false); }
   };
 
+  // ─── Groups ───
+  const loadGroups = async () => {
+    try {
+      const q = query(collection(db, "groups"), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) { console.error("loadGroups:", e); }
+  };
+
+  const createGroup = async () => {
+    if (!user) { requireAuth("createGroup", () => {}); return; }
+    if (!createGroupData.name.trim()) { setError("Group name is required"); return; }
+    setUploading(true);
+    try {
+      const slug = createGroupData.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+      const inviteCode = slug + "-" + Math.random().toString(36).substring(2, 7);
+      const ref2 = await addDoc(collection(db, "groups"), {
+        name: createGroupData.name.trim(),
+        desc: createGroupData.desc.trim(),
+        type: createGroupData.type,
+        inviteCode,
+        inviteLink: `https://kampasika.org/g/${inviteCode}`,
+        adminUid: user.uid,
+        adminEmail: user.email,
+        adminName: userName,
+        coAdmins: [],
+        memberCount: 0,
+        uniId: selectedUni?.id || "aru",
+        createdAt: serverTimestamp(),
+      });
+      setShowCreateGroup(false);
+      setCreateGroupData({ name: "", desc: "", type: "class" });
+      await loadGroups();
+      // Open the newly created group
+      const newSnap = await getDoc(doc(db, "groups", ref2.id));
+      const newGroup = { id: ref2.id, ...newSnap.data() };
+      openGroup(newGroup);
+    } catch (e) { setError("Failed to create group: " + e.message); }
+    finally { setUploading(false); }
+  };
+
+  const openGroup = (group) => {
+    setViewingGroup(group);
+    setGroupAnnouncements([]);
+    setNewAnnouncement("");
+    setPage("groupDetail");
+    // Subscribe to announcements
+    if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current();
+    try {
+      const q = query(collection(db, "groups", group.id, "announcements"), orderBy("createdAt", "desc"));
+      unsubGroupAnnouncements.current = onSnapshot(q, snap => {
+        setGroupAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      });
+    } catch (e) { console.error("announcements:", e); }
+  };
+
+  const postAnnouncement = async () => {
+    if (!newAnnouncement.trim() || !viewingGroup) return;
+    setPostingAnnouncement(true);
+    try {
+      await addDoc(collection(db, "groups", viewingGroup.id, "announcements"), {
+        text: newAnnouncement.trim(),
+        authorName: userName,
+        authorUid: user.uid,
+        createdAt: serverTimestamp(),
+        pinned: false,
+      });
+      setNewAnnouncement("");
+    } catch (e) { setError("Failed to post: " + e.message); }
+    finally { setPostingAnnouncement(false); }
+  };
+
+  const isGroupAdmin = (group) => {
+    if (!user || !group) return false;
+    return group.adminUid === user.uid || (group.coAdmins || []).includes(user.email);
+  };
+
+  // Handle /g/ invite link
   // PWA Install Prompt logic
   useEffect(() => {
     // Check if already running as installed PWA
@@ -3173,6 +3285,7 @@ useEffect(() => {
         universityId: selectedUni.id,
         universityName: selectedUni.short,
         communityName: createCollectionData.communityName.trim() || selectedUni.short,
+        ...(createCollectionData.groupId ? { groupId: createCollectionData.groupId } : {}),
         communityType: createCollectionData.communityType || "class",
         collectionType: createCollectionData.collectionType || "order",
         title: createCollectionData.title.trim(),
@@ -3201,7 +3314,7 @@ useEffect(() => {
       setShowEntryQR(false);
       setShowCreateCollectionSuccess(true);
       setSuccess("Order / event created!");
-      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", photoFiles: [], photoPreviews: [] });
+      setCreateCollectionData({ title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", groupId: "", photoFiles: [], photoPreviews: [] });
       loadCollections();
     } catch (err) {
       console.error("Error creating collection:", err);
@@ -3993,11 +4106,22 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communities"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin") && (
+    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communities"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
-          else if (page==="collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); goBack(); }
+          else if (page==="collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); setPage("communities"); }
+          else if (page==="groupDetail") { if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current(); setViewingGroup(null); setGroupAnnouncements([]); setPage("communities"); }
+          else if (page==="communityDetail") { setViewingCommunity(null); setPage("communities"); }
+          else if (page==="createCollection") { setShowCreateCollectionSuccess(false); setPage("communities"); }
+          else if (page==="createRoom") { setShowCreateRoomSuccess(false); setPage("rooms"); }
+          else if (page==="createService") { setShowCreateServiceSuccess(false); setPage("services"); }
+          else if (page==="create") setPage("home");
+          else if (page==="collections") setPage("communities");
+          else if (page==="rooms" || page==="roommates") setPage("home");
+          else if (page==="services") setPage("home");
+          else if (page==="communities") setPage("home");
+          else if (page==="messages" || page==="profile" || page==="saved" || page==="admin") setPage("home");
           else goBack();
         }}
         style={{
@@ -5840,44 +5964,226 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ COMMUNITIES INDEX ============ */}
       {page==="communities"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          {/* Header */}
           <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Groups</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a group to see all active orders/collections and events inside it.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-              <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
-              <button onClick={()=>setPage("collections")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>View all</button>
+              <button onClick={()=>{user ? setShowCreateGroup(true) : requireAuth("createGroup",()=>setShowCreateGroup(true));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Group</button>
+              <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'rgba(15,27,45,0.15)',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
             </div>
           </div>
 
-          {collections.length === 0 ? (
+          {/* Real groups */}
+          {groups.length > 0 && (
+            <div style={{margin:'0 16px 16px'}}>
+              <div style={{fontSize:'12px',fontWeight:'700',color:'#8a9bb0',marginBottom:'8px',letterSpacing:'0.5px'}}>GROUPS</div>
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {groups.map(group => (
+                  <button key={group.id} type="button" onClick={()=>openGroup(group)} style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:'12px'}}>
+                    <div style={{width:'44px',height:'44px',borderRadius:'12px',background:'linear-gradient(135deg,#06d6c7,#0d9488)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>
+                      {group.type==="church"?"⛪":group.type==="club"?"🏆":group.type==="hostel"?"🏠":group.type==="freshers"?"🎓":"🏫"}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
+                      {group.desc && <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{group.desc}</div>}
+                      <div style={{fontSize:'11px',color:'#06d6c7',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
+                    </div>
+                    {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'#fef3c7',color:'#92400e',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Legacy collection-based communities */}
+          {collections.length > 0 && (
+            <div style={{margin:'0 16px'}}>
+              <div style={{fontSize:'12px',fontWeight:'700',color:'#8a9bb0',marginBottom:'8px',letterSpacing:'0.5px'}}>ORDERS & EVENTS</div>
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {Object.values(collections.reduce((acc, col) => {
+                  const key = (col.communityName || col.universityName || "General").trim();
+                  if (!acc[key]) acc[key] = { name: key, items: [], orders: 0, events: 0 };
+                  acc[key].items.push(col);
+                  if ((col.collectionType || "order") === "event") acc[key].events += 1;
+                  else acc[key].orders += 1;
+                  return acc;
+                }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
+                  <button key={group.name} type="button" onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }} style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
+                      <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
+                      <div style={{fontSize:'11px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
+                    </div>
+                    <div style={{marginTop:'6px',fontSize:'12px',color:'#6b7280'}}>{group.orders} orders • {group.events} events</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {groups.length === 0 && collections.length === 0 && (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>🏫</div>
               <div style={{fontSize:'16px',fontWeight:'600'}}>No active groups yet</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create an order/collection or event under a group name and it will appear here.</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create a group or an order/event and it will appear here.</div>
             </div>
-          ) : (
-            <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {Object.values(collections.reduce((acc, col) => {
-                const key = (col.communityName || col.universityName || "General").trim();
-                if (!acc[key]) acc[key] = { name: key, items: [], orders: 0, events: 0 };
-                acc[key].items.push(col);
-                if ((col.collectionType || "order") === "event") acc[key].events += 1;
-                else acc[key].orders += 1;
-                return acc;
-              }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
-                <button
-                  key={group.name}
-                  type="button"
-                  onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }}
-                  style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}
-                >
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
-                    <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
-                    <div style={{fontSize:'11px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
+          )}
+
+          {/* Create Group Modal */}
+          {showCreateGroup && (
+            <div onClick={()=>setShowCreateGroup(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.6)',zIndex:3000,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+              <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px',width:'100%',maxWidth:'480px',maxHeight:'80vh',overflowY:'auto'}}>
+                <div style={{fontSize:'18px',fontWeight:'700',marginBottom:'16px'}}>Create a Group</div>
+
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Group Name *</label>
+                  <input type="text" placeholder="e.g. ARU Catholic Community, Architecture Year 2" value={createGroupData.name} onChange={e=>setCreateGroupData({...createGroupData,name:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>
+                </div>
+
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Description (optional)</label>
+                  <input type="text" placeholder="What is this group for?" value={createGroupData.desc} onChange={e=>setCreateGroupData({...createGroupData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>
+                </div>
+
+                <div style={{marginBottom:'20px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'8px'}}>Group Type</label>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {[["class","🏫","Class / Year"],["church","⛪","Church"],["club","🏆","Club"],["hostel","🏠","Hostel"],["freshers","🎓","Freshers"],["other","👥","Other"]].map(([id,icon,label])=>(
+                      <button key={id} type="button" onClick={()=>setCreateGroupData({...createGroupData,type:id})} style={{padding:'8px 14px',borderRadius:'10px',border:createGroupData.type===id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createGroupData.type===id?'#f0fffe':'#fff',fontSize:'13px',fontWeight:createGroupData.type===id?'700':'400',cursor:'pointer'}}>{icon} {label}</button>
+                    ))}
                   </div>
-                  <div style={{marginTop:'8px',fontSize:'12px',color:'#6b7280'}}>{group.orders} orders • {group.events} events</div>
+                </div>
+
+                <button onClick={createGroup} disabled={uploading||!createGroupData.name.trim()} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'700',cursor:uploading?'wait':'pointer',opacity:!createGroupData.name.trim()?0.6:1}}>
+                  {uploading ? "Creating..." : "✓ Create Group"}
                 </button>
-              ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============ GROUP DETAIL ============ */}
+      {page==="groupDetail"&&viewingGroup&&(
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          {/* Header */}
+          <div style={{background:'linear-gradient(135deg,#06d6c7 0%,#0d9488 100%)',padding:'20px 18px',margin:'0 16px 16px',borderRadius:'18px'}}>
+            <div style={{fontSize:'22px',marginBottom:'4px'}}>{viewingGroup.type==="church"?"⛪":viewingGroup.type==="club"?"🏆":viewingGroup.type==="hostel"?"🏠":viewingGroup.type==="freshers"?"🎓":"🏫"}</div>
+            <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{viewingGroup.name}</div>
+            {viewingGroup.desc && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.8)',marginBottom:'12px'}}>{viewingGroup.desc}</div>}
+
+            {/* Invite link — visible to all */}
+            <div style={{background:'rgba(255,255,255,0.15)',borderRadius:'10px',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom:'8px'}}>
+              <div style={{fontSize:'11px',color:'rgba(255,255,255,0.9)',fontFamily:'monospace',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>kampasika.org/g/{viewingGroup.inviteCode}</div>
+              <button onClick={()=>{
+                const link = viewingGroup.inviteLink || `https://kampasika.org/g/${viewingGroup.inviteCode}`;
+                if (navigator.share) { navigator.share({ title: viewingGroup.name, text: `Join ${viewingGroup.name} on Kampasika`, url: link }); }
+                else { navigator.clipboard?.writeText(link).then(()=>{ setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000); }); }
+              }} style={{background:'#fff',color:'#0d9488',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',cursor:'pointer',flexShrink:0}}>Share</button>
+            </div>
+
+            <button onClick={()=>{
+              const link = viewingGroup.inviteLink || `https://kampasika.org/g/${viewingGroup.inviteCode}`;
+              const msg = `👋 Join *${viewingGroup.name}* on Kampasika!\n\nAnnouncements, orders & events in one place.\n👉 ${link}`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+            }} style={{width:'100%',padding:'10px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+              Share to WhatsApp
+            </button>
+          </div>
+
+          {/* ANNOUNCEMENTS */}
+          <div style={{margin:'0 16px 16px'}}>
+            <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d',marginBottom:'10px'}}>📢 Announcements</div>
+
+            {isGroupAdmin(viewingGroup) && (
+              <div style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1.5px solid #e2e6ea',marginBottom:'12px'}}>
+                <textarea
+                  value={newAnnouncement}
+                  onChange={e=>setNewAnnouncement(e.target.value)}
+                  placeholder="Write an announcement for the group..."
+                  rows={3}
+                  style={{width:'100%',border:'none',outline:'none',fontSize:'14px',fontFamily:'inherit',resize:'none',boxSizing:'border-box',marginBottom:'8px'}}
+                />
+                <button onClick={postAnnouncement} disabled={postingAnnouncement||!newAnnouncement.trim()} style={{padding:'10px 20px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',opacity:!newAnnouncement.trim()?0.5:1}}>
+                  {postingAnnouncement ? "Posting..." : "📢 Post Announcement"}
+                </button>
+              </div>
+            )}
+
+            {groupAnnouncements.length === 0 ? (
+              <div style={{textAlign:'center',padding:'24px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>No announcements yet.</div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {groupAnnouncements.map(ann=>(
+                  <div key={ann.id} style={{background:'#fffbeb',border:'1.5px solid #fde68a',borderRadius:'12px',padding:'14px'}}>
+                    <div style={{fontSize:'14px',lineHeight:1.6,color:'#0f1b2d',whiteSpace:'pre-wrap'}}>{ann.text}</div>
+                    <div style={{fontSize:'11px',color:'#92400e',marginTop:'8px',fontWeight:'600'}}>{ann.authorName} · {ann.createdAt ? ann.createdAt.toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* COLLECTIONS under this group */}
+          <div style={{margin:'0 16px 16px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+              <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>📋 Orders & Events</div>
+              {isGroupAdmin(viewingGroup) && (
+                <button onClick={()=>{
+                  setCreateCollectionData(prev=>({...prev,communityName:viewingGroup.name,groupId:viewingGroup.id}));
+                  setPage("createCollection");
+                }} style={{padding:'7px 14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>+ Add</button>
+              )}
+            </div>
+
+            {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).length === 0 ? (
+              <div style={{textAlign:'center',padding:'20px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>No orders or events yet.{isGroupAdmin(viewingGroup)?" Tap + Add above to create one.":""}</div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).map(col=>(
+                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'12px',padding:'14px',cursor:'pointer',border:'1px solid #e2e6ea',display:'flex',gap:'12px',alignItems:'center'}}>
+                    <div style={{width:'44px',height:'44px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>📋</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>{col.title}</div>
+                      <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px'}}>{col.price?.toLocaleString()} TSh · {col.totalOrders||0} joined</div>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a9bb0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Admin tools */}
+          {isGroupAdmin(viewingGroup) && (
+            <div style={{margin:'0 16px 16px',background:'#f4f6f8',borderRadius:'12px',padding:'14px'}}>
+              <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'10px'}}>⚙️ Admin</div>
+              <div style={{marginBottom:'10px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'#6b7280'}}>Add co-admin by email</label>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <input type="email" id="coAdminEmail" placeholder="their.email@gmail.com" style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
+                  <button onClick={async()=>{
+                    const emailInput = document.getElementById('coAdminEmail');
+                    const email = emailInput?.value?.trim();
+                    if (!email) return;
+                    try {
+                      await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] });
+                      setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]});
+                      emailInput.value = "";
+                      setSuccess("Co-admin added!");
+                      setTimeout(()=>setSuccess(""),2000);
+                    } catch(e){ setError("Failed: "+e.message); }
+                  }} style={{padding:'10px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Add</button>
+                </div>
+                {(viewingGroup.coAdmins||[]).length > 0 && (
+                  <div style={{marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {viewingGroup.coAdmins.map(email=>(
+                      <span key={email} style={{fontSize:'11px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'6px',padding:'4px 8px',color:'#6b7280'}}>{email}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -6065,8 +6371,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                   </>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setLastCreatedCollectionId(null);setShowEntryQR(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setLastCreatedCollectionId(null);setShowEntryQR(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
@@ -6750,7 +7056,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and contact you</div>
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
-                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setCreateRoomData({landlordName:"",landlordPhone:"",roomType:"",price:"",location:"",lat:null,lng:null,nearUni:"ARU",desc:"",amenities:[],photoFiles:[],photoPreviews:[]});setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
@@ -9338,7 +9644,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   backdropFilter:'blur(20px)',
   WebkitBackdropFilter:'blur(20px)',
   borderTop:'1px solid rgba(226,230,234,0.6)',
-  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"?'none':'flex',
+  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
