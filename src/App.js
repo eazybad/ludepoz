@@ -5271,7 +5271,7 @@ return (
                   <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                   <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#06d6c7'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
               </div>
               <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
               {room.amenities && room.amenities.length > 0 && (
@@ -5901,7 +5901,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     }
   })() : ''}
   {isMine && (
-    <span style={{marginLeft:'6px',color:wasRead?'#0d9488':'inherit',fontWeight:wasRead?'600':'400'}}>
+    <span style={{marginLeft:'6px',color:wasRead?'#22c55e':'inherit',fontWeight:wasRead?'600':'400'}}>
       {statusText}
     </span>
   )}
@@ -6118,7 +6118,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <span style={{fontSize:'11px',color:'#8a9bb0'}}>{svc.userName}</span>
                         </div>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                          <span style={{fontFamily:'serif',fontSize:'15px',fontWeight:'700',color:'#0d9488'}}>{svc.price?.toLocaleString()} TSh</span>
+                          <span style={{fontFamily:'serif',fontSize:'15px',fontWeight:'700',color:'#f59e0b'}}>{svc.price?.toLocaleString()} TSh</span>
                           <span style={{fontSize:'10px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{svc.priceType === "starting" ? "from" : ""}</span>
                         </div>
                       </div>
@@ -6568,11 +6568,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         <div style={{display:"flex",justifyContent:"space-between",gap:"10px",alignItems:"flex-start"}}>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:"15px",fontWeight:"800",color:"#0f1b2d",marginBottom:"3px"}}>{col.title}</div>
-                            <div style={{fontSize:"12px",color:"#667781"}}>{col.price?.toLocaleString()} TSh per person - {col.totalOrders || 0} joined</div>
+                            <div style={{fontSize:"12px",color:"#f59e0b",fontWeight:"700"}}>{col.price?.toLocaleString()} TSh per person - {col.totalOrders || 0} joined</div>
                           </div>
-                          <div style={{fontSize:"12px",fontWeight:"800",color:paidPercent>=100?"#047857":"#b45309",background:paidPercent>=100?"#d1fae5":"#ccfbf1",padding:"4px 8px",borderRadius:"999px",flexShrink:0}}>{paidPercent}% paid</div>
+                          <div style={{fontSize:"12px",fontWeight:"800",color:paidPercent>=100?"#22c55e":"#0d9488",background:paidPercent>=100?"#f0fdf4":"#ccfbf1",padding:"4px 8px",borderRadius:"999px",flexShrink:0}}>{paidPercent}% paid</div>
                         </div>
-                        <div style={{height:"6px",background:"#eef2f7",borderRadius:"999px",overflow:"hidden",marginTop:"12px"}}><div style={{height:"100%",width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?"#10b981":"#0d9488",borderRadius:"999px"}} /></div>
+                        <div style={{height:"6px",background:"#eef2f7",borderRadius:"999px",overflow:"hidden",marginTop:"12px"}}><div style={{height:"100%",width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?"#22c55e":"#06d6c7",borderRadius:"999px"}} /></div>
                       </div>
                     );
                   })}
@@ -6630,7 +6630,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
                       <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                       <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
-                      <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#0d9488'}}>{col.price?.toLocaleString()} TSh</div>
+                      <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
                     </div>
                   </div>
                   <div style={{marginTop:'12px'}}>
@@ -6639,7 +6639,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
                     </div>
                     <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#0d9488',borderRadius:'3px',transition:'width 0.3s'}}/>
+                      <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#22c55e':'#06d6c7',borderRadius:'3px',transition:'width 0.3s'}}/>
                     </div>
                   </div>
                 </div>
@@ -6715,7 +6715,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
                         <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                         <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
-                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#0d9488'}}>{col.price?.toLocaleString()} TSh</div>
+                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
                       </div>
                     </div>
                     {/* Progress bar */}
@@ -6725,7 +6725,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
                       </div>
                       <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
-                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#0d9488',borderRadius:'3px',transition:'width 0.3s'}}/>
+                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#22c55e':'#06d6c7',borderRadius:'3px',transition:'width 0.3s'}}/>
                       </div>
                     </div>
                     {col.options && col.options.length > 0 && (
@@ -6959,7 +6959,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
             )}
             
-            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#0d9488',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
+            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
 
             {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'#ccfbf1',color:'#0f766e',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
 
@@ -6970,11 +6970,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             {/* Stats cards */}
             <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
               <div style={{flex:1,background:'#ccfbf1',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                <div style={{fontSize:'24px',fontWeight:'700',color:'#0d9488'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#0f766e'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#f59e0b'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#f59e0b'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
                 <div style={{fontSize:'11px',color:'#0f766e'}}>Ordered</div>
               </div>
               <div style={{flex:1,background:'#d1fae5',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                <div style={{fontSize:'24px',fontWeight:'700',color:'#10b981'}}>{viewingCollection.totalPaid || 0}</div>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#22c55e'}}>{viewingCollection.totalPaid || 0}</div>
                 <div style={{fontSize:'11px',color:'#065f46'}}>Paid</div>
               </div>
               <div style={{flex:1,background:'#fee2e2',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
@@ -6987,7 +6987,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea',marginBottom:'16px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontSize:'13px',color:'#6b7280'}}>Amount Collected</span>
-                <span style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#10b981'}}>{((viewingCollection.totalPaid||0) * viewingCollection.price).toLocaleString()} TSh</span>
+                <span style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#22c55e'}}>{((viewingCollection.totalPaid||0) * viewingCollection.price).toLocaleString()} TSh</span>
               </div>
               {viewingCollection.expectedPeople > 0 && (
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'6px'}}>
@@ -6998,7 +6998,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               {viewingCollection.expectedPeople > 0 && (
                 <div style={{marginTop:'8px'}}>
                   <div style={{height:'8px',background:'#f4f6f8',borderRadius:'4px',overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${Math.min(100, Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100))}%`,background:((viewingCollection.totalPaid||0) >= viewingCollection.expectedPeople)?'#10b981':'#0d9488',borderRadius:'4px',transition:'width 0.3s'}}/>
+                    <div style={{height:'100%',width:`${Math.min(100, Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100))}%`,background:((viewingCollection.totalPaid||0) >= viewingCollection.expectedPeople)?'#22c55e':'#06d6c7',borderRadius:'4px',transition:'width 0.3s'}}/>
                   </div>
                   <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px',textAlign:'right'}}>{Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100)}% collected</div>
                 </div>
@@ -7140,7 +7140,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'16px'}}>💰</span><span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>Confirm Payment</span></div>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Already sent the money? Fill in your payment details so the rep can verify</div>
                     
-                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh) *</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#0d9488',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}</div>
+                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh) *</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'4px',fontWeight:'600'}}>Partial payment - {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}</div>
 
                     <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Name on {viewingCollection.payNetwork || 'Mobile Money'} account</label><input type="text" value={orderFormData.payerName} onChange={e=>setOrderFormData({...orderFormData,payerName:e.target.value})} placeholder="e.g. AMINA JUMA (as on M-Pesa)" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>So the rep can match your payment</div></div>
 
@@ -7241,7 +7241,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                               {order.selectedOption && <span style={{background:'#ccfbf1',color:'#0f766e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
                               {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
                               {order.phone && <span>{order.phone} • </span>}
-                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
+                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#22c55e',padding:'1px 6px',borderRadius:'4px',fontSize:'11px',fontWeight:'800'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
                             </div>
                           </div>
                           
@@ -7421,7 +7421,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                           <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                         </div>
-                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#06d6c7'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
                       </div>
                       <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
                       {room.amenities && room.amenities.length > 0 && (
@@ -7697,7 +7697,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
               <div style={{padding:'20px'}}>
                 <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
-                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#06d6c7',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#f59e0b',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
                 {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
                 <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
                 <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>

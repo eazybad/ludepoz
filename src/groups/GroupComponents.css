@@ -661,12 +661,41 @@
   margin-top: 6px;
 }
 
+.message-action-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 4px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #eef2f5;
+}
+
+.message-action-preview-author {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.message-action-preview-text {
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-reactions span {
   border: 1px solid #ccfbf1;
   border-radius: 999px;
   background: #ecfeff;
-  padding: 1px 5px;
+  padding: 1px 6px;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .message-time {
@@ -1246,8 +1275,8 @@
 }
 
 .payment-pill.paid {
-  background: #ccfbf1;
-  color: #0f766e;
+  background: #f0fdf4;
+  color: #22c55e;
 }
 
 .payment-pill.pending {
@@ -1420,4 +1449,39 @@
   .payment-row > .group-inline-actions {
     grid-column: 1;
   }
+}
+/* Amber — numbers, prices, stats */
+.stat-number {
+  color: #f59e0b;
+  font-family: serif;
+  font-weight: 700;
+}
+
+/* Green — confirmed, paid, verified */
+.status-paid,
+.status-verified {
+  color: #22c55e;
+  font-weight: 800;
+}
+
+/* Amber pill — pending amounts */
+.pill-amount {
+  background: #fffbeb;
+  color: #f59e0b;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Green pill — paid / confirmed */
+.pill-paid {
+  background: #f0fdf4;
+  color: #22c55e;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
 }

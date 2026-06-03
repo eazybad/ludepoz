@@ -170,6 +170,7 @@ export function GroupDetailPage({
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
   const messageHoldTimer = useRef(null);
+  const touchStartPos = useRef({ x: 0, y: 0 });
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
@@ -330,9 +331,23 @@ export function GroupDetailPage({
     setShowJumpToLatest(el.scrollHeight - el.scrollTop - el.clientHeight > 120);
   };
 
-  const startMessageHold = (message) => {
+  const startMessageHold = (message, event) => {
     clearTimeout(messageHoldTimer.current);
-    messageHoldTimer.current = setTimeout(() => setActiveMessageActions(message), 450);
+    // Record touch start position so we can cancel if user scrolls
+    if (event?.touches?.[0]) {
+      touchStartPos.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    } else {
+      touchStartPos.current = { x: 0, y: 0 };
+    }
+    messageHoldTimer.current = setTimeout(() => setActiveMessageActions(message), 480);
+  };
+
+  const cancelMessageHoldIfMoved = (event) => {
+    if (!event?.touches?.[0]) return;
+    const dx = Math.abs(event.touches[0].clientX - touchStartPos.current.x);
+    const dy = Math.abs(event.touches[0].clientY - touchStartPos.current.y);
+    // If finger moved more than 8px in any direction it's a scroll — cancel hold
+    if (dx > 8 || dy > 8) clearTimeout(messageHoldTimer.current);
   };
 
   const clearMessageHold = () => clearTimeout(messageHoldTimer.current);
@@ -893,7 +908,8 @@ export function GroupDetailPage({
                     onMouseDown={() => startMessageHold(message)}
                     onMouseUp={clearMessageHold}
                     onMouseLeave={clearMessageHold}
-                    onTouchStart={() => startMessageHold(message)}
+                    onTouchStart={(e) => startMessageHold(message, e)}
+                    onTouchMove={cancelMessageHoldIfMoved}
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
                   >
@@ -907,7 +923,14 @@ export function GroupDetailPage({
                     <div className="message-text">{message.text}</div>
                     {message.reactions && Object.keys(message.reactions).length > 0 && (
                       <div className="message-reactions">
-                        {Object.values(message.reactions).slice(0, 4).map((emoji, reactionIndex) => <span key={`${emoji}-${reactionIndex}`}>{emoji}</span>)}
+                        {Object.entries(
+                          Object.values(message.reactions).reduce((acc, emoji) => {
+                            acc[emoji] = (acc[emoji] || 0) + 1;
+                            return acc;
+                          }, {})
+                        ).slice(0, 5).map(([emoji, count]) => (
+                          <span key={emoji}>{emoji}{count > 1 ? ` ${count}` : ""}</span>
+                        ))}
                       </div>
                     )}
                     <div className="message-time">{formatDate(message.createdAt)}</div>
@@ -928,12 +951,16 @@ export function GroupDetailPage({
                 <>
                   <button type="button" className="message-action-scrim" aria-label="Close message actions" onClick={() => setActiveMessageActions(null)} />
                   <div className="message-action-sheet">
+                    <div className="message-action-preview">
+                      <span className="message-action-preview-author">{activeMessageActions.authorName || "Member"}</span>
+                      <span className="message-action-preview-text">{activeMessageActions.text?.slice(0, 80)}{(activeMessageActions.text?.length || 0) > 80 ? "…" : ""}</span>
+                    </div>
                     <div className="message-action-emojis">
                       {["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F64F}", "\u{1F525}"].map(emoji => (
                         <button key={emoji} type="button" onClick={() => handleReactToMessage(activeMessageActions, emoji)}>{emoji}</button>
                       ))}
                     </div>
-                    <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setActiveMessageActions(null); }}>Reply</button>
+                    <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setShowChatComposer(true); setActiveMessageActions(null); }}>Reply</button>
                     {memberCanManage && <button type="button" className="message-action-row" onClick={() => { setMessageText(activeMessageActions.text || ""); setActiveMessageActions(null); }}>Copy to composer</button>}
                   </div>
                 </>
