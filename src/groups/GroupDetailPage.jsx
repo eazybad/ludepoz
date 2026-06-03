@@ -742,16 +742,7 @@ export function GroupDetailPage({
       </div>
 
       {activeTab === "chats" && (
-        <div className="group-panel">
-          {memberCanChat && (
-            <div className="composer">
-              <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Send a message. Use @firstName to tag someone." />
-              <div className="group-inline-actions">
-                <button className="group-btn primary" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>Send</button>
-                {memberCanManage && <button className="group-btn warn" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("announcement")}>Pin announcement</button>}
-              </div>
-            </div>
-          )}
+        <div className="group-panel chat-panel">
           {messages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
           ) : (
@@ -763,6 +754,15 @@ export function GroupDetailPage({
                   <div className="message-time">{formatDate(message.createdAt)}</div>
                 </div>
               ))}
+            </div>
+          )}
+          {memberCanChat && (
+            <div className="composer chat-composer">
+              <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Send a message. Use @firstName to tag someone." />
+              <div className="group-inline-actions">
+                <button className="group-btn primary" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>Send</button>
+                {memberCanManage && <button className="group-btn warn" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("announcement")}>Pin announcement</button>}
+              </div>
             </div>
           )}
         </div>

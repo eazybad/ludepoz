@@ -31,10 +31,7 @@ export function GroupListPage({
   return (
     <div className="groups-page">
       <div className="groups-hero">
-        <h2>University Groups</h2>
-        <p>
-          WhatsApp-style groups for classes, hostels, clubs, church families, and freshers, with structured payments and member roles.
-        </p>
+        <h2>Groups</h2>
         <div className="group-actions">
           <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
           <button className="group-btn secondary" type="button" onClick={onCreateCollection}>Create order / event</button>

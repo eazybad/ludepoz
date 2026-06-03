@@ -15,16 +15,16 @@
 
 .groups-hero {
   margin: 0 16px 14px;
-  padding: 18px;
+  padding: 14px;
   border-radius: 8px;
   background: #ffffff;
   border: 1px solid #e3e8ef;
 }
 
 .groups-hero h2 {
-  margin: 0 0 5px;
+  margin: 0 0 12px;
   color: #0f1b2d;
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 800;
 }
 
@@ -468,6 +468,12 @@
   padding: 12px;
 }
 
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .composer,
 .payment-card,
 .member-row,
@@ -480,6 +486,14 @@
 .composer {
   padding: 11px;
   margin-bottom: 10px;
+}
+
+.chat-composer {
+  position: sticky;
+  bottom: 8px;
+  z-index: 20;
+  margin: 0;
+  box-shadow: 0 10px 24px rgba(15, 27, 45, 0.14);
 }
 
 .composer textarea {
