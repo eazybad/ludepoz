@@ -2858,17 +2858,18 @@ await updateDoc(convRef, {
       || (group.coAdmins || []).includes(user.email);
   };
 
-  const handleArchiveGroup = async (group) => {
+  const handleArchiveGroup = async (group, mode = "archive") => {
     if (!canArchiveGroup(group)) {
       setError("Only the owner or admin can delete this group.");
       return;
     }
-    if (!window.confirm(`Delete ${group.name}? It will be removed from the groups list.`)) return;
+    const action = mode === "delete" ? "Delete" : "Archive";
+    if (!window.confirm(`${action} ${group.name}? It will be removed from the groups list.`)) return;
     try {
-      await archiveUniversityGroup(db, { groupId: group.id, user });
+      await archiveUniversityGroup(db, { groupId: group.id, user, mode });
       setGroups(prev => prev.filter(item => item.id !== group.id));
       if (viewingGroup?.id === group.id) closeGroupDetail();
-      setSuccess("Group deleted.");
+      setSuccess(mode === "delete" ? "Group deleted." : "Group archived.");
       setTimeout(() => setSuccess(""), 2500);
     } catch (err) {
       setError("Failed to delete group: " + (err.message || String(err)));

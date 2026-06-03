@@ -688,6 +688,22 @@ export async function updateUniversityGroupProfile(db, storage, { group, data, u
   };
 }
 
+export async function updateGroupCurrentAction(db, { groupId, currentAction, user }) {
+  await updateDoc(doc(db, "groups", groupId), {
+    currentAction: {
+      type: currentAction.type || "announcement",
+      title: (currentAction.title || "Pinned update").trim(),
+      description: (currentAction.description || "").trim(),
+      amount: Number(currentAction.amount || 0),
+      targetId: currentAction.targetId || "",
+      ctaLabel: currentAction.ctaLabel || "",
+      updatedByUid: user.uid,
+      updatedAt: serverTimestamp(),
+    },
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function leaveUniversityGroup(db, { group, member }) {
   if (member?.role === "owner") {
     throw new Error("The owner cannot leave before transferring ownership.");
@@ -699,9 +715,11 @@ export async function leaveUniversityGroup(db, { group, member }) {
   });
 }
 
-export async function archiveUniversityGroup(db, { groupId, user }) {
+export async function archiveUniversityGroup(db, { groupId, user, mode = "archive" }) {
   await updateDoc(doc(db, "groups", groupId), {
     active: false,
+    status: mode === "delete" ? "deleted" : "archived",
+    deleteRequested: mode === "delete",
     archivedByUid: user.uid,
     archivedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

@@ -71,6 +71,11 @@
   color: #344054;
 }
 
+.group-btn.danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .group-btn:disabled {
   opacity: 0.5;
   cursor: wait;
@@ -105,6 +110,42 @@
 
 .group-card + .group-card {
   margin-top: 8px;
+}
+
+.group-card.selected {
+  border-color: #0d9488;
+  background: #ecfeff;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.14);
+}
+
+.group-selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid #99f0ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.08);
+}
+
+.group-selection-bar strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #0f1b2d;
+  font-size: 13px;
+}
+
+.group-selection-bar > div {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.group-selection-bar .group-btn {
+  padding: 8px 10px;
+  font-size: 12px;
 }
 
 .group-avatar {
@@ -296,6 +337,7 @@
 }
 
 .group-pin {
+  width: calc(100% - 24px);
   margin: 0 12px 10px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -303,16 +345,35 @@
   color: rgba(255, 255, 255, 0.9);
   font-size: 12px;
   line-height: 1.4;
+  border: none;
+  text-align: left;
 }
 
 .group-pin.active-member {
-  background: #dcfce7;
-  color: #14532d;
-  border: 1px solid #86efac;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .group-pin.active-member strong {
-  color: #065f46;
+  color: #ffffff;
+}
+
+.group-pin.active-member .group-pin-text {
+  color: #86efac;
+  font-weight: 800;
+}
+
+.group-pin.editable {
+  cursor: pointer;
+}
+
+.group-pin.editable:after {
+  content: "Tap to edit";
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .group-description-strip {

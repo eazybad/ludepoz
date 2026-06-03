@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import "./GroupComponents.css";
 import { DEMO_GROUPS, groupAvatarText } from "./groupService";
 
@@ -29,6 +29,7 @@ export function GroupListPage({
   currentUserId = "",
 }) {
   const hasGroups = groups.length > 0;
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
 
@@ -48,7 +49,7 @@ export function GroupListPage({
     if (!canDeleteGroup(group)) return;
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
-      onDeleteGroup?.(group);
+      setSelectedGroupId(group.id);
     }, 650);
   };
 
@@ -57,8 +58,14 @@ export function GroupListPage({
       longPressTriggered.current = false;
       return;
     }
+    if (selectedGroupId) {
+      setSelectedGroupId(selectedGroupId === group.id ? "" : group.id);
+      return;
+    }
     onOpenGroup(group);
   };
+
+  const selectedGroup = groups.find(group => group.id === selectedGroupId);
 
   return (
     <div className="groups-page">
@@ -96,17 +103,27 @@ export function GroupListPage({
 
       <div className="group-section">
         <div className="group-section-title">Groups</div>
+        {selectedGroup && canDeleteGroup(selectedGroup) && (
+          <div className="group-selection-bar">
+            <strong>{selectedGroup.name}</strong>
+            <div>
+              <button type="button" className="group-btn ghost" onClick={() => { onDeleteGroup?.(selectedGroup, "archive"); setSelectedGroupId(""); }}>Archive</button>
+              <button type="button" className="group-btn danger" onClick={() => { onDeleteGroup?.(selectedGroup, "delete"); setSelectedGroupId(""); }}>Delete</button>
+              <button type="button" className="group-btn ghost" onClick={() => setSelectedGroupId("")}>Cancel</button>
+            </div>
+          </div>
+        )}
         {hasGroups ? (
           groups.map(group => (
             <button
               key={group.id}
               type="button"
-              className="group-card"
+              className={`group-card ${selectedGroupId === group.id ? "selected" : ""}`}
               onClick={() => handleGroupOpen(group)}
               onContextMenu={event => {
                 if (!canDeleteGroup(group)) return;
                 event.preventDefault();
-                onDeleteGroup?.(group);
+                setSelectedGroupId(group.id);
               }}
               onMouseDown={() => startGroupLongPress(group)}
               onMouseUp={clearLongPress}
@@ -133,7 +150,7 @@ export function GroupListPage({
                 </div>
               </div>
               {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
-              {canDeleteGroup(group) ? <span className="group-role-pill">Hold to delete</span> : isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
+              {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
             </button>
           ))
         ) : (

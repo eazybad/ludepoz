@@ -22,6 +22,7 @@ import {
   requestGroupPaymentProof,
   sendCollectionDeadlineReminder,
   updateGroupMentionPermission,
+  updateGroupCurrentAction,
   updateGroupMute,
   updateGroupNotificationPreferences,
   updateMemberRole,
@@ -634,6 +635,29 @@ export function GroupDetailPage({
     }
   };
 
+  const handleEditPinnedUpdate = async () => {
+    if (!memberCanManage || !user) return;
+    const nextTitle = window.prompt("Pinned update title", currentAction?.title || "Pinned update");
+    if (nextTitle === null) return;
+    const nextDescription = window.prompt("Pinned update text", currentAction?.description || group.desc || "");
+    if (nextDescription === null) return;
+    setBusy(true);
+    try {
+      const nextAction = {
+        ...(currentAction || {}),
+        title: nextTitle.trim() || "Pinned update",
+        description: nextDescription.trim(),
+      };
+      await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
+      onGroupUpdated?.({ ...group, currentAction: nextAction });
+      onSuccess("Pinned update changed.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleLeaveGroup = async () => {
     if (!currentMember || !user) return;
     if (!window.confirm(`Leave ${group.name}?`)) return;
@@ -756,10 +780,15 @@ export function GroupDetailPage({
           </div>
         </div>
         {currentAction || group.desc ? (
-          <div className={`group-pin ${isGroupMember(currentMember) ? "active-member" : ""}`}>
-            <strong>{currentAction?.title || "Current action"}:</strong> {currentAction?.description || group.desc}
-            {currentAction?.amount ? <span> · {Number(currentAction.amount).toLocaleString()} TSh</span> : null}
-          </div>
+          <button
+            type="button"
+            className={`group-pin ${isGroupMember(currentMember) ? "active-member" : ""} ${memberCanManage ? "editable" : ""}`}
+            onClick={memberCanManage ? handleEditPinnedUpdate : undefined}
+          >
+            <strong>{currentAction?.title || "Pinned update"}:</strong>{" "}
+            <span className="group-pin-text">{currentAction?.description || group.desc}</span>
+            {currentAction?.amount ? <span className="group-pin-text"> · {Number(currentAction.amount).toLocaleString()} TSh</span> : null}
+          </button>
         ) : null}
         {currentAction && group.desc ? (
           <div className="group-description-strip">{group.desc}</div>
