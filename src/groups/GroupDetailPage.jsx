@@ -11,6 +11,8 @@ import {
   isGroupMember,
   leaveUniversityGroup,
   paymentSummary,
+  addGroupResource,
+  reactToGroupMessage,
   sendGroupMessage,
   submitGroupPayment,
   registerGroupEvent,
@@ -76,6 +78,12 @@ function MenuIcon({ name }) {
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 19.4 9c.2.6.8 1 1.5 1H21a2 2 0 1 1 0 4h-.2c-.7 0-1.3.4-1.5 1Z" /></>,
     leave: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
+    send: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7Z" /></>,
+    down: <><path d="M12 5v14" /><path d="M19 12l-7 7-7-7" /></>,
+    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    close: <><path d="M18 6L6 18" /><path d="M6 6l12 12" /></>,
+    share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.7l6.8-4.4" /><path d="M8.6 13.3l6.8 4.4" /></>,
+    more: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -141,6 +149,10 @@ export function GroupDetailPage({
   const [payments, setPayments] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [showChatComposer, setShowChatComposer] = useState(false);
+  const [showChatTools, setShowChatTools] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState(null);
+  const [activeMessageActions, setActiveMessageActions] = useState(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
   const [trackerData, setTrackerData] = useState(emptyTracker);
@@ -156,6 +168,8 @@ export function GroupDetailPage({
   const [busy, setBusy] = useState(false);
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
+  const messageListRef = useRef(null);
+  const messageHoldTimer = useRef(null);
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
@@ -237,8 +251,14 @@ export function GroupDetailPage({
       setShowTrackerForm(false);
       return true;
     }
-    if (showChatComposer) {
+    if (activeMessageActions) {
+      setActiveMessageActions(null);
+      return true;
+    }
+    if (showChatComposer || showChatTools || replyToMessage) {
       setShowChatComposer(false);
+      setShowChatTools(false);
+      setReplyToMessage(null);
       return true;
     }
     if (selectedCollectionId) {
@@ -254,7 +274,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeTab, expandedProofUrl, selectedCollectionId, showChatComposer, showPaymentForm, showTrackerForm]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showTrackerForm]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -290,8 +310,32 @@ export function GroupDetailPage({
 
   useEffect(() => {
     if (activeTab !== "chats") return;
-    chatBottomRef.current?.scrollIntoView({ block: "end" });
+    const el = messageListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setShowJumpToLatest(false);
   }, [activeTab, chatMessages.length]);
+
+  const scrollChatToLatest = () => {
+    const el = messageListRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+    setShowJumpToLatest(false);
+  };
+
+  const handleChatScroll = () => {
+    const el = messageListRef.current;
+    if (!el) return;
+    setShowJumpToLatest(el.scrollHeight - el.scrollTop - el.clientHeight > 120);
+  };
+
+  const startMessageHold = (message) => {
+    clearTimeout(messageHoldTimer.current);
+    messageHoldTimer.current = setTimeout(() => setActiveMessageActions(message), 450);
+  };
+
+  const clearMessageHold = () => clearTimeout(messageHoldTimer.current);
 
   useEffect(() => {
     setPaymentData(prev => ({ ...prev, studentName: prev.studentName || userName || "" }));
@@ -371,14 +415,42 @@ export function GroupDetailPage({
         pinned: kind === "announcement",
         group,
         members,
+        replyTo: replyToMessage,
       });
       setMessageText("");
       setShowChatComposer(false);
+      setShowChatTools(false);
+      setReplyToMessage(null);
       markCurrentGroupRead();
     } catch (err) {
       onError(err);
     } finally {
       setPosting(false);
+    }
+  };
+
+  const handleReactToMessage = async (message, emoji) => {
+    try {
+      await reactToGroupMessage(db, { groupId: group.id, messageId: message.id, emoji, user });
+      setActiveMessageActions(null);
+    } catch (err) {
+      onError(err);
+    }
+  };
+
+  const handleAddResourceFromChat = async () => {
+    const title = window.prompt("Resource title or file name");
+    if (!title) return;
+    const url = window.prompt("Resource link (optional)", "");
+    setBusy(true);
+    try {
+      await addGroupResource(db, { groupId: group.id, user, profile, title, url: url || "" });
+      setShowChatTools(false);
+      onSuccess("Resource shared.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -715,22 +787,22 @@ export function GroupDetailPage({
             <h2>{group.name}</h2>
             <div>
               {(members.length || group.memberCount || 0).toLocaleString()} members
-              {currentMember?.role ? ` · ${currentMember.role}` : ""}
+              {currentMember?.role ? ` - ${currentMember.role}` : ""}
             </div>
           </div>
-          <button type="button" className="group-icon-btn" aria-label="Share group" onClick={onShareGroup}>↗</button>
+          <button type="button" className="group-icon-btn" aria-label="Share group" onClick={onShareGroup}><MenuIcon name="share" /></button>
           <div className="group-menu-wrap">
-            <button type="button" className="group-icon-btn" aria-label="Open group menu" onClick={() => setMenuOpen(value => !value)}>⋮</button>
+            <button type="button" className="group-icon-btn" aria-label="Open group menu" onClick={() => setMenuOpen(value => !value)}><MenuIcon name="more" /></button>
             {menuOpen && (
               <>
                 <button type="button" className="group-menu-scrim" aria-label="Close group menu" onClick={() => setMenuOpen(false)} />
                 <div className="group-side-menu">
                   <div className="group-side-menu-title">{group.name}</div>
                   {[
-                    ["chats", "Chats", "💬"],
-                    ["payments", "Payments", "💳"],
-                    ["members", "Members", "👥"],
-                    ["resources", "Resources", "📎"],
+                    ["chats", "Chats"],
+                    ["payments", "Payments"],
+                    ["members", "Members"],
+                    ["resources", "Resources"],
                   ].map(([id, label]) => (
                     <button
                       key={id}
@@ -788,7 +860,7 @@ export function GroupDetailPage({
           >
             <strong>{currentAction?.title || "Pinned update"}:</strong>{" "}
             <span className="group-pin-text">{currentAction?.description || group.desc}</span>
-            {currentAction?.amount ? <span className="group-pin-text"> · {Number(currentAction.amount).toLocaleString()} TSh</span> : null}
+            {currentAction?.amount ? <span className="group-pin-text"> - {Number(currentAction.amount).toLocaleString()} TSh</span> : null}
           </button>
         ) : null}
         {currentAction && group.desc ? (
@@ -805,21 +877,41 @@ export function GroupDetailPage({
       </div>
 
       {activeTab === "chats" && (
-        <div className="group-panel chat-panel">
+        <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
           {messages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
           ) : (
-            <div className="message-list">
+            <div className="message-list" ref={messageListRef} onScroll={handleChatScroll}>
               {chatMessages.map((message, index) => (
                 <div key={message.id} className="message-stack">
                   {(index === 0 || !sameMessageDay(chatMessages[index - 1]?.createdAt, message.createdAt)) && (
                     <div className="message-date-chip">{formatMessageDay(message.createdAt)}</div>
                   )}
-                  <div className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}>
+                  <button
+                    type="button"
+                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}
+                    onMouseDown={() => startMessageHold(message)}
+                    onMouseUp={clearMessageHold}
+                    onMouseLeave={clearMessageHold}
+                    onTouchStart={() => startMessageHold(message)}
+                    onTouchEnd={clearMessageHold}
+                    onTouchCancel={clearMessageHold}
+                  >
                     <div className="message-author">{message.authorName || "Member"}</div>
+                    {message.replyTo && (
+                      <div className="message-reply-preview">
+                        <strong>{message.replyTo.authorName}</strong>
+                        <span>{message.replyTo.text}</span>
+                      </div>
+                    )}
                     <div className="message-text">{message.text}</div>
+                    {message.reactions && Object.keys(message.reactions).length > 0 && (
+                      <div className="message-reactions">
+                        {Object.values(message.reactions).slice(0, 4).map((emoji, reactionIndex) => <span key={`${emoji}-${reactionIndex}`}>{emoji}</span>)}
+                      </div>
+                    )}
                     <div className="message-time">{formatDate(message.createdAt)}</div>
-                  </div>
+                  </button>
                 </div>
               ))}
               <div ref={chatBottomRef} />
@@ -827,26 +919,73 @@ export function GroupDetailPage({
           )}
           {memberCanChat && (
             <>
-              <button
-                type="button"
-                className="chat-compose-fab"
-                aria-label="Write group message"
-                onClick={() => setShowChatComposer(true)}
-              >
-                <MenuIcon name="chats" />
-              </button>
-              {showChatComposer && (
+              {showJumpToLatest && (
+                <button type="button" className="chat-jump-btn" aria-label="Go to latest message" onClick={scrollChatToLatest}>
+                  <MenuIcon name="down" />
+                </button>
+              )}
+              {activeMessageActions && (
                 <>
-                  <button type="button" className="chat-composer-scrim" aria-label="Close message composer" onClick={() => setShowChatComposer(false)} />
-                  <div className="composer chat-composer-sheet">
-                    <div className="chat-composer-head">
-                      <strong>Message</strong>
-                      <button type="button" aria-label="Close message composer" onClick={() => setShowChatComposer(false)}>×</button>
+                  <button type="button" className="message-action-scrim" aria-label="Close message actions" onClick={() => setActiveMessageActions(null)} />
+                  <div className="message-action-sheet">
+                    <div className="message-action-emojis">
+                      {["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F64F}", "\u{1F525}"].map(emoji => (
+                        <button key={emoji} type="button" onClick={() => handleReactToMessage(activeMessageActions, emoji)}>{emoji}</button>
+                      ))}
                     </div>
-                    <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Send a message. Use @firstName to tag someone." autoFocus />
-                    <div className="group-inline-actions">
-                      <button className="group-btn primary" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>Send</button>
-                      {memberCanManage && <button className="group-btn warn" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("announcement")}>Pin announcement</button>}
+                    <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setActiveMessageActions(null); }}>Reply</button>
+                    {memberCanManage && <button type="button" className="message-action-row" onClick={() => { setMessageText(activeMessageActions.text || ""); setActiveMessageActions(null); }}>Copy to composer</button>}
+                  </div>
+                </>
+              )}
+              {!showChatComposer && !replyToMessage && !showChatTools && (
+                <button
+                  type="button"
+                  className="chat-compose-pill"
+                  aria-label="Write group message"
+                  onClick={() => setShowChatComposer(true)}
+                >
+                  <MenuIcon name="chats" />
+                </button>
+              )}
+              {(showChatComposer || replyToMessage || showChatTools) && (
+                <>
+                  <button
+                    type="button"
+                    className="chat-composer-dismiss"
+                    aria-label="Close message composer"
+                    onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); }}
+                  />
+                  <div className="chat-input-bar">
+                    {replyToMessage && (
+                      <div className="chat-replying">
+                        <span>Replying to {replyToMessage.authorName || "Member"}</span>
+                        <button type="button" aria-label="Cancel reply" onClick={() => setReplyToMessage(null)}><MenuIcon name="close" /></button>
+                      </div>
+                    )}
+                    {showChatTools && (
+                      <div className="chat-tools-menu">
+                        {memberCanManage && <button type="button" onClick={handleAddResourceFromChat}>Share resource link</button>}
+                        {memberCanManage && <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin as announcement</button>}
+                        {!memberCanManage && <span>Only leaders can share files and resources here.</span>}
+                      </div>
+                    )}
+                    <div className="chat-input-row">
+                      <button type="button" className="chat-plus-btn" aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); }}>
+                        <MenuIcon name="plus" />
+                      </button>
+                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message" rows={1} autoFocus />
+                      <button
+                        type="button"
+                        className="chat-close-btn"
+                        aria-label="Close message composer"
+                        onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); }}
+                      >
+                        <MenuIcon name="close" />
+                      </button>
+                      <button className="chat-send-btn" type="button" aria-label="Send message" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>
+                        <MenuIcon name="send" />
+                      </button>
                     </div>
                   </div>
                 </>
@@ -932,8 +1071,8 @@ export function GroupDetailPage({
                   <h4>{selectedCollection.title}</h4>
                   <div className="payment-meta">
                     {selectedNeedsPayment ? `${(selectedCollection.amount || 0).toLocaleString()} TSh per member` : "Registration only"}
-                    {selectedCollection.expectedPeople ? ` · ${selectedCollection.expectedPeople} expected` : ""}
-                    {selectedCollection.paymentMethods?.length ? ` · Pay: ${selectedCollection.paymentMethods.join(" / ")}` : ""}
+                    {selectedCollection.expectedPeople ? ` - ${selectedCollection.expectedPeople} expected` : ""}
+                    {selectedCollection.paymentMethods?.length ? ` - Pay: ${selectedCollection.paymentMethods.join(" / ")}` : ""}
                   </div>
                   {memberCanManage && (
                     <div className="group-inline-actions" style={{ marginTop: 10 }}>
@@ -1078,8 +1217,8 @@ export function GroupDetailPage({
                 <h4>{selectedCollection.title}</h4>
                 <div className="payment-meta">
                   {selectedCollection.description || "Event details"}
-                  {selectedCollection.deadline ? ` · Deadline: ${selectedCollection.deadline}` : ""}
-                  {Number(selectedCollection.amount || 0) > 0 ? ` · ${Number(selectedCollection.amount || 0).toLocaleString()} TSh` : " · Free registration"}
+                  {selectedCollection.deadline ? ` - Deadline: ${selectedCollection.deadline}` : ""}
+                  {Number(selectedCollection.amount || 0) > 0 ? ` - ${Number(selectedCollection.amount || 0).toLocaleString()} TSh` : " - Free registration"}
                 </div>
                 {memberCanManage && (
                   <div className="group-inline-actions" style={{ marginTop: 10 }}>
@@ -1141,7 +1280,7 @@ export function GroupDetailPage({
                       <span className={`payment-pill ${statusClass(payment.status)}`}>{payment.status || "pending"}</span>
                       <div className="payment-row-main">
                         <div className="member-name">{payment.studentName || "Student"}</div>
-                        <div className="payment-meta">{payment.phone || "No phone"}{payment.paymentRef ? ` · ${payment.paymentRef}` : ""}</div>
+                        <div className="payment-meta">{payment.phone || "No phone"}{payment.paymentRef ? ` - ${payment.paymentRef}` : ""}</div>
                       </div>
                     </div>
                   ))}
@@ -1160,8 +1299,8 @@ export function GroupDetailPage({
               </div>
               <p>
                 {eventItem.description || "Event details"}
-                {eventItem.deadline ? ` · Deadline: ${eventItem.deadline}` : ""}
-                {eventItem.visibility ? ` · ${eventItem.visibility}` : ""}
+                {eventItem.deadline ? ` - Deadline: ${eventItem.deadline}` : ""}
+                {eventItem.visibility ? ` - ${eventItem.visibility}` : ""}
               </p>
               <button
                 className="group-btn secondary"

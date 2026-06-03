@@ -588,7 +588,7 @@ export function subscribeChannelMessages(db, groupId, channelId, onNext, onError
   }, onError);
 }
 
-export async function sendGroupMessage(db, { groupId, channelId = "chats", text, user, profile, kind = "message", pinned = false, group = null, members = [] }) {
+export async function sendGroupMessage(db, { groupId, channelId = "chats", text, user, profile, kind = "message", pinned = false, group = null, members = [], replyTo = null }) {
   const cleanText = text.trim();
   const mentionCategory = notificationCategory("group_mention");
   const mentionedMembers = mentionedMembersFromText(cleanText, members)
@@ -605,6 +605,12 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text,
     authorUid: user.uid,
     kind,
     pinned,
+    replyTo: replyTo ? {
+      id: replyTo.id,
+      authorName: replyTo.authorName || "Member",
+      text: (replyTo.text || "").slice(0, 140),
+    } : null,
+    reactions: {},
     mentionedUids: mentionedMembers.map(member => member.uid),
     createdAt: serverTimestamp(),
   });
@@ -632,6 +638,31 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text,
   });
   }
 
+  await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
+}
+
+export async function reactToGroupMessage(db, { groupId, channelId = "chats", messageId, emoji, user }) {
+  const safeEmoji = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F64F}", "\u{1F525}"].includes(emoji) ? emoji : "\u{1F44D}";
+  await updateDoc(doc(db, "groups", groupId, "channels", channelId, "messages", messageId), {
+    [`reactions.${user.uid}`]: safeEmoji,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function addGroupResource(db, { groupId, user, profile, title, url = "" }) {
+  const text = title.trim();
+  const cleanUrl = url.trim();
+  if (!text) throw new Error("Resource title is required.");
+  await addDoc(collection(db, "groups", groupId, "channels", "resources", "messages"), {
+    title: text,
+    text,
+    url: cleanUrl,
+    authorName: profile.name || user.email || "Admin",
+    authorUid: user.uid,
+    kind: "resource",
+    pinned: false,
+    createdAt: serverTimestamp(),
+  });
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
 }
 

@@ -98,6 +98,13 @@ service cloud.firestore {
       ]);
     }
 
+    function messageReactionFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'reactions',
+        'updatedAt'
+      ]);
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow create: if signedIn()
@@ -153,7 +160,9 @@ service cloud.firestore {
           allow read: if activeGroupMember(groupId);
           allow create: if (activeGroupMember(groupId) || activeGroupMemberAfter(groupId))
             && request.resource.data.authorUid == request.auth.uid;
-          allow update, delete: if canManageGroup(groupId);
+          allow update: if canManageGroup(groupId)
+            || (activeGroupMember(groupId) && messageReactionFieldsOnly());
+          allow delete: if canManageGroup(groupId);
         }
       }
 
