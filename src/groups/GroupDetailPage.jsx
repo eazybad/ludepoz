@@ -912,10 +912,10 @@ export function GroupDetailPage({
                     <span className={`payment-pill ${statusClass(payment.status)}`}>{payment.status || "pending"}</span>
                     <div className="payment-row-main">
                       <div className="member-name">{payment.studentName || "Student"}</div>
-                      <div className="payment-meta">
-                        {(payment.amountPaid || 0).toLocaleString()} TSh
-                        {payment.phone ? ` · ${payment.phone}` : ""}
-                        {payment.paymentRef ? ` · ${payment.paymentRef}` : ""}
+                      <div className="payment-detail-grid">
+                        <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
+                        {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
+                        {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
                       </div>
                       {payment.proofRequested && <div className="payment-alert compact">{payment.proofRequestMessage || "Proof requested"}</div>}
                       {payment.paymentProofUrl && (
