@@ -121,6 +121,7 @@ export function GroupDetailPage({
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [payments, setPayments] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [showChatComposer, setShowChatComposer] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
   const [trackerData, setTrackerData] = useState(emptyTracker);
@@ -213,6 +214,10 @@ export function GroupDetailPage({
       setShowTrackerForm(false);
       return true;
     }
+    if (showChatComposer) {
+      setShowChatComposer(false);
+      return true;
+    }
     if (selectedCollectionId) {
       setSelectedCollectionId("");
       setPayments([]);
@@ -226,7 +231,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeTab, expandedProofUrl, selectedCollectionId, showPaymentForm, showTrackerForm]);
+  }, [activeTab, expandedProofUrl, selectedCollectionId, showChatComposer, showPaymentForm, showTrackerForm]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -339,6 +344,7 @@ export function GroupDetailPage({
         members,
       });
       setMessageText("");
+      setShowChatComposer(false);
       markCurrentGroupRead();
     } catch (err) {
       onError(err);
@@ -757,13 +763,32 @@ export function GroupDetailPage({
             </div>
           )}
           {memberCanChat && (
-            <div className="composer chat-composer">
-              <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Send a message. Use @firstName to tag someone." />
-              <div className="group-inline-actions">
-                <button className="group-btn primary" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>Send</button>
-                {memberCanManage && <button className="group-btn warn" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("announcement")}>Pin announcement</button>}
-              </div>
-            </div>
+            <>
+              <button
+                type="button"
+                className="chat-compose-fab"
+                aria-label="Write group message"
+                onClick={() => setShowChatComposer(true)}
+              >
+                <MenuIcon name="chats" />
+              </button>
+              {showChatComposer && (
+                <>
+                  <button type="button" className="chat-composer-scrim" aria-label="Close message composer" onClick={() => setShowChatComposer(false)} />
+                  <div className="composer chat-composer-sheet">
+                    <div className="chat-composer-head">
+                      <strong>Message</strong>
+                      <button type="button" aria-label="Close message composer" onClick={() => setShowChatComposer(false)}>×</button>
+                    </div>
+                    <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Send a message. Use @firstName to tag someone." autoFocus />
+                    <div className="group-inline-actions">
+                      <button className="group-btn primary" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>Send</button>
+                      {memberCanManage && <button className="group-btn warn" type="button" disabled={posting || !messageText.trim()} onClick={() => handlePost("announcement")}>Pin announcement</button>}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
           )}
         </div>
       )}
