@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import "./GroupComponents.css";
 import {
   GROUP_ROLES,
@@ -77,6 +78,7 @@ function MenuIcon({ name }) {
     mute: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /><path d="M3 3l18 18" /></>,
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 19.4 9c.2.6.8 1 1.5 1H21a2 2 0 1 1 0 4h-.2c-.7 0-1.3.4-1.5 1Z" /></>,
+    back: <><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></>,
     leave: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
     send: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7Z" /></>,
     down: <><path d="M12 5v14" /><path d="M19 12l-7 7-7-7" /></>,
@@ -128,6 +130,7 @@ export function GroupDetailPage({
   user,
   userName,
   userAvatar,
+  onBack,
   onJoinGroup,
   joiningGroup,
   onShareGroup,
@@ -469,6 +472,36 @@ export function GroupDetailPage({
     }
   };
 
+  const handleUploadResourceFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !memberCanManage || !storage || !group?.id) return;
+    if (file.size > 12 * 1024 * 1024) {
+      onError(new Error("File is too large. Maximum size is 12MB."));
+      return;
+    }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+    const filePath = `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`;
+    setBusy(true);
+    try {
+      const snap = await uploadBytes(ref(storage, filePath), file);
+      const url = await getDownloadURL(snap.ref);
+      await addGroupResource(db, {
+        groupId: group.id,
+        user,
+        profile,
+        title: file.name,
+        url,
+      });
+      setShowChatTools(false);
+      onSuccess("File shared in resources.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleCreateTracker = async () => {
     if (!trackerData.title.trim() || (trackerData.collectionType !== "event" && !trackerData.amount)) {
       onError(new Error(trackerData.collectionType === "event" ? "Event title is required." : "Tracker title and amount are required."));
@@ -725,15 +758,13 @@ export function GroupDetailPage({
 
   const handleEditPinnedUpdate = async () => {
     if (!memberCanManage || !user) return;
-    const nextTitle = window.prompt("Pinned update title", currentAction?.title || "Pinned update");
-    if (nextTitle === null) return;
-    const nextDescription = window.prompt("Pinned update text", currentAction?.description || group.desc || "");
+    const nextDescription = window.prompt("Pinned update", currentAction?.description || group.desc || "");
     if (nextDescription === null) return;
     setBusy(true);
     try {
       const nextAction = {
         ...(currentAction || {}),
-        title: nextTitle.trim() || "Pinned update",
+        title: currentAction?.title || "Pinned update",
         description: nextDescription.trim(),
       };
       await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
@@ -785,9 +816,19 @@ export function GroupDetailPage({
   );
 
   return (
-    <div className="group-detail">
+    <div className={`group-detail ${activeTab === "chats" ? "group-detail-chat" : ""}`}>
       <div className="group-wa-header">
         <div className="group-header-main">
+          <button
+            type="button"
+            className="group-back-btn"
+            aria-label="Back"
+            onClick={() => {
+              if (!goBackWithinGroup()) onBack?.();
+            }}
+          >
+            <MenuIcon name="back" />
+          </button>
           <div
             className="group-avatar"
             style={{
@@ -993,6 +1034,12 @@ export function GroupDetailPage({
                     {showChatTools && (
                       <div className="chat-tools-menu">
                         {memberCanManage && <button type="button" onClick={handleAddResourceFromChat}>Share resource link</button>}
+                        {memberCanManage && (
+                          <label className="chat-tool-file">
+                            Upload file
+                            <input type="file" onChange={handleUploadResourceFile} disabled={busy} />
+                          </label>
+                        )}
                         {memberCanManage && <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin as announcement</button>}
                         {!memberCanManage && <span>Only leaders can share files and resources here.</span>}
                       </div>
@@ -1396,7 +1443,7 @@ export function GroupDetailPage({
             <div key={resource.id} className="resource-box">
               <div className="resource-title">{resource.title || resource.text}</div>
               {resource.text && resource.title && <div className="resource-text">{resource.text}</div>}
-              {resource.url && <a href={resource.url} target="_blank" rel="noreferrer">Open resource</a>}
+              {resource.url && <a href={resource.url} target="_blank" rel="noreferrer">Open file / resource</a>}
               <div className="message-time">{formatDate(resource.createdAt)}</div>
             </div>
           ))}

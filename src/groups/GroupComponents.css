@@ -294,6 +294,11 @@
 
 .group-detail {
   background: #f0fffe;
+  padding-bottom: 0;
+}
+
+.group-detail-chat {
+  overflow: hidden;
 }
 
 .group-wa-header {
@@ -306,10 +311,28 @@
 }
 
 .group-header-main {
-  padding: 13px 14px 12px;
+  padding: 13px 10px 12px;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
+}
+
+.group-back-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.group-back-btn:active {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .group-header-title {
@@ -534,12 +557,14 @@
   flex-direction: column;
   gap: 10px;
   position: relative;
-  min-height: calc(100dvh - 235px);
-  padding-bottom: 84px;
+  height: calc(100dvh - 225px);
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
 }
 
 .chat-panel.composer-open {
-  padding-bottom: 154px;
+  padding-bottom: 0;
 }
 
 .composer,
@@ -573,16 +598,19 @@
   flex-direction: column;
   gap: 8px;
   flex: 1;
-  min-height: 320px;
-  max-height: calc(100dvh - 310px);
+  min-height: 0;
+  height: auto;
+  max-height: none;
   overflow-y: auto;
-  padding-bottom: 72px;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding-bottom: 10px;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
 
 .chat-panel.composer-open .message-list {
-  padding-bottom: 148px;
+  padding-bottom: 10px;
 }
 
 .message-stack {
@@ -709,7 +737,7 @@
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: 72px;
+  bottom: 18px;
   z-index: 60;
   max-width: 640px;
   margin: 0 auto;
@@ -744,15 +772,16 @@
 .chat-composer-dismiss {
   position: fixed;
   inset: 0;
-  z-index: 59;
+  z-index: 40;
   border: none;
   background: transparent;
+  pointer-events: none;
 }
 
 .chat-compose-pill {
   position: fixed;
   right: 18px;
-  bottom: 88px;
+  bottom: 24px;
   z-index: 60;
   width: 52px;
   height: 52px;
@@ -853,7 +882,8 @@
   gap: 7px;
 }
 
-.chat-tools-menu button {
+.chat-tools-menu button,
+.chat-tool-file {
   border: none;
   border-radius: 8px;
   background: #ecfeff;
@@ -864,6 +894,15 @@
   cursor: pointer;
 }
 
+.chat-tool-file {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-tool-file input {
+  display: none;
+}
+
 .chat-tools-menu span {
   color: #667085;
   font-size: 12px;
@@ -872,17 +911,21 @@
 .chat-jump-btn {
   position: fixed;
   right: 24px;
-  bottom: 158px;
+  bottom: 94px;
   z-index: 61;
   width: 42px;
   height: 42px;
   border: none;
   border-radius: 50%;
-  background: #0f1b2d;
-  color: #ffffff;
+  background: #ccfbf1;
+  color: #0f766e;
   font-size: 22px;
   cursor: pointer;
-  box-shadow: 0 10px 24px rgba(15, 27, 45, 0.25);
+  box-shadow: 0 10px 24px rgba(13, 148, 136, 0.22);
+}
+
+.chat-panel.composer-open .chat-jump-btn {
+  bottom: 94px;
 }
 
 .message-action-scrim {

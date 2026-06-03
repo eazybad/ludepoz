@@ -4460,7 +4460,7 @@ return (
 )}
       
       {/* EMAIL VERIFICATION BANNER REMOVED */}
-    {page !== "chat" && (
+    {page !== "chat" && page !== "groupDetail" && (
   <div
     style={{
       background:'#fff',
@@ -4624,6 +4624,8 @@ return (
     </>
   ) : page==="chat" && activeConversation ? (
     activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
+  ) : page==="groupDetail" ? (
+    null
   ) : (
     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
       Kam<em style={{color:'#06d6c7'}}>pa</em>sika
@@ -6469,6 +6471,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           userAvatar={userAvatar}
           onJoinGroup={() => joinGroup(viewingGroup)}
           joiningGroup={joiningGroup}
+          onBack={() => {
+            if (groupInternalBackRef.current?.()) return;
+            closeGroupDetail();
+          }}
           onShareGroup={() => {
             const link = viewingGroup.inviteLink?.startsWith("http")
               ? viewingGroup.inviteLink
@@ -10195,5 +10201,3 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 }
 
 export default App;
-
-
