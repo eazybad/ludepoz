@@ -1572,14 +1572,7 @@ useEffect(() => {
 
   // Auto-pop About banner for unverified/guest users after 5s
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!user || !isVerified) {
-        setShowAboutBanner(true);
-        // Auto-dismiss after 5s
-        setTimeout(() => setShowAboutBanner(false), 5000);
-      }
-    }, 5000);
-    return () => clearTimeout(timer);
+    setShowAboutBanner(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, isVerified]);
 
@@ -4452,7 +4445,7 @@ return (
     )}
 
  <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
-  {page==="home" && user ? (
+  {false && page==="home" && user ? (
     <>
       <div style={{position:'relative'}}>
         <button
@@ -8394,6 +8387,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
                My QR
              </button>
+           </div>
+           <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+             <button type="button" onClick={()=>{isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
+             <button type="button" onClick={()=>{setShowAboutBanner(true);setPage("home");}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#344054',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
           </div>
           

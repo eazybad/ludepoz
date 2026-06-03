@@ -84,6 +84,23 @@ function formatDate(value) {
   return value.toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+function sameMessageDay(a, b) {
+  if (!a || !b) return false;
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function formatMessageDay(value) {
+  if (!value) return "";
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (sameMessageDay(value, today)) return "Today";
+  if (sameMessageDay(value, yesterday)) return "Yesterday";
+  return value.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function statusClass(status) {
   if (status === "paid") return "paid";
   if (status === "rejected") return "rejected";
@@ -137,6 +154,7 @@ export function GroupDetailPage({
   const [notificationPrefsDraft, setNotificationPrefsDraft] = useState(DEFAULT_GROUP_NOTIFICATION_PREFS);
   const [busy, setBusy] = useState(false);
   const groupNavDepth = useRef(0);
+  const chatBottomRef = useRef(null);
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
@@ -175,6 +193,9 @@ export function GroupDetailPage({
     title: "Pinned update",
     description: pinnedMessage.text,
   } : null);
+  const chatMessages = useMemo(() => [...messages].sort((a, b) => (
+    (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0)
+  )), [messages]);
 
   const pushGroupHistory = () => {
     try {
@@ -265,6 +286,11 @@ export function GroupDetailPage({
     setPayments([]);
     return undefined;
   }, [db, group?.id, selectedCollection?.id, memberCanVerify, user?.uid, onError]);
+
+  useEffect(() => {
+    if (activeTab !== "chats") return;
+    chatBottomRef.current?.scrollIntoView({ block: "end" });
+  }, [activeTab, chatMessages.length]);
 
   useEffect(() => {
     setPaymentData(prev => ({ ...prev, studentName: prev.studentName || userName || "" }));
@@ -754,13 +780,19 @@ export function GroupDetailPage({
             <div className="group-empty">No messages yet.</div>
           ) : (
             <div className="message-list">
-              {messages.map(message => (
-                <div key={message.id} className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}>
-                  <div className="message-author">{message.authorName || "Member"}</div>
-                  <div className="message-text">{message.text}</div>
-                  <div className="message-time">{formatDate(message.createdAt)}</div>
+              {chatMessages.map((message, index) => (
+                <div key={message.id} className="message-stack">
+                  {(index === 0 || !sameMessageDay(chatMessages[index - 1]?.createdAt, message.createdAt)) && (
+                    <div className="message-date-chip">{formatMessageDay(message.createdAt)}</div>
+                  )}
+                  <div className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}>
+                    <div className="message-author">{message.authorName || "Member"}</div>
+                    <div className="message-text">{message.text}</div>
+                    <div className="message-time">{formatDate(message.createdAt)}</div>
+                  </div>
                 </div>
               ))}
+              <div ref={chatBottomRef} />
             </div>
           )}
           {memberCanChat && (
