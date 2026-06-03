@@ -699,6 +699,15 @@ export async function leaveUniversityGroup(db, { group, member }) {
   });
 }
 
+export async function archiveUniversityGroup(db, { groupId, user }) {
+  await updateDoc(doc(db, "groups", groupId), {
+    active: false,
+    archivedByUid: user.uid,
+    archivedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export function subscribeGroupCollections(db, groupId, onNext, onError = console.error) {
   const q = query(collection(db, "groups", groupId, "collections"), orderBy("createdAt", "desc"));
   return onSnapshot(q, snap => {

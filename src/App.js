@@ -32,6 +32,7 @@ import { CreateGroupModal, GroupListPage } from './groups/GroupListPage';
 import { GroupDetailPage } from './groups/GroupDetailPage';
 import {
   createUniversityGroup,
+  archiveUniversityGroup,
   joinUniversityGroup,
   seedDemoGroups,
   subscribeGroups,
@@ -292,6 +293,7 @@ function App() {
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [fullScreenPhotos, setFullScreenPhotos] = useState(null); // array of all photos
   const [fullScreenIndex, setFullScreenIndex] = useState(0);
+  const imagePreloadCache = useRef(new Set());
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [lastCreatedListing, setLastCreatedListing] = useState(null);
@@ -1631,6 +1633,27 @@ useEffect(() => {
     } catch(e) { console.error("Error setting up collections listener:", e); }
   }, []);
 
+  useEffect(() => {
+    const urls = [];
+    const collect = (item) => {
+      if (!item) return;
+      if (item.photoUrl) urls.push(item.photoUrl);
+      if (Array.isArray(item.photos)) urls.push(...item.photos.filter(Boolean));
+    };
+    listings.forEach(collect);
+    services.forEach(collect);
+    rooms.forEach(collect);
+    collections.forEach(collect);
+
+    urls.slice(0, 160).forEach(url => {
+      if (!url || imagePreloadCache.current.has(url)) return;
+      imagePreloadCache.current.add(url);
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+    });
+  }, [collections, listings, rooms, services]);
+
   const loadFeatureFlags = async () => {
   try {
     const refDoc = doc(db, "system", "features");
@@ -2395,6 +2418,11 @@ await updateDoc(convRef, {
     const handlePopState = (e) => {
       const p = window.location.pathname;
 
+      if (pageHistory.current[pageHistory.current.length - 1] === "groupDetail" && groupInternalBackRef.current?.()) {
+        window.history.pushState({ page: "groupDetail" }, "", "/");
+        return;
+      }
+
       // If there's an active search on the home page, clearing it is the
       // expected back-button behavior — not navigating away.
       const active = activeSearchRef.current;
@@ -2823,6 +2851,30 @@ await updateDoc(convRef, {
       || (group.coAdmins || []).includes(user.email);
   };
 
+  const canArchiveGroup = (group) => {
+    if (!user || !group) return false;
+    return group.ownerUid === user.uid
+      || group.adminUid === user.uid
+      || (group.coAdmins || []).includes(user.email);
+  };
+
+  const handleArchiveGroup = async (group) => {
+    if (!canArchiveGroup(group)) {
+      setError("Only the owner or admin can delete this group.");
+      return;
+    }
+    if (!window.confirm(`Delete ${group.name}? It will be removed from the groups list.`)) return;
+    try {
+      await archiveUniversityGroup(db, { groupId: group.id, user });
+      setGroups(prev => prev.filter(item => item.id !== group.id));
+      if (viewingGroup?.id === group.id) closeGroupDetail();
+      setSuccess("Group deleted.");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch (err) {
+      setError("Failed to delete group: " + (err.message || String(err)));
+    }
+  };
+
   const markGroupRead = useCallback((group) => {
     if (!group?.id) return;
     const readAt = Date.now();
@@ -2835,7 +2887,8 @@ await updateDoc(convRef, {
   }, []);
 
   const groupUnreadCount = groups.filter(group => (
-    group.lastActivityByUid !== user?.uid
+    group.active !== false
+    && group.lastActivityByUid !== user?.uid
     && group.activityAt?.toMillis
     && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
   )).length;
@@ -4116,8 +4169,11 @@ const loadSellerStats = useCallback(async (userId) => {
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
   const currentUniId = selectedUni?.id || "aru";
-  const groupsForSelectedUni = groups.filter(group => (group.uniId || currentUniId) === currentUniId);
-  const publicEventsForGroups = publicGroupEvents.filter(eventItem => (eventItem.uniId || currentUniId) === currentUniId);
+  const groupsForSelectedUni = groups.filter(group => group.active !== false && (group.uniId || currentUniId) === currentUniId);
+  const publicEventsForGroups = publicGroupEvents.filter(eventItem => (
+    (eventItem.uniId || currentUniId) === currentUniId
+    && groupsForSelectedUni.some(group => group.id === eventItem.groupId)
+  ));
 
 if (loading) {
   return (
@@ -6272,6 +6328,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             publicEvents={publicEventsForGroups}
             legacyCollections={collections}
             onOpenGroup={openGroup}
+            onDeleteGroup={handleArchiveGroup}
             onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
             onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
             onSeedDemoGroups={handleSeedDemoGroups}
@@ -8786,7 +8843,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showEditProfile && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowEditProfile(false)}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'20px',width:'100%',maxWidth:'400px',maxHeight:'88vh',overflowY:'auto',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
             <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Edit Profile</h3>
             
             <input type="file" id="avatar-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'profile')} />
@@ -8847,15 +8904,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
 
             {/* BIO FIELD HIDDEN FOR NOW — uncomment to re-enable */}
-            {/*
             <div style={{marginBottom:'12px'}}>
-              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Bio / What you do</label>
-              <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="e.g. I fix phones and sell accessories near campus gate" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'70px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Short bio</label>
+              <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="A few words about you" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'76px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
               <div style={{fontSize:'11px',color:'#8a9bb0',textAlign:'right',marginTop:'4px'}}>{(editProfileData.bio||"").length}/150</div>
             </div>
-            */}
 
-            <div style={{marginBottom:'16px'}}>
+            <div style={{display:'none',marginBottom:'16px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>What do you offer? (pick up to 3)</label>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                 {SERVICE_TAGS.map(tag => {
@@ -8876,8 +8931,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
             </div>
             
-            <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',marginTop:'12px'}}>{uploading?"Uploading...":"Save Changes"}</button>
-            <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            <div style={{position:'sticky',bottom:'-20px',background:'#fff',paddingTop:'10px',paddingBottom:'2px'}}>
+              <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'13px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"Save changes"}</button>
+              <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            </div>
           </div>
         </div>
       )}

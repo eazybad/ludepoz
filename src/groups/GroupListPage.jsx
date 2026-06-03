@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import "./GroupComponents.css";
 import { DEMO_GROUPS, groupAvatarText } from "./groupService";
 
@@ -15,6 +16,7 @@ export function GroupListPage({
   publicEvents = [],
   legacyCollections,
   onOpenGroup,
+  onDeleteGroup,
   onCreateGroup,
   onCreateCollection,
   onSeedDemoGroups,
@@ -27,6 +29,36 @@ export function GroupListPage({
   currentUserId = "",
 }) {
   const hasGroups = groups.length > 0;
+  const longPressTimer = useRef(null);
+  const longPressTriggered = useRef(false);
+
+  const clearLongPress = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+
+  const canDeleteGroup = (group) => (
+    currentUserId
+    && (group.ownerUid === currentUserId || group.adminUid === currentUserId)
+  );
+
+  const startGroupLongPress = (group) => {
+    longPressTriggered.current = false;
+    clearLongPress();
+    if (!canDeleteGroup(group)) return;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      onDeleteGroup?.(group);
+    }, 650);
+  };
+
+  const handleGroupOpen = (group) => {
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false;
+      return;
+    }
+    onOpenGroup(group);
+  };
 
   return (
     <div className="groups-page">
@@ -66,7 +98,23 @@ export function GroupListPage({
         <div className="group-section-title">Groups</div>
         {hasGroups ? (
           groups.map(group => (
-            <button key={group.id} type="button" className="group-card" onClick={() => onOpenGroup(group)}>
+            <button
+              key={group.id}
+              type="button"
+              className="group-card"
+              onClick={() => handleGroupOpen(group)}
+              onContextMenu={event => {
+                if (!canDeleteGroup(group)) return;
+                event.preventDefault();
+                onDeleteGroup?.(group);
+              }}
+              onMouseDown={() => startGroupLongPress(group)}
+              onMouseUp={clearLongPress}
+              onMouseLeave={clearLongPress}
+              onTouchStart={() => startGroupLongPress(group)}
+              onTouchEnd={clearLongPress}
+              onTouchCancel={clearLongPress}
+            >
               <div
                 className="group-avatar"
                 style={{
@@ -85,7 +133,7 @@ export function GroupListPage({
                 </div>
               </div>
               {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
-              {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
+              {canDeleteGroup(group) ? <span className="group-role-pill">Hold to delete</span> : isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
             </button>
           ))
         ) : (
