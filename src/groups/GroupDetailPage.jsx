@@ -330,12 +330,13 @@ export function GroupDetailPage({
 
   useEffect(() => {
     const handleGroupPop = (event) => {
-      if (groupNavDepth.current <= 0) return;
-
       if (!goBackWithinGroup()) return;
 
       event.stopImmediatePropagation();
-      groupNavDepth.current -= 1;
+      if (groupNavDepth.current > 0) groupNavDepth.current -= 1;
+      try {
+        window.history.pushState({ page: "groupDetail", groupSubView: groupNavDepth.current > 0 }, "", "/");
+      } catch (_) {}
     };
 
     window.addEventListener("popstate", handleGroupPop, true);
