@@ -111,6 +111,7 @@ export function GroupDetailPage({
   onSuccess,
   onBackHandlerChange,
   onGroupUpdated,
+  onOpenScanner,
 }) {
   const [activeTab, setActiveTab] = useState("chats");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -877,6 +878,11 @@ export function GroupDetailPage({
                       <button className="group-btn secondary" type="button" disabled={busy} onClick={handleSendDeadlineReminder}>
                         Send deadline reminder
                       </button>
+                      {memberCanVerify && (
+                        <button className="group-btn primary" type="button" onClick={onOpenScanner}>
+                          Scan QR
+                        </button>
+                      )}
                     </div>
                   )}
                   <div className="payment-bar"><div style={{ width: `${summary.progress}%` }} /></div>
@@ -1018,6 +1024,11 @@ export function GroupDetailPage({
                     <button className="group-btn secondary" type="button" disabled={busy} onClick={handleSendDeadlineReminder}>
                       Send deadline reminder
                     </button>
+                    {memberCanVerify && (
+                      <button className="group-btn primary" type="button" onClick={onOpenScanner}>
+                        Scan QR
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1029,6 +1040,13 @@ export function GroupDetailPage({
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
                       <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      <details className="group-payment-qr">
+                        <summary>{selectedNeedsPayment ? "Payment QR" : "Registration QR"}</summary>
+                        <div className="group-payment-qr-box">
+                          <QRCodeSVG value={groupPaymentVerifyUrl(group.id, selectedCollection.id, myPayment.id)} size={132} bgColor="#ffffff" fgColor="#0f1b2d" level="M" />
+                          <span>{selectedNeedsPayment ? "Show this to the treasurer on verification day." : "Show this at the event entrance."}</span>
+                        </div>
+                      </details>
                     </div>
                   )}
                   {!myPayment || showPaymentForm || myPayment.proofRequested ? (

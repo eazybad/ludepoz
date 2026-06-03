@@ -2665,6 +2665,8 @@ await updateDoc(convRef, {
         order: {
           ...payment,
           paid: payment.status === "paid",
+          approved: payment.status === "paid" || payment.status === "registered",
+          registered: payment.status === "registered",
           amount: Number(payment.amountPaid || payment.amountDue || collectionData.amount || 0),
         },
         collectionTitle: collectionData.title || "Group payment",
@@ -6438,6 +6440,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             setViewingGroup(updatedGroup);
             setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));
           }}
+          onOpenScanner={openScanner}
           onError={(err) => setError(err.message || String(err))}
           onSuccess={(msg) => {
             setSuccess(msg);
@@ -8644,9 +8647,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {/* Scan result */}
             {scanResult && (
               <div style={{width:'100%',maxWidth:'340px',background:'#fff',borderRadius:'20px',padding:'24px',textAlign:'center'}}>
-                <div style={{fontSize:'48px',marginBottom:'8px'}}>{scanResult.order.paid ? '✅' : '⏳'}</div>
-                <div style={{fontSize:'18px',fontWeight:'800',color: scanResult.order.paid ? '#065f46' : '#0f766e',marginBottom:'4px'}}>
-                  {scanResult.order.paid ? 'CONFIRMED PAID' : 'NOT YET PAID'}
+                <div style={{fontSize:'48px',marginBottom:'8px'}}>{(scanResult.order.approved || scanResult.order.paid) ? '✅' : '⏳'}</div>
+                <div style={{fontSize:'18px',fontWeight:'800',color: (scanResult.order.approved || scanResult.order.paid) ? '#065f46' : '#0f766e',marginBottom:'4px'}}>
+                  {scanResult.order.registered ? 'REGISTERED' : scanResult.order.paid ? 'CONFIRMED PAID' : 'NOT YET PAID'}
                 </div>
                 <div style={{fontSize:'20px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
@@ -8654,7 +8657,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
                 {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'#166534',background:'#f0fdf4',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
                 <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
-                  {!scanResult.order.paid && (
+                  {!(scanResult.order.approved || scanResult.order.paid) && (
                     <button onClick={confirmScanPayment} disabled={scanLoading} style={{flex:1,padding:'12px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>
                       {scanLoading ? 'Confirming...' : '✓ Mark as Paid'}
                     </button>
