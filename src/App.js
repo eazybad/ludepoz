@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { QRCodeSVG } from 'qrcode.react';
 
 
@@ -27,6 +28,15 @@ import {
   validateVideo,
 } from './imageCompression';
 import { computePriceSignal, PriceSignalBadge } from './priceSignal';
+import { CreateGroupModal, GroupListPage } from './groups/GroupListPage';
+import { GroupDetailPage } from './groups/GroupDetailPage';
+import {
+  createUniversityGroup,
+  joinUniversityGroup,
+  seedDemoGroups,
+  subscribeGroups,
+  subscribePublicGroupEvents,
+} from './groups/groupService';
 
 const firebaseConfig = {
   apiKey: "AIzaSyANHZKNAfYFlEFAQ0lwG50PMOv2OBrEXEY",
@@ -44,12 +54,14 @@ const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
 });
 const storage = getStorage(app);
+const functions = getFunctions(app);
 
 const UNIVERSITIES = [
   { id: 1, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
 ];
 
 const DEFAULT_UNI = UNIVERSITIES[0];
+const ENABLE_PHONE_VERIFICATION = false;
 
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
@@ -81,6 +93,32 @@ const SERVICE_TAGS = [
   { id: "printing", label: "Printing", icon: "🖨️" },
   { id: "other_service", label: "Other", icon: "⚡" },
 ];
+
+const AVATAR_COLORS = [
+  "#06d6c7",
+  "#0d9488",
+  "#0f1b2d",
+  "#7c3aed",
+  "#dc2626",
+  "#2563eb",
+];
+
+function avatarInitials(name = "") {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : (parts[0] || "?").slice(0, 2);
+  return initials.toUpperCase();
+}
+
+function makeInitialAvatarUrl(name, color = "#06d6c7") {
+  const text = avatarInitials(name);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+      <rect width="240" height="240" rx="120" fill="${color}"/>
+      <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="82" font-weight="800" fill="#ffffff">${text}</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 
 // Generate URL-friendly slug from seller name + uni
 const generateSellerSlug = (name, uni) => {
@@ -171,6 +209,11 @@ function App() {
   const [userAccountType, setUserAccountType] = useState("student");
   const [userProviderLocation, setUserProviderLocation] = useState("");
   const [userPhone, setUserPhone] = useState("");
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [phoneOtpCode, setPhoneOtpCode] = useState("");
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneOtpBusy, setPhoneOtpBusy] = useState(false);
+  const [showPhoneVerifyModal, setShowPhoneVerifyModal] = useState(false);
   // Phone capture modal — appears when user tries to save a search alert without a phone on file
   const [phonePromptOpen, setPhonePromptOpen] = useState(false);
   const [pendingAlert, setPendingAlert] = useState(null); // {kind, query, parsedFilters}
@@ -191,9 +234,8 @@ function App() {
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["home"]);
-  const pageRef = useRef("home");
-  useEffect(() => { pageRef.current = page; }, [page]);
   const isGoingBack = useRef(false)
+  const groupInternalBackRef = useRef(null);
 
   // Tracks whether any home-tab search is active. The back-button handler
   // reads this to decide whether to clear search first vs. navigate pages.
@@ -254,7 +296,7 @@ function App() {
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [lastCreatedListing, setLastCreatedListing] = useState(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
+  const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null, avatarPreset: null });
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
@@ -263,13 +305,24 @@ function App() {
   const [showAdvancedCollection, setShowAdvancedCollection] = useState(false);
   // Groups
   const [groups, setGroups] = useState([]);
+  const [publicGroupEvents, setPublicGroupEvents] = useState([]);
+  const [groupReadAt, setGroupReadAt] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("groupReadAt") || "{}"); }
+    catch (_) { return {}; }
+  });
   const [viewingGroup, setViewingGroup] = useState(null);
-  const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class" });
+  const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "public" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupAnnouncements, setGroupAnnouncements] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [currentGroupMember, setCurrentGroupMember] = useState(null);
+  const [joiningGroup, setJoiningGroup] = useState(false);
+  const [groupViewTab, setGroupViewTab] = useState("announcements");
   const [newAnnouncement, setNewAnnouncement] = useState("");
   const [postingAnnouncement, setPostingAnnouncement] = useState(false);
+  const [seedingDemoGroups, setSeedingDemoGroups] = useState(false);
   const unsubGroupAnnouncements = useRef(null);
+  const unsubGroupMembers = useRef(null);
   const [scanResult, setScanResult] = useState(null); // { order, studentName, paid, collectionTitle }
   const [scanError, setScanError] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
@@ -680,6 +733,57 @@ useEffect(() => {
       console.error("Phone save failed:", err);
       setError("Imeshindwa. Jaribu tena.");
       setTimeout(() => setError(""), 3000);
+    }
+  };
+
+  const requestPhoneOtp = async () => {
+    if (!user) { requireAuth("verify phone", () => setPage("profile")); return; }
+    const cleaned = (userPhone || "").trim();
+    if (!/^(\+?255|0)[67]\d{8}$/.test(cleaned.replace(/\s/g, ""))) {
+      setError("Enter a valid Tanzania phone number first.");
+      setTimeout(() => setError(""), 3500);
+      return;
+    }
+    setPhoneOtpBusy(true);
+    try {
+      const sendOtp = httpsCallable(functions, "requestPhoneOtp");
+      const result = await sendOtp({ phone: cleaned });
+      setUserPhone(result.data?.phone || cleaned);
+      setPhoneOtpSent(true);
+      setPhoneOtpCode("");
+      setSuccess("Verification code sent by SMS.");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err.message || "Failed to send verification code.");
+      setTimeout(() => setError(""), 4000);
+    } finally {
+      setPhoneOtpBusy(false);
+    }
+  };
+
+  const verifyPhoneOtp = async () => {
+    if (!user) return;
+    if (!/^\d{6}$/.test(phoneOtpCode.trim())) {
+      setError("Enter the 6 digit code.");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+    setPhoneOtpBusy(true);
+    try {
+      const confirmOtp = httpsCallable(functions, "verifyPhoneOtp");
+      const result = await confirmOtp({ code: phoneOtpCode.trim() });
+      setUserPhone(result.data?.phone || userPhone);
+      setPhoneVerified(true);
+      setPhoneOtpSent(false);
+      setPhoneOtpCode("");
+      setShowPhoneVerifyModal(false);
+      setSuccess("Phone number verified.");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err.message || "Failed to verify code.");
+      setTimeout(() => setError(""), 4000);
+    } finally {
+      setPhoneOtpBusy(false);
     }
   };
 
@@ -1120,7 +1224,7 @@ useEffect(() => {
     const variants = {
       student: { icon: "🎓", label: "Verified Student", bg: "#f0fffe", color: "#0d9488", border: "#99f0ee" },
       provider: { icon: "💼", label: "Verified Provider", bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
-      landlord: { icon: "🏠", label: "Verified Landlord", bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
+      landlord: { icon: "🏠", label: "Verified Landlord", bg: "#ccfbf1", color: "#0f766e", border: "#99f0ee" },
     };
     const v = variants[badge] || variants.student;
     const padding = size === "xs" ? "1px 6px" : size === "sm" ? "2px 8px" : "4px 10px";
@@ -1769,6 +1873,7 @@ const requestNotificationPermission = async (currentUser) => {
       setUserAccountType(userData.accountType || "student");
       setUserProviderLocation(userData.location || "");
       setUserPhone(userData.phone || "");
+      setPhoneVerified(userData.phoneVerified === true);
       setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
       // Read both legacy "verified" and current "isVerified" field — handles
       // both data shapes since users created before v16 may have either.
@@ -2252,11 +2357,16 @@ await updateDoc(convRef, {
       const userId = path.replace('/u/', '').trim();
       if (userId) loadPublicSellerProfile(userId);
     }
-    if (path.startsWith('/verify/')) {
+    if (path.startsWith('/g/') && path.includes('/verify/')) {
+      const parts = path.split('/').filter(Boolean);
+      if (parts.length === 5 && parts[0] === "g" && parts[2] === "verify") {
+        handleGroupVerifyScan(parts[1], parts[3], parts[4]);
+      }
+    } else if (path.startsWith('/verify/')) {
       const parts = path.replace('/verify/', '').split('/');
       if (parts.length === 2) handleVerifyScan(parts[0], parts[1]);
     }
-    if (path.startsWith('/g/')) {
+    if (path.startsWith('/g/') && !path.includes('/verify/')) {
       const inviteCode = path.replace('/g/', '').trim();
       if (inviteCode) {
         const q = query(collection(db, "groups"), where("inviteCode", "==", inviteCode));
@@ -2292,7 +2402,8 @@ await updateDoc(convRef, {
     const handlePopState = (e) => {
       const p = window.location.pathname;
 
-      // If there's an active search on the home page, clear it first
+      // If there's an active search on the home page, clearing it is the
+      // expected back-button behavior — not navigating away.
       const active = activeSearchRef.current;
       if (active && active.kind) {
         if (active.kind === "listing") { setSearchQ(""); setCommittedSearchQ(""); }
@@ -2300,14 +2411,11 @@ await updateDoc(convRef, {
         else if (active.kind === "room") { setRoomSearchQ(""); setCommittedRoomSearchQ(""); }
         clearAISearch();
         activeSearchRef.current = { kind: null, query: "" };
+        // Re-push so the next back press can still go back through pages
         window.history.pushState({ page: 'app' }, '', '/');
         return;
       }
 
-      // Use pageRef to get current page without stale closure
-      const currentPage = pageRef?.current || "home";
-
-      // Deep link paths — reset to home
       if (p.startsWith('/seller/') || p.startsWith('/collection/') || p.startsWith('/u/')) {
         setPublicSeller(null);
         setViewingCollection(null);
@@ -2316,27 +2424,34 @@ await updateDoc(convRef, {
         pageHistory.current = ["home"];
         window.history.replaceState({ page: 'home' }, '', '/');
         document.title = 'Kampasika - Student Marketplace';
-        return;
+      } else {
+        if (pageHistory.current[pageHistory.current.length - 1] === "groupDetail") {
+          if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current();
+          if (unsubGroupMembers.current) unsubGroupMembers.current();
+          setViewingGroup(null);
+          setGroupAnnouncements([]);
+          setGroupMembers([]);
+          setCurrentGroupMember(null);
+          setGroupViewTab("announcements");
+          pageHistory.current = pageHistory.current.filter(p => p !== "groupDetail");
+          if (pageHistory.current[pageHistory.current.length - 1] !== "communities") pageHistory.current.push("communities");
+          setPageRaw("communities");
+          window.history.replaceState({ page: "communities" }, "", "/");
+          return;
+        }
+        if (pageHistory.current.length > 1) {
+  pageHistory.current.pop();
+  const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
+
+  if (prev !== "chat") {
+    setActiveConversation(null);
+    setMessages([]);
+  }
+
+  setPageRaw(prev);
+}
+        window.history.pushState({ page: 'app' }, '', '/');
       }
-
-      // Mirror the back button logic exactly
-      if (currentPage === "seller") { closeSellerProfile(); }
-      else if (currentPage === "collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); setPageRaw("communities"); }
-      else if (currentPage === "groupDetail") { if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current(); setViewingGroup(null); setGroupAnnouncements([]); setPageRaw("communities"); }
-      else if (currentPage === "communityDetail") { setViewingCommunity(null); setPageRaw("communities"); }
-      else if (currentPage === "createCollection") { setShowCreateCollectionSuccess(false); setPageRaw("communities"); }
-      else if (currentPage === "createRoom") { setShowCreateRoomSuccess(false); setPageRaw("rooms"); }
-      else if (currentPage === "createService") { setShowCreateServiceSuccess(false); setPageRaw("services"); }
-      else if (currentPage === "create") setPageRaw("home");
-      else if (currentPage === "collections") setPageRaw("communities");
-      else if (currentPage === "rooms" || currentPage === "roommates") setPageRaw("home");
-      else if (currentPage === "services") setPageRaw("home");
-      else if (currentPage === "communities") setPageRaw("home");
-      else if (currentPage === "messages" || currentPage === "profile" || currentPage === "saved" || currentPage === "admin") setPageRaw("home");
-      else if (currentPage === "chat") { setActiveConversation(null); setMessages([]); setPageRaw("messages"); }
-      else { setPageRaw("home"); }
-
-      window.history.pushState({ page: 'app' }, '', '/');
     };
     window.addEventListener('popstate', handlePopState);
     
@@ -2380,6 +2495,10 @@ await updateDoc(convRef, {
         setUser(null);
         setUserName("");
         setUserAvatar(null);
+        setUserPhone("");
+        setPhoneVerified(false);
+        setPhoneOtpCode("");
+        setPhoneOtpSent(false);
         setIsVerified(false);
         setProfileLoaded(false);
         // Not logged in — still try to load public data (will work if Firestore rules allow public reads)
@@ -2474,10 +2593,23 @@ await updateDoc(convRef, {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
             if (code && code.data.includes('/verify/')) {
-              // Parse kampasika.org/verify/{collectionId}/{orderId}
-              const parts = code.data.split('/verify/')[1]?.split('/');
-              if (parts && parts.length === 2) {
-                const [colId, ordId] = parts;
+              let verifyPath = "";
+              try {
+                verifyPath = new URL(code.data).pathname;
+              } catch (_) {
+                verifyPath = code.data;
+              }
+              const pathParts = verifyPath.split('/').filter(Boolean);
+              if (pathParts.length === 5 && pathParts[0] === "g" && pathParts[2] === "verify") {
+                const [, groupId, , collectionId, paymentId] = pathParts;
+                cancelAnimationFrame(scanAnimRef.current);
+                scanStreamRef.current.getTracks().forEach(t => t.stop());
+                scanStreamRef.current = null;
+                handleGroupVerifyScan(groupId, collectionId, paymentId);
+                return;
+              }
+              if (pathParts.length === 3 && pathParts[0] === "verify") {
+                const [, colId, ordId] = pathParts;
                 cancelAnimationFrame(scanAnimRef.current);
                 scanStreamRef.current.getTracks().forEach(t => t.stop());
                 scanStreamRef.current = null;
@@ -2499,6 +2631,7 @@ await updateDoc(convRef, {
   const handleVerifyScan = async (collectionId, orderId) => {
     setScanLoading(true);
     setScanError("");
+    setShowQRScanner(true);
     try {
       const orderSnap = await getDoc(doc(db, "collections", collectionId, "orders", orderId));
       const colSnap = await getDoc(doc(db, "collections", collectionId));
@@ -2511,11 +2644,57 @@ await updateDoc(convRef, {
     } finally { setScanLoading(false); }
   };
 
+  const handleGroupVerifyScan = async (groupId, collectionId, paymentId) => {
+    setScanLoading(true);
+    setScanError("");
+    setShowQRScanner(true);
+    try {
+      const paymentSnap = await getDoc(doc(db, "groups", groupId, "collections", collectionId, "payments", paymentId));
+      const collectionSnap = await getDoc(doc(db, "groups", groupId, "collections", collectionId));
+      const groupSnap = await getDoc(doc(db, "groups", groupId));
+      if (!paymentSnap.exists()) {
+        setScanError("Group payment not found. This QR may be invalid.");
+        setScanLoading(false);
+        return;
+      }
+      const payment = { id: paymentSnap.id, ...paymentSnap.data() };
+      const collectionData = collectionSnap.exists() ? collectionSnap.data() : {};
+      const groupData = groupSnap.exists() ? groupSnap.data() : {};
+      setScanResult({
+        kind: "groupPayment",
+        order: {
+          ...payment,
+          paid: payment.status === "paid",
+          amount: Number(payment.amountPaid || payment.amountDue || collectionData.amount || 0),
+        },
+        collectionTitle: collectionData.title || "Group payment",
+        groupTitle: groupData.name || "Group",
+        groupId,
+        collectionId,
+        paymentId,
+      });
+    } catch (err) {
+      setScanError("Failed to verify group payment: " + err.message);
+    } finally { setScanLoading(false); }
+  };
+
   const confirmScanPayment = async () => {
     if (!scanResult) return;
     const { collectionId, orderId, order } = scanResult;
     try {
       setScanLoading(true);
+      if (scanResult.kind === "groupPayment") {
+        await updateDoc(doc(db, "groups", scanResult.groupId, "collections", scanResult.collectionId, "payments", scanResult.paymentId), {
+          status: "paid",
+          verifiedByQR: true,
+          verifiedByUid: user?.uid || "",
+          verifiedByName: userName || user?.email || "Verifier",
+          verifiedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        setScanResult({ ...scanResult, order: { ...order, paid: true, status: "paid" } });
+        return;
+      }
       await updateDoc(doc(db, "collections", collectionId, "orders", orderId), {
         paid: true, status: "paid", amountPaid: order.amount, verifiedByQR: true, verifiedAt: serverTimestamp()
       });
@@ -2530,41 +2709,43 @@ await updateDoc(convRef, {
   };
 
   // ─── Groups ───
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async () => {
     try {
-      const q = query(collection(db, "groups"), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
+      const snap = await getDocs(query(collection(db, "groups"), orderBy("updatedAt", "desc")));
       setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (e) { console.error("loadGroups:", e); }
-  };
+  }, []);
+
+  const closeGroupDetail = useCallback(() => {
+    if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current();
+    if (unsubGroupMembers.current) unsubGroupMembers.current();
+    setViewingGroup(null);
+    setGroupAnnouncements([]);
+    setGroupMembers([]);
+    setCurrentGroupMember(null);
+    setGroupViewTab("announcements");
+    pageHistory.current = pageHistory.current.filter(p => p !== "groupDetail");
+    if (pageHistory.current[pageHistory.current.length - 1] !== "communities") {
+      pageHistory.current.push("communities");
+    }
+    setPageRaw("communities");
+    window.history.replaceState({ page: "communities" }, "", "/");
+  }, []);
 
   const createGroup = async () => {
     if (!user) { requireAuth("createGroup", () => {}); return; }
     if (!createGroupData.name.trim()) { setError("Group name is required"); return; }
     setUploading(true);
     try {
-      const slug = createGroupData.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-      const inviteCode = slug + "-" + Math.random().toString(36).substring(2, 7);
-      const ref2 = await addDoc(collection(db, "groups"), {
-        name: createGroupData.name.trim(),
-        desc: createGroupData.desc.trim(),
-        type: createGroupData.type,
-        inviteCode,
-        inviteLink: `https://kampasika.org/g/${inviteCode}`,
-        adminUid: user.uid,
-        adminEmail: user.email,
-        adminName: userName,
-        coAdmins: [],
-        memberCount: 0,
-        uniId: selectedUni?.id || "aru",
-        createdAt: serverTimestamp(),
+      const newGroup = await createUniversityGroup(db, {
+        data: createGroupData,
+        user,
+        profile: { name: userName, avatarUrl: userAvatar },
+        selectedUni,
       });
       setShowCreateGroup(false);
-      setCreateGroupData({ name: "", desc: "", type: "class" });
+      setCreateGroupData({ name: "", desc: "", type: "class", visibility: "public" });
       await loadGroups();
-      // Open the newly created group
-      const newSnap = await getDoc(doc(db, "groups", ref2.id));
-      const newGroup = { id: ref2.id, ...newSnap.data() };
       openGroup(newGroup);
     } catch (e) { setError("Failed to create group: " + e.message); }
     finally { setUploading(false); }
@@ -2573,16 +2754,48 @@ await updateDoc(convRef, {
   const openGroup = (group) => {
     setViewingGroup(group);
     setGroupAnnouncements([]);
+    setGroupMembers([]);
+    setCurrentGroupMember(null);
+    setGroupViewTab("announcements");
     setNewAnnouncement("");
     setPage("groupDetail");
-    // Subscribe to announcements
     if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current();
+    if (unsubGroupMembers.current) unsubGroupMembers.current();
+  };
+
+  const joinGroup = async (group = viewingGroup) => {
+    if (!group) return;
+    if (!user) { requireAuth("join group", () => openGroup(group)); return; }
+    if (currentGroupMember) return;
+    setJoiningGroup(true);
     try {
-      const q = query(collection(db, "groups", group.id, "announcements"), orderBy("createdAt", "desc"));
-      unsubGroupAnnouncements.current = onSnapshot(q, snap => {
-        setGroupAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
+      await joinUniversityGroup(db, { group, user, profile: { name: userName, avatarUrl: userAvatar } });
+      setSuccess("Joined group!");
+      setTimeout(() => setSuccess(""), 2000);
+    } catch (e) { setError("Failed to join group: " + e.message); }
+    finally { setJoiningGroup(false); }
+  };
+
+  const handleSeedDemoGroups = async () => {
+    setSeedingDemoGroups(true);
+    try {
+      if (!user || !ADMIN_UIDS.includes(user.uid)) {
+        requireAuth("add demo groups", () => {});
+        if (user) setError("Only admins can add demo groups.");
+        return;
+      }
+      const seeded = await seedDemoGroups(db, {
+        selectedUni,
+        user,
+        profile: { name: userName, avatarUrl: userAvatar },
       });
-    } catch (e) { console.error("announcements:", e); }
+      await loadGroups();
+      setSuccess(seeded === "updated" ? "Demo groups updated with sample data." : "Demo groups added with sample data.");
+    } catch (e) {
+      setError("Failed to add demo groups: " + e.message);
+    } finally {
+      setSeedingDemoGroups(false);
+    }
   };
 
   const postAnnouncement = async () => {
@@ -2601,10 +2814,57 @@ await updateDoc(convRef, {
     finally { setPostingAnnouncement(false); }
   };
 
+  const getGroupMember = (group, uid = user?.uid) => {
+    if (!group || !uid) return null;
+    return groupMembers.find(m => m.uid === uid && m.status !== "removed") || null;
+  };
+
   const isGroupAdmin = (group) => {
     if (!user || !group) return false;
-    return group.adminUid === user.uid || (group.coAdmins || []).includes(user.email);
+    const member = getGroupMember(group);
+    return group.adminUid === user.uid
+      || group.ownerUid === user.uid
+      || ["owner", "admin", "treasurer"].includes(member?.role)
+      || (group.coAdmins || []).includes(user.email);
   };
+
+  const markGroupRead = useCallback((group) => {
+    if (!group?.id) return;
+    const readAt = Date.now();
+    setGroupReadAt(prev => {
+      if ((prev[group.id] || 0) >= readAt) return prev;
+      const next = { ...prev, [group.id]: readAt };
+      try { localStorage.setItem("groupReadAt", JSON.stringify(next)); } catch (_) {}
+      return next;
+    });
+  }, []);
+
+  const groupUnreadCount = groups.filter(group => (
+    group.lastActivityByUid !== user?.uid
+    && group.activityAt?.toMillis
+    && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
+  )).length;
+
+  useEffect(() => {
+    let unsubscribe;
+    try {
+      unsubscribe = subscribeGroups(db, setGroups, (err) => console.error("groups:", err));
+    } catch (err) {
+      console.error("groups listener setup:", err);
+      loadGroups();
+    }
+    return () => { if (unsubscribe) unsubscribe(); };
+  }, [loadGroups]);
+
+  useEffect(() => {
+    let unsubscribe;
+    try {
+      unsubscribe = subscribePublicGroupEvents(db, setPublicGroupEvents, (err) => console.error("public group events:", err));
+    } catch (err) {
+      console.error("public events listener setup:", err);
+    }
+    return () => { if (unsubscribe) unsubscribe(); };
+  }, []);
 
   // Handle /g/ invite link
   // PWA Install Prompt logic
@@ -2865,6 +3125,7 @@ useEffect(() => {
 
       setUserName(signupName.trim());
       setSelectedUni(chosenUni);
+      setPhoneVerified(false);
       setLoading(false);
       setSuccess(isStudent
         ? "Account created! Welcome to Kampasika 🎉"
@@ -2899,7 +3160,11 @@ useEffect(() => {
       setError("");
       setLoading(true);
 
-      await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const userSnap = await getDoc(doc(db, "users", credential.user.uid));
+      const loggedInUser = userSnap.exists() ? userSnap.data() : {};
+      setUserPhone(loggedInUser.phone || "");
+      setPhoneVerified(loggedInUser.phoneVerified === true);
 
       setLoading(false);
       setSuccess("Logged in successfully!");
@@ -2987,7 +3252,7 @@ useEffect(() => {
     }
     const reader = new FileReader();
     reader.onload = (event) => {
-      setEditProfileData({...editProfileData, avatarFile: file, avatarPreview: event.target.result});
+      setEditProfileData({...editProfileData, avatarFile: file, avatarPreview: event.target.result, avatarPreset: null});
     };
     reader.readAsDataURL(file);
   }
@@ -3514,6 +3779,8 @@ useEffect(() => {
       const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}.jpg`);
       const snapshot = await uploadBytes(storageRef, compressedAvatar);
       avatarUrl = await getDownloadURL(snapshot.ref);
+    } else if (editProfileData.avatarPreset) {
+      avatarUrl = makeInitialAvatarUrl(editProfileData.name || userName, editProfileData.avatarPreset);
     }
 
     const updateData = {};
@@ -3616,6 +3883,19 @@ const roomUpdates = roomsSnap.docs.map(d =>
   })
 );
 
+// 9. Update university group member profiles
+const groupMembersQuery = query(
+  collectionGroup(db, "members"),
+  where("uid", "==", user.uid)
+);
+const groupMembersSnap = await getDocs(groupMembersQuery);
+const groupMemberUpdates = groupMembersSnap.docs.map(d =>
+  updateDoc(d.ref, {
+    ...(updateData.name && { name: updateData.name }),
+    ...(avatarUrl && { avatarUrl })
+  })
+);
+
 // Run all updates in parallel
 await Promise.all([
   ...listingUpdates,
@@ -3624,7 +3904,8 @@ await Promise.all([
   ...serviceUpdates,
   ...collectionUpdates,
   ...roommatePostUpdates,
-  ...roomUpdates
+  ...roomUpdates,
+  ...groupMemberUpdates
 ]);
     
     // 5. Update local state
@@ -3634,7 +3915,7 @@ await Promise.all([
     setUserServices(updateData.services);
     
     setShowEditProfile(false);
-    setEditProfileData({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null });
+    setEditProfileData({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null, avatarPreset: null });
     setSuccess("Profile updated everywhere!");
     
     // Reload to reflect changes
@@ -3839,49 +4120,83 @@ const loadSellerStats = useCallback(async (userId) => {
   // To re-enable expiry someday: restore `isExpired` checks and a TTL field.
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
+  const currentUniId = selectedUni?.id || "aru";
+  const groupsForSelectedUni = groups.filter(group => (group.uniId || currentUniId) === currentUniId);
+  const publicEventsForGroups = publicGroupEvents.filter(eventItem => (eventItem.uniId || currentUniId) === currentUniId);
 
 if (loading) {
   return (
     <div style={{
-      position:'relative',
-      height:'100vh',
+      minHeight:'100vh',
+      height:'100dvh',
       background:'#0f1b2d',
       fontFamily:'system-ui',
-      overflow:'hidden'
+      overflow:'hidden',
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'center',
+      padding:'24px',
+      boxSizing:'border-box'
     }}>
+      <style>{`
+        @keyframes loadingBar {
+          0% { transform: translateX(-70px); }
+          50% { transform: translateX(150px); }
+          100% { transform: translateX(-70px); }
+        }
+      `}</style>
       <div style={{
-        position:'absolute',
-        top:'50%',
-        left:'50%',
-        transform:'translate(-50%, -50%)',
-        width:'42px',
-        height:'42px',
-        borderRadius:'50%',
-        border:'1.5px solid rgba(6,214,199,0.45)',
         display:'flex',
+        flexDirection:'column',
         alignItems:'center',
         justifyContent:'center',
-        boxShadow:'0 0 14px rgba(6,214,199,0.18)',
-        color:'#0d9488',
-        fontSize:'18px',
-        background:'#fff'
+        width:'100%',
+        maxWidth:'260px',
+        minHeight:'220px',
+        textAlign:'center'
       }}>
-        ✧
-      </div>
-
-      <div style={{
-        position:'absolute',
-        left:'0',
-        right:'0',
-        bottom:'76px',
-        textAlign:'center',
-        fontFamily:'serif',
-        fontSize:'30px',
-        fontWeight:'700',
-        color:'#fff',
-        letterSpacing:'0'
-      }}>
-        Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+        <div style={{
+          width:'48px',
+          height:'48px',
+          borderRadius:'14px',
+          background:'#06d6c7',
+          color:'#0f1b2d',
+          display:'flex',
+          alignItems:'center',
+          justifyContent:'center',
+          fontSize:'22px',
+          fontWeight:'900',
+          marginBottom:'18px',
+          boxShadow:'0 10px 30px rgba(6,214,199,0.24)'
+        }}>
+          K
+        </div>
+        <div style={{
+          fontFamily:'serif',
+          fontSize:'31px',
+          fontWeight:'800',
+          color:'#fff',
+          letterSpacing:'0',
+          lineHeight:1,
+          marginBottom:'18px'
+        }}>
+          Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+        </div>
+        <div style={{
+          width:'138px',
+          height:'4px',
+          borderRadius:'999px',
+          background:'rgba(255,255,255,0.16)',
+          overflow:'hidden'
+        }}>
+          <div style={{
+            width:'58px',
+            height:'100%',
+            borderRadius:'999px',
+            background:'#06d6c7',
+            animation:'loadingBar 1.15s ease-in-out infinite'
+          }} />
+        </div>
       </div>
     </div>
   );
@@ -4110,18 +4425,11 @@ return (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
-          else if (page==="collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); setPage("communities"); }
-          else if (page==="groupDetail") { if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current(); setViewingGroup(null); setGroupAnnouncements([]); setPage("communities"); }
-          else if (page==="communityDetail") { setViewingCommunity(null); setPage("communities"); }
-          else if (page==="createCollection") { setShowCreateCollectionSuccess(false); setPage("communities"); }
-          else if (page==="createRoom") { setShowCreateRoomSuccess(false); setPage("rooms"); }
-          else if (page==="createService") { setShowCreateServiceSuccess(false); setPage("services"); }
-          else if (page==="create") setPage("home");
-          else if (page==="collections") setPage("communities");
-          else if (page==="rooms" || page==="roommates") setPage("home");
-          else if (page==="services") setPage("home");
-          else if (page==="communities") setPage("home");
-          else if (page==="messages" || page==="profile" || page==="saved" || page==="admin") setPage("home");
+          else if (page==="collectionDetail") { if (unsubCollectionOrders.current) unsubCollectionOrders.current(); setViewingCollection(null); setCollectionOrders([]); goBack(); }
+          else if (page==="groupDetail") {
+            if (groupInternalBackRef.current?.()) return;
+            closeGroupDetail();
+          }
           else goBack();
         }}
         style={{
@@ -5899,7 +6207,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
               <span style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'20px',color:'#6b7280'}}>🎓 {viewingService.universityName}</span>
               {viewingService.location && <span style={{fontSize:'12px',background:'#f0fffe',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
-              {viewingService.availability && <span style={{fontSize:'12px',background:'#fef3c7',padding:'6px 12px',borderRadius:'20px',color:'#92400e',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
+              {viewingService.availability && <span style={{fontSize:'12px',background:'#ccfbf1',padding:'6px 12px',borderRadius:'20px',color:'#0f766e',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
             </div>
 
             {/* Description */}
@@ -5963,9 +6271,43 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
       {/* ============ COMMUNITIES INDEX ============ */}
       {page==="communities"&&(
+        <>
+          <GroupListPage
+            groups={groupsForSelectedUni}
+            publicEvents={publicEventsForGroups}
+            legacyCollections={collections}
+            onOpenGroup={openGroup}
+            onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
+            onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
+            onSeedDemoGroups={handleSeedDemoGroups}
+            canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
+            groupReadAt={groupReadAt}
+            currentUserId={user?.uid || ""}
+            onOpenLegacyCommunity={(group) => { setViewingCommunity(group); setPage("communityDetail"); }}
+            onOpenPublicEvent={(eventItem) => {
+              const hostGroup = groupsForSelectedUni.find(g => g.id === eventItem.groupId);
+              if (hostGroup) openGroup(hostGroup);
+              else setError("Open the host group to register for this event.");
+            }}
+            isGroupAdmin={isGroupAdmin}
+            seedingDemo={seedingDemoGroups}
+          />
+          {showCreateGroup && (
+            <CreateGroupModal
+              data={createGroupData}
+              onChange={setCreateGroupData}
+              onClose={() => setShowCreateGroup(false)}
+              onCreate={createGroup}
+              uploading={uploading}
+            />
+          )}
+        </>
+      )}
+
+      {false && page==="communities"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+          <div style={{background:'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Groups</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a group to see all active orders/collections and events inside it.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
@@ -5989,7 +6331,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {group.desc && <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{group.desc}</div>}
                       <div style={{fontSize:'11px',color:'#06d6c7',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
                     </div>
-                    {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'#fef3c7',color:'#92400e',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
+                    {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'#ccfbf1',color:'#0f766e',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
                   </button>
                 ))}
               </div>
@@ -6012,7 +6354,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <button key={group.name} type="button" onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }} style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
                       <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
-                      <div style={{fontSize:'11px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
+                      <div style={{fontSize:'11px',fontWeight:'700',color:'#0f766e',background:'#ccfbf1',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
                     </div>
                     <div style={{marginTop:'6px',fontSize:'12px',color:'#6b7280'}}>{group.orders} orders • {group.events} events</div>
                   </button>
@@ -6065,125 +6407,147 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
       {/* ============ GROUP DETAIL ============ */}
       {page==="groupDetail"&&viewingGroup&&(
-        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          {/* Header */}
-          <div style={{background:'linear-gradient(135deg,#06d6c7 0%,#0d9488 100%)',padding:'20px 18px',margin:'0 16px 16px',borderRadius:'18px'}}>
-            <div style={{fontSize:'22px',marginBottom:'4px'}}>{viewingGroup.type==="church"?"⛪":viewingGroup.type==="club"?"🏆":viewingGroup.type==="hostel"?"🏠":viewingGroup.type==="freshers"?"🎓":"🏫"}</div>
-            <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'4px'}}>{viewingGroup.name}</div>
-            {viewingGroup.desc && <div style={{fontSize:'13px',color:'rgba(255,255,255,0.8)',marginBottom:'12px'}}>{viewingGroup.desc}</div>}
+        <GroupDetailPage
+          db={db}
+          storage={storage}
+          group={viewingGroup}
+          user={user}
+          userName={userName}
+          userAvatar={userAvatar}
+          onJoinGroup={() => joinGroup(viewingGroup)}
+          joiningGroup={joiningGroup}
+          onShareGroup={() => {
+            const link = viewingGroup.inviteLink?.startsWith("http")
+              ? viewingGroup.inviteLink
+              : `${window.location.origin}/g/${viewingGroup.inviteCode}`;
+            if (navigator.share) {
+              navigator.share({ title: viewingGroup.name, text: `Join ${viewingGroup.name} on Kampasika`, url: link });
+            } else {
+              navigator.clipboard?.writeText(link).then(() => {
+                setSuccess("Link copied!");
+                setTimeout(() => setSuccess(""), 2000);
+              });
+            }
+          }}
+          onLeaveGroup={closeGroupDetail}
+          onMarkRead={markGroupRead}
+          onBackHandlerChange={(handler) => {
+            groupInternalBackRef.current = handler;
+          }}
+          onGroupUpdated={(updatedGroup) => {
+            setViewingGroup(updatedGroup);
+            setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));
+          }}
+          onError={(err) => setError(err.message || String(err))}
+          onSuccess={(msg) => {
+            setSuccess(msg);
+            setTimeout(() => setSuccess(""), 2500);
+          }}
+        />
+      )}
 
-            {/* Invite link — visible to all */}
-            <div style={{background:'rgba(255,255,255,0.15)',borderRadius:'10px',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom:'8px'}}>
-              <div style={{fontSize:'11px',color:'rgba(255,255,255,0.9)',fontFamily:'monospace',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>kampasika.org/g/{viewingGroup.inviteCode}</div>
-              <button onClick={()=>{
-                const link = viewingGroup.inviteLink || `https://kampasika.org/g/${viewingGroup.inviteCode}`;
-                if (navigator.share) { navigator.share({ title: viewingGroup.name, text: `Join ${viewingGroup.name} on Kampasika`, url: link }); }
-                else { navigator.clipboard?.writeText(link).then(()=>{ setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000); }); }
-              }} style={{background:'#fff',color:'#0d9488',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',cursor:'pointer',flexShrink:0}}>Share</button>
+      {false && page==="groupDetail"&&viewingGroup&&(
+        <div style={{width:"100%",flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",boxSizing:"border-box",paddingBottom:"100px",background:"#f4f6f8"}}>
+          <div style={{background:"#075e54",color:"#fff",padding:"14px 16px 16px",margin:"0 0 12px",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+              <div style={{width:"48px",height:"48px",borderRadius:"50%",background:"rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",fontWeight:"800",flexShrink:0}}>{(viewingGroup.name || "G").slice(0,2).toUpperCase()}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:"18px",fontWeight:"800",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{viewingGroup.name}</div>
+                <div style={{fontSize:"12px",color:"rgba(255,255,255,0.78)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{groupMembers.length || viewingGroup.memberCount || 0} members{currentGroupMember?.role ? ` - ${currentGroupMember.role}` : ""}</div>
+              </div>
+              <button onClick={()=>{ const link = viewingGroup.inviteLink || `https://kampasika.org/g/${viewingGroup.inviteCode}`; if (navigator.share) { navigator.share({ title: viewingGroup.name, text: `Join ${viewingGroup.name} on Kampasika`, url: link }); } else { navigator.clipboard?.writeText(link).then(()=>{ setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000); }); } }} style={{background:"rgba(255,255,255,0.16)",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",borderRadius:"999px",padding:"7px 12px",fontSize:"12px",fontWeight:"700",cursor:"pointer",flexShrink:0}}>Share</button>
             </div>
-
-            <button onClick={()=>{
-              const link = viewingGroup.inviteLink || `https://kampasika.org/g/${viewingGroup.inviteCode}`;
-              const msg = `👋 Join *${viewingGroup.name}* on Kampasika!\n\nAnnouncements, orders & events in one place.\n👉 ${link}`;
-              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-            }} style={{width:'100%',padding:'10px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-              Share to WhatsApp
-            </button>
+            {viewingGroup.desc && <div style={{fontSize:"13px",lineHeight:1.45,color:"rgba(255,255,255,0.86)",marginBottom:"12px"}}>{viewingGroup.desc}</div>}
+            {!currentGroupMember && user && (
+              <button onClick={()=>joinGroup(viewingGroup)} disabled={joiningGroup} style={{width:"100%",padding:"11px",background:"#fff",color:"#075e54",border:"none",borderRadius:"10px",fontSize:"14px",fontWeight:"800",cursor:joiningGroup?"wait":"pointer",marginBottom:"12px"}}>{joiningGroup ? "Joining..." : "Join Group"}</button>
+            )}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",background:"rgba(0,0,0,0.16)",borderRadius:"10px",padding:"4px"}}>
+              {[
+                ["announcements","Chats"],
+                ["payments","Payments"],
+                ["members","Members"],
+              ].map(([id,label])=>(
+                <button key={id} onClick={()=>setGroupViewTab(id)} style={{padding:"9px 6px",border:"none",borderRadius:"8px",background:groupViewTab===id?"#fff":"transparent",color:groupViewTab===id?"#075e54":"#fff",fontSize:"12px",fontWeight:"800",cursor:"pointer"}}>{label}</button>
+              ))}
+            </div>
           </div>
 
-          {/* ANNOUNCEMENTS */}
-          <div style={{margin:'0 16px 16px'}}>
-            <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d',marginBottom:'10px'}}>📢 Announcements</div>
-
-            {isGroupAdmin(viewingGroup) && (
-              <div style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1.5px solid #e2e6ea',marginBottom:'12px'}}>
-                <textarea
-                  value={newAnnouncement}
-                  onChange={e=>setNewAnnouncement(e.target.value)}
-                  placeholder="Write an announcement for the group..."
-                  rows={3}
-                  style={{width:'100%',border:'none',outline:'none',fontSize:'14px',fontFamily:'inherit',resize:'none',boxSizing:'border-box',marginBottom:'8px'}}
-                />
-                <button onClick={postAnnouncement} disabled={postingAnnouncement||!newAnnouncement.trim()} style={{padding:'10px 20px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',opacity:!newAnnouncement.trim()?0.5:1}}>
-                  {postingAnnouncement ? "Posting..." : "📢 Post Announcement"}
-                </button>
-              </div>
-            )}
-
-            {groupAnnouncements.length === 0 ? (
-              <div style={{textAlign:'center',padding:'24px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>No announcements yet.</div>
-            ) : (
-              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                {groupAnnouncements.map(ann=>(
-                  <div key={ann.id} style={{background:'#fffbeb',border:'1.5px solid #fde68a',borderRadius:'12px',padding:'14px'}}>
-                    <div style={{fontSize:'14px',lineHeight:1.6,color:'#0f1b2d',whiteSpace:'pre-wrap'}}>{ann.text}</div>
-                    <div style={{fontSize:'11px',color:'#92400e',marginTop:'8px',fontWeight:'600'}}>{ann.authorName} · {ann.createdAt ? ann.createdAt.toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* COLLECTIONS under this group */}
-          <div style={{margin:'0 16px 16px'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
-              <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>📋 Orders & Events</div>
+          {groupViewTab==="announcements" && (
+            <div style={{margin:"0 12px 16px"}}>
               {isGroupAdmin(viewingGroup) && (
-                <button onClick={()=>{
-                  setCreateCollectionData(prev=>({...prev,communityName:viewingGroup.name,groupId:viewingGroup.id}));
-                  setPage("createCollection");
-                }} style={{padding:'7px 14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>+ Add</button>
+                <div style={{background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea",marginBottom:"10px"}}>
+                  <textarea value={newAnnouncement} onChange={e=>setNewAnnouncement(e.target.value)} placeholder="Post an announcement like you would in WhatsApp..." rows={3} style={{width:"100%",border:"none",outline:"none",fontSize:"14px",fontFamily:"inherit",resize:"none",boxSizing:"border-box",marginBottom:"8px"}} />
+                  <button onClick={postAnnouncement} disabled={postingAnnouncement||!newAnnouncement.trim()} style={{padding:"10px 16px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer",opacity:!newAnnouncement.trim()?0.5:1}}>{postingAnnouncement ? "Posting..." : "Post"}</button>
+                </div>
+              )}
+              {groupAnnouncements.length === 0 ? (
+                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No announcements yet.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {groupAnnouncements.map(ann=>(
+                    <div key={ann.id} style={{background:"#dcf8c6",borderRadius:"8px",padding:"11px 12px",boxShadow:"0 1px 2px rgba(0,0,0,0.08)",maxWidth:"92%",alignSelf:"flex-start"}}>
+                      <div style={{fontSize:"12px",fontWeight:"800",color:"#075e54",marginBottom:"5px"}}>{ann.authorName || "Admin"}</div>
+                      <div style={{fontSize:"14px",lineHeight:1.5,color:"#0f1b2d",whiteSpace:"pre-wrap"}}>{ann.text}</div>
+                      <div style={{fontSize:"10px",color:"#667781",marginTop:"6px",textAlign:"right"}}>{ann.createdAt ? ann.createdAt.toLocaleDateString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : ""}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
+          )}
 
-            {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).length === 0 ? (
-              <div style={{textAlign:'center',padding:'20px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>No orders or events yet.{isGroupAdmin(viewingGroup)?" Tap + Add above to create one.":""}</div>
-            ) : (
-              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).map(col=>(
-                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'12px',padding:'14px',cursor:'pointer',border:'1px solid #e2e6ea',display:'flex',gap:'12px',alignItems:'center'}}>
-                    <div style={{width:'44px',height:'44px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>📋</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>{col.title}</div>
-                      <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px'}}>{col.price?.toLocaleString()} TSh · {col.totalOrders||0} joined</div>
-                    </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a9bb0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                  </div>
-                ))}
+          {groupViewTab==="payments" && (
+            <div style={{margin:"0 12px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
+                <div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d"}}>Payment trackers</div>
+                {isGroupAdmin(viewingGroup) && <button onClick={()=>{ setCreateCollectionData(prev=>({...prev,communityName:viewingGroup.name,groupId:viewingGroup.id})); setPage("createCollection"); }} style={{padding:"8px 12px",background:"#25d366",color:"#063b24",border:"none",borderRadius:"8px",fontSize:"12px",fontWeight:"800",cursor:"pointer"}}>New</button>}
               </div>
-            )}
-          </div>
-
-          {/* Admin tools */}
-          {isGroupAdmin(viewingGroup) && (
-            <div style={{margin:'0 16px 16px',background:'#f4f6f8',borderRadius:'12px',padding:'14px'}}>
-              <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'10px'}}>⚙️ Admin</div>
-              <div style={{marginBottom:'10px'}}>
-                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'#6b7280'}}>Add co-admin by email</label>
-                <div style={{display:'flex',gap:'8px'}}>
-                  <input type="email" id="coAdminEmail" placeholder="their.email@gmail.com" style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
-                  <button onClick={async()=>{
-                    const emailInput = document.getElementById('coAdminEmail');
-                    const email = emailInput?.value?.trim();
-                    if (!email) return;
-                    try {
-                      await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] });
-                      setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]});
-                      emailInput.value = "";
-                      setSuccess("Co-admin added!");
-                      setTimeout(()=>setSuccess(""),2000);
-                    } catch(e){ setError("Failed: "+e.message); }
-                  }} style={{padding:'10px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Add</button>
+              {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).length === 0 ? (
+                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No payment trackers yet.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).map(col=>{
+                    const target = col.expectedPeople || col.totalOrders || 0;
+                    const paidPercent = target > 0 ? Math.round(((col.totalPaid || 0) / target) * 100) : 0;
+                    return (
+                      <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:"#fff",borderRadius:"8px",padding:"14px",cursor:"pointer",border:"1px solid #e2e6ea"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:"10px",alignItems:"flex-start"}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:"15px",fontWeight:"800",color:"#0f1b2d",marginBottom:"3px"}}>{col.title}</div>
+                            <div style={{fontSize:"12px",color:"#667781"}}>{col.price?.toLocaleString()} TSh per person - {col.totalOrders || 0} joined</div>
+                          </div>
+                          <div style={{fontSize:"12px",fontWeight:"800",color:paidPercent>=100?"#047857":"#b45309",background:paidPercent>=100?"#d1fae5":"#ccfbf1",padding:"4px 8px",borderRadius:"999px",flexShrink:0}}>{paidPercent}% paid</div>
+                        </div>
+                        <div style={{height:"6px",background:"#eef2f7",borderRadius:"999px",overflow:"hidden",marginTop:"12px"}}><div style={{height:"100%",width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?"#10b981":"#0d9488",borderRadius:"999px"}} /></div>
+                      </div>
+                    );
+                  })}
                 </div>
-                {(viewingGroup.coAdmins||[]).length > 0 && (
-                  <div style={{marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                    {viewingGroup.coAdmins.map(email=>(
-                      <span key={email} style={{fontSize:'11px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'6px',padding:'4px 8px',color:'#6b7280'}}>{email}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
+            </div>
+          )}
+
+          {groupViewTab==="members" && (
+            <div style={{margin:"0 12px 16px"}}>
+              <div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",marginBottom:"10px"}}>Members</div>
+              {groupMembers.length === 0 ? (
+                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No members loaded yet.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {groupMembers.map(member => (
+                    <div key={member.uid || member.id} style={{background:"#fff",border:"1px solid #e2e6ea",borderRadius:"8px",padding:"12px",display:"flex",alignItems:"center",gap:"10px"}}>
+                      <div style={{width:"38px",height:"38px",borderRadius:"50%",background:member.avatarUrl?`url(${member.avatarUrl}) center/cover`:"#075e54",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:"800",flexShrink:0}}>{!member.avatarUrl && (member.name || member.email || "?").slice(0,2).toUpperCase()}</div>
+                      <div style={{flex:1,minWidth:0}}><div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{member.name || member.email || "Member"}</div><div style={{fontSize:"11px",color:"#667781"}}>{member.role || "member"}</div></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isGroupAdmin(viewingGroup) && (
+                <div style={{marginTop:"12px",background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea"}}>
+                  <div style={{fontSize:"13px",fontWeight:"800",color:"#0f1b2d",marginBottom:"8px"}}>Admin tools</div>
+                  <div style={{display:"flex",gap:"8px"}}><input type="email" id="coAdminEmail" placeholder="co-admin email" style={{flex:1,padding:"10px",border:"1.5px solid #e2e6ea",borderRadius:"8px",fontSize:"14px",outline:"none",boxSizing:"border-box"}}/><button onClick={async()=>{ const emailInput = document.getElementById("coAdminEmail"); const email = emailInput?.value?.trim(); if (!email) return; try { await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] }); setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]}); emailInput.value = ""; setSuccess("Co-admin added!"); setTimeout(()=>setSuccess(""),2000); } catch(e){ setError("Failed: "+e.message); } }} style={{padding:"10px 14px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}>Add</button></div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -6206,13 +6570,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {col.photoUrl ? (
                       <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
                     ) : (
-                      <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
+                      <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#0d9488,#14b8a6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
                     )}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
                       <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                       <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
-                      <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
+                      <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#0d9488'}}>{col.price?.toLocaleString()} TSh</div>
                     </div>
                   </div>
                   <div style={{marginTop:'12px'}}>
@@ -6221,7 +6585,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
                     </div>
                     <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#f59e0b',borderRadius:'3px',transition:'width 0.3s'}}/>
+                      <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#0d9488',borderRadius:'3px',transition:'width 0.3s'}}/>
                     </div>
                   </div>
                 </div>
@@ -6235,7 +6599,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="collections"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           
-          <div style={{background:'linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
+          <div style={{background:'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>All Orders & Events</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — browse everything or open a community first.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
@@ -6291,13 +6655,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {col.photoUrl ? (
                         <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
                       ) : (
-                        <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#f59e0b,#fbbf24)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
+                        <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#0d9488,#14b8a6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
                       )}
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
                         <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
                         <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
-                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
+                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#0d9488'}}>{col.price?.toLocaleString()} TSh</div>
                       </div>
                     </div>
                     {/* Progress bar */}
@@ -6307,12 +6671,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
                       </div>
                       <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
-                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#f59e0b',borderRadius:'3px',transition:'width 0.3s'}}/>
+                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#10b981':'#0d9488',borderRadius:'3px',transition:'width 0.3s'}}/>
                       </div>
                     </div>
                     {col.options && col.options.length > 0 && (
                       <div style={{display:'flex',gap:'4px',marginTop:'8px',flexWrap:'wrap'}}>
-                        {col.options.slice(0,4).map((opt,i)=><span key={i} style={{fontSize:'10px',background:'#fef3c7',color:'#92400e',padding:'2px 8px',borderRadius:'8px'}}>{opt}</span>)}
+                        {col.options.slice(0,4).map((opt,i)=><span key={i} style={{fontSize:'10px',background:'#ccfbf1',color:'#0f766e',padding:'2px 8px',borderRadius:'8px'}}>{opt}</span>)}
                       </div>
                     )}
                   </div>
@@ -6371,38 +6735,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                   </>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setLastCreatedCollectionId(null);setShowEntryQR(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setLastCreatedCollectionId(null);setShowEntryQR(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
-                <div style={{background:'#fef3c7',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#92400e',lineHeight:1.5}}>
+                <div style={{background:'#ccfbf1',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#0f766e',lineHeight:1.5}}>
                   📋 <strong>For class reps & councils:</strong> Create an order or event — t-shirts, tickets, contributions. Students join by scanning your QR or link.
                 </div>
-
-                {/* AI ASSISTANT */}
-                <div style={{background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
-                  <div style={{fontSize:'13px',fontWeight:'700',color:'#0f766e',marginBottom:'8px'}}>✨ Andika kwa maneno yako</div>
-                  <textarea
-                    value={createAssistText}
-                    onChange={e => setCreateAssistText(e.target.value)}
-                    placeholder='Mfano: Oda ya t-shirt za ARU Catholic Community bei 15000 kwa mtu'
-                    rows={3}
-                    style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:'8px'}}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleCreateAssist('collection')}
-                    disabled={createAssistLoading || !createAssistText.trim()}
-                    style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:createAssistLoading?'wait':'pointer',opacity:!createAssistText.trim()?0.6:1}}
-                  >
-                    {createAssistLoading ? 'Inaelewa...' : 'Nijazie Fomu'}
-                  </button>
-                  <div style={{fontSize:'11px',color:'#6b7280',marginTop:'8px',lineHeight:1.4}}>
-                    Describe the group order or event — we fill the form, you check and publish.
-                  </div>
-                </div>
-
                 {/* PHOTO */}
                 <input type="file" id="collection-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleCollectionPhotoSelect}/>
                 <label htmlFor="collection-photo" style={{display:'block',marginBottom:'16px',cursor:'pointer'}}>
@@ -6434,7 +6774,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.paymentMethods[0]?.number||''} onChange={e=>{const updated=[{network:createCollectionData.paymentMethods[0]?.network||'M-Pesa',number:e.target.value,name:createCollectionData.paymentMethods[0]?.name||'',saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                   <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
                     {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa"].map(net=>(
-                      <button key={net} type="button" onClick={()=>{const updated=[{...(createCollectionData.paymentMethods[0]||{}),network:net,saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'5px 12px',borderRadius:'8px',border:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'#fef3c7':'#fff',fontSize:'12px',cursor:'pointer',fontWeight:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'700':'400'}}>{net}</button>
+                      <button key={net} type="button" onClick={()=>{const updated=[{...(createCollectionData.paymentMethods[0]||{}),network:net,saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'5px 12px',borderRadius:'8px',border:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'2px solid #0d9488':'1px solid #e2e6ea',background:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'#ccfbf1':'#fff',fontSize:'12px',cursor:'pointer',fontWeight:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'700':'400'}}>{net}</button>
                     ))}
                   </div>
                 </div>
@@ -6447,7 +6787,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {createCollectionData.options.trim() && (
                     <div style={{marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
                       {createCollectionData.options.split(',').map(o=>o.trim()).filter(o=>o).map((o,i)=>(
-                        <span key={i} style={{padding:'5px 12px',background:'#fef3c7',color:'#92400e',borderRadius:'8px',fontSize:'13px',fontWeight:'700',border:'1.5px solid #fde68a'}}>{o}</span>
+                        <span key={i} style={{padding:'5px 12px',background:'#ccfbf1',color:'#0f766e',borderRadius:'8px',fontSize:'13px',fontWeight:'700',border:'1.5px solid #99f0ee'}}>{o}</span>
                       ))}
                     </div>
                   )}
@@ -6494,17 +6834,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                             </div>
                           </div>
                         ) : (
-                          <div key={idx+1} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #f59e0b'}}>
+                          <div key={idx+1} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #0d9488'}}>
                             <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}><span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx+2}</span><button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated.splice(idx+1,1);setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Cancel</button></div>
-                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>{["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","CRDB","NMB"].map(net=>(<button key={net} type="button" onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],network:net};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #f59e0b':'1px solid #e2e6ea',background:pm.network===net?'#fef3c7':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>))}</div>
+                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>{["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","CRDB","NMB"].map(net=>(<button key={net} type="button" onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],network:net};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #0d9488':'1px solid #e2e6ea',background:pm.network===net?'#ccfbf1':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>))}</div>
                             <input type="tel" placeholder="Number" value={pm.number} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],number:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
                             <input type="text" placeholder="Account name" value={pm.name} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],name:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
-                            <button onClick={()=>{if(!pm.number.trim()){setError("Please enter a payment number");return;}const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:true};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save</button>
+                            <button onClick={()=>{if(!pm.number.trim()){setError("Please enter a payment number");return;}const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:true};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save</button>
                           </div>
                         )
                       )}
                       {createCollectionData.paymentMethods.length < 2 && (
-                        <button type="button" onClick={()=>setCreateCollectionData({...createCollectionData,paymentMethods:[...createCollectionData.paymentMethods,{network:"Tigo Pesa",number:"",name:"",saved:false}]})} style={{padding:'10px 16px',background:'#fff',color:'#f59e0b',border:'1.5px dashed #f59e0b',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
+                        <button type="button" onClick={()=>setCreateCollectionData({...createCollectionData,paymentMethods:[...createCollectionData.paymentMethods,{network:"Tigo Pesa",number:"",name:"",saved:false}]})} style={{padding:'10px 16px',background:'#fff',color:'#0d9488',border:'1.5px dashed #0d9488',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
                       )}
                     </div>
 
@@ -6521,7 +6861,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 )}
 
-                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
+                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
               </>
             )}
           </div>
@@ -6543,7 +6883,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <span style={{marginLeft:'8px',fontSize:'11px',background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👥 Co-admin</span>
               )}
               {user?.uid === viewingCollection.userId && (
-                <span style={{marginLeft:'8px',fontSize:'11px',background:'#fef3c7',color:'#92400e',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
+                <span style={{marginLeft:'8px',fontSize:'11px',background:'#ccfbf1',color:'#0f766e',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
               )}
             </div>
 
@@ -6565,9 +6905,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
             )}
             
-            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
+            <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#0d9488',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
 
-            {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'#fef3c7',color:'#92400e',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
+            {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'#ccfbf1',color:'#0f766e',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
 
             {viewingCollection.description && <p style={{fontSize:'14px',color:'#4a5568',lineHeight:1.6,marginBottom:'16px',whiteSpace:'pre-wrap'}}>{viewingCollection.description}</p>}
 
@@ -6575,9 +6915,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             {/* Stats cards */}
             <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
-              <div style={{flex:1,background:'#fef3c7',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                <div style={{fontSize:'24px',fontWeight:'700',color:'#f59e0b'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#92400e'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
-                <div style={{fontSize:'11px',color:'#92400e'}}>Ordered</div>
+              <div style={{flex:1,background:'#ccfbf1',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:'700',color:'#0d9488'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#0f766e'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
+                <div style={{fontSize:'11px',color:'#0f766e'}}>Ordered</div>
               </div>
               <div style={{flex:1,background:'#d1fae5',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'24px',fontWeight:'700',color:'#10b981'}}>{viewingCollection.totalPaid || 0}</div>
@@ -6604,7 +6944,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               {viewingCollection.expectedPeople > 0 && (
                 <div style={{marginTop:'8px'}}>
                   <div style={{height:'8px',background:'#f4f6f8',borderRadius:'4px',overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${Math.min(100, Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100))}%`,background:((viewingCollection.totalPaid||0) >= viewingCollection.expectedPeople)?'#10b981':'#f59e0b',borderRadius:'4px',transition:'width 0.3s'}}/>
+                    <div style={{height:'100%',width:`${Math.min(100, Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100))}%`,background:((viewingCollection.totalPaid||0) >= viewingCollection.expectedPeople)?'#10b981':'#0d9488',borderRadius:'4px',transition:'width 0.3s'}}/>
                   </div>
                   <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px',textAlign:'right'}}>{Math.round(((viewingCollection.totalPaid||0) / viewingCollection.expectedPeople) * 100)}% collected</div>
                 </div>
@@ -6677,7 +7017,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* STEP 1: Place Order — collapses after placed */}
                 {!myOrderId ? (
-                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #f59e0b',marginBottom:'12px'}}>
+                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #0d9488',marginBottom:'12px'}}>
                     <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>{(()=>{
                       const ct = viewingCollection.collectionType || "order";
                       const headers = { order:"📝 Place Your Order", event:"🎟 Register for Event", contribution:"💰 Add Yourself", freshers:"🎓 Join Support" };
@@ -6697,10 +7037,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         </label>
                         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
                           {viewingCollection.options.map((opt,i)=>(
-                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'10px 18px',borderRadius:'10px',border:orderFormData.selectedOption===opt?'2.5px solid #f59e0b':'2px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#fef3c7':'#fff',color:'#0f1b2d',fontSize:'15px',fontWeight:'800',cursor:'pointer',transition:'all 0.1s',boxShadow:orderFormData.selectedOption===opt?'0 2px 8px rgba(245,158,11,0.3)':'none'}}>{opt}</button>
+                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'10px 18px',borderRadius:'10px',border:orderFormData.selectedOption===opt?'2.5px solid #0d9488':'2px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#ccfbf1':'#fff',color:'#0f1b2d',fontSize:'15px',fontWeight:'800',cursor:'pointer',transition:'all 0.1s',boxShadow:orderFormData.selectedOption===opt?'0 2px 8px rgba(245,158,11,0.3)':'none'}}>{opt}</button>
                           ))}
                         </div>
-                        {!orderFormData.selectedOption && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'6px',fontWeight:'600'}}>⚠ Please select an option above</div>}
+                        {!orderFormData.selectedOption && <div style={{fontSize:'11px',color:'#0d9488',marginTop:'6px',fontWeight:'600'}}>⚠ Please select an option above</div>}
                       </div>
                     )}
 
@@ -6714,7 +7054,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       };
                       const lbl = labels[ct] || labels.order;
                       return (
-                        <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer',letterSpacing:'0.2px'}}>
+                        <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer',letterSpacing:'0.2px'}}>
                           {uploading ? lbl.loading : lbl.idle}
                         </button>
                       );
@@ -6746,7 +7086,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'16px'}}>💰</span><span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>Confirm Payment</span></div>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Already sent the money? Fill in your payment details so the rep can verify</div>
                     
-                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh) *</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}</div>
+                    <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Amount Paid (TSh) *</label><input type="number" value={orderFormData.amountPaid} onChange={e=>setOrderFormData({...orderFormData,amountPaid:e.target.value})} placeholder={`${viewingCollection.price?.toLocaleString()}`} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/>{orderFormData.amountPaid && parseInt(orderFormData.amountPaid) < viewingCollection.price && <div style={{fontSize:'11px',color:'#0d9488',marginTop:'4px',fontWeight:'600'}}>⏳ Partial payment — {(viewingCollection.price - parseInt(orderFormData.amountPaid)).toLocaleString()} TSh remaining</div>}</div>
 
                     <div style={{marginBottom:'10px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'4px'}}>Name on {viewingCollection.payNetwork || 'Mobile Money'} account</label><input type="text" value={orderFormData.payerName} onChange={e=>setOrderFormData({...orderFormData,payerName:e.target.value})} placeholder="e.g. AMINA JUMA (as on M-Pesa)" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'15px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>So the rep can match your payment</div></div>
 
@@ -6788,7 +7128,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             )}
 
             {!user && viewingCollection.active && (
-              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#f59e0b',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:'pointer',marginBottom:'16px'}}>
+              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:'pointer',marginBottom:'16px'}}>
                 {(()=>{
                   const ct = viewingCollection.collectionType || "order";
                   const signInLabels = { order:"Sign in to Order", event:"Sign in to Register", contribution:"Sign in to Contribute", freshers:"Sign in to Join" };
@@ -6830,8 +7170,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       const q = orderSearchQ.toLowerCase();
                       return order.studentName?.toLowerCase().includes(q) || order.phone?.includes(q) || order.paymentRef?.toLowerCase().includes(q) || order.payerName?.toLowerCase().includes(q);
                     }).map(order => {
-                      const statusColor = order.paid ? '#10b981' : (order.amountPaid > 0 ? '#f59e0b' : '#ef4444');
-                      const statusBg = order.paid ? '#d1fae5' : (order.amountPaid > 0 ? '#fef3c7' : '#fff');
+                      const statusColor = order.paid ? '#10b981' : (order.amountPaid > 0 ? '#0d9488' : '#ef4444');
+                      const statusBg = order.paid ? '#d1fae5' : (order.amountPaid > 0 ? '#ccfbf1' : '#fff');
                       const statusText = order.paid ? 'PAID' : (order.amountPaid > 0 ? `${order.amountPaid.toLocaleString()}/${order.amount.toLocaleString()}` : 'UNPAID');
                       return (
                       <div key={order.id} style={{background:'#fff',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea'}}>
@@ -6844,7 +7184,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:'14px',fontWeight:'600',color:statusColor}}>{order.studentName}</div>
                             <div style={{fontSize:'12px',color:'#8a9bb0',lineHeight:1.6}}>
-                              {order.selectedOption && <span style={{background:'#fef3c7',color:'#92400e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
+                              {order.selectedOption && <span style={{background:'#ccfbf1',color:'#0f766e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
                               {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
                               {order.phone && <span>{order.phone} • </span>}
                               {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#166534',padding:'1px 6px',borderRadius:'4px',fontSize:'11px'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
@@ -6859,7 +7199,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         {order.amountPaid > 0 && !order.paid && (
                           <div style={{marginTop:'8px',marginLeft:'48px'}}>
                             <div style={{height:'4px',background:'#f4f6f8',borderRadius:'2px',overflow:'hidden'}}>
-                              <div style={{height:'100%',width:`${Math.min(100,Math.round((order.amountPaid/order.amount)*100))}%`,background:'#f59e0b',borderRadius:'2px'}}/>
+                              <div style={{height:'100%',width:`${Math.min(100,Math.round((order.amountPaid/order.amount)*100))}%`,background:'#0d9488',borderRadius:'2px'}}/>
                             </div>
                             <div style={{fontSize:'10px',color:'#8a9bb0',marginTop:'2px'}}>{Math.round((order.amountPaid/order.amount)*100)}% paid — {(order.amount-order.amountPaid).toLocaleString()} TSh remaining</div>
                           </div>
@@ -6904,8 +7244,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             {user && !isCollectionAdmin(viewingCollection) && collectionOrders.length > 0 && (
               <div style={{marginBottom:'16px'}}>
                 {collectionOrders.filter(o=>o.userId===user.uid).map(order=>(
-                  <div key={order.id} style={{background:order.paid?'#d1fae5':'#fef3c7',borderRadius:'12px',padding:'14px',border:order.paid?'1px solid #6ee7b7':'1px solid #fde68a'}}>
-                    <div style={{fontSize:'14px',fontWeight:'600',color:order.paid?'#065f46':'#92400e'}}>
+                  <div key={order.id} style={{background:order.paid?'#d1fae5':'#ccfbf1',borderRadius:'12px',padding:'14px',border:order.paid?'1px solid #6ee7b7':'1px solid #99f0ee'}}>
+                    <div style={{fontSize:'14px',fontWeight:'600',color:order.paid?'#065f46':'#0f766e'}}>
                       {order.paid ? '✅ Your payment has been confirmed!' : '⏳ Your order is placed — waiting for payment confirmation'}
                     </div>
                     {order.selectedOption && <div style={{fontSize:'12px',color:'#6b7280',marginTop:'4px'}}>Option: {order.selectedOption}</div>}
@@ -7056,7 +7396,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and contact you</div>
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
-                <button onClick={()=>{setShowCreateRoomSuccess(false);setCreateRoomData({landlordName:"",landlordPhone:"",roomType:"",price:"",location:"",lat:null,lng:null,nearUni:"ARU",desc:"",amenities:[],photoFiles:[],photoPreviews:[]});setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
@@ -7375,7 +7715,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'3px 10px',borderRadius:'8px',fontWeight:'500'}}>Budget: {post.budget?.toLocaleString()} TSh</span>
                       <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>📍 {post.preferredArea}</span>
                       {post.gender && <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>{post.gender === 'male' ? '👨' : post.gender === 'female' ? '👩' : '👤'} {post.gender}</span>}
-                      {post.moveDate && <span style={{fontSize:'12px',background:'#fef3c7',color:'#92400e',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
+                      {post.moveDate && <span style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
                     </div>
                     {post.description && <p style={{fontSize:'13px',color:'#4a5568',lineHeight:1.5}}>{post.description}</p>}
                   </div>
@@ -7626,7 +7966,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {label:'Users', data: adminStats.users, color:'#0d9488'},
                       {label:'Search Alerts', data: adminStats.alerts, color:'#06d6c7'},
                       {label:'Listings (Goods)', data: adminStats.listings, color:'#0d9488'},
-                      {label:'Services', data: adminStats.services, color:'#f59e0b'},
+                      {label:'Services', data: adminStats.services, color:'#0d9488'},
                       {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
                     ].map(stat => (
                       <div key={stat.label} style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea'}}>
@@ -7704,7 +8044,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>
                       Verification Queue
                       {adminVerifications.filter(v => v.status === "pending").length > 0 && (
-                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'#fef3c7',color:'#92400e',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
+                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'#ccfbf1',color:'#0f766e',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
                           {adminVerifications.filter(v => v.status === "pending").length} pending
                         </span>
                       )}
@@ -7750,7 +8090,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                 )}
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}}>
-                                    <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#fef3c7',color:isStudent?'#1e40af':'#92400e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
+                                    <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#ccfbf1',color:isStudent?'#1e40af':'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
                                     <span style={{fontSize:'10px',color:'#9ca3af'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
                                   </div>
                                   <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>
@@ -7846,7 +8186,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                       {filtered.map(alert => {
                         const kindColors = {
-                          listing: {bg:'#fef3c7',color:'#92400e'},
+                          listing: {bg:'#ccfbf1',color:'#0f766e'},
                           service: {bg:'#ede9fe',color:'#5b21b6'},
                           room: {bg:'#dbeafe',color:'#1e40af'},
                           collection: {bg:'#fce7f3',color:'#9f1239'},
@@ -7874,7 +8214,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                 <span style={{padding:'5px 10px',background:'#dcfce7',color:'#166534',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
                               ) : alert.routedAt ? (
                                 <>
-                                  <span style={{padding:'5px 10px',background:'#fef3c7',color:'#92400e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
+                                  <span style={{padding:'5px 10px',background:'#ccfbf1',color:'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
                                   <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
                                 </>
                               ) : (
@@ -7995,17 +8335,26 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
            {/* Top row: avatar + stats */}
            <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
              <div style={{position:'relative',flexShrink:0}}>
-  <div style={{width:'72px',height:'72px',minWidth:'72px',minHeight:'72px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
+  <div
+    role="button"
+    tabIndex={0}
+    title="Change profile picture"
+    onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}}
+    onKeyDown={(e)=>{if(e.key==="Enter"||e.key===" "){setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}}}
+    style={{width:'72px',height:'72px',minWidth:'72px',minHeight:'72px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
 backgroundColor:!userAvatar?'#06d6c7':'transparent',
 backgroundSize:'cover',
-backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:'700',color:'#0f1b2d',border:'2.5px solid #f0fffe'}}>
+backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:'700',color:'#0f1b2d',border:'2.5px solid #f0fffe',cursor:'pointer'}}>
     {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
   </div>
-  {isVerified && (
-    <div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'22px',height:'22px',borderRadius:'50%',background:'#06d6c7',border:'2.5px solid #fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',color:'#0f1b2d',fontWeight:'700'}}>
-      ✓
-    </div>
-  )}
+  <button
+    type="button"
+    onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}}
+    aria-label="Change profile picture"
+    style={{position:'absolute',bottom:'-3px',right:'-3px',width:'24px',height:'24px',borderRadius:'50%',background:'#0f1b2d',border:'2px solid #fff',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'800',cursor:'pointer',padding:0}}
+  >
+    +
+  </button>
 </div>
              {/* Stats */}
              <div style={{display:'flex',gap:'20px',flex:1,justifyContent:'space-around'}}>
@@ -8030,10 +8379,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
              )}
            </div>
-           <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>{userAccountType === "provider" ? "Service Provider" : "Student · " + (selectedUni?.short || "ARU")}</div>
+           <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:ENABLE_PHONE_VERIFICATION?'8px':'12px'}}>{userAccountType === "provider" ? "Service Provider" : "Student - " + (selectedUni?.short || "ARU")}</div>
+           {ENABLE_PHONE_VERIFICATION && <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',fontSize:'12px',color:phoneVerified?'#065f46':'#0f766e',fontWeight:'700'}}>
+             <span>{phoneVerified ? 'Phone verified' : 'Phone not verified'}</span>
+             {!phoneVerified && <button type="button" onClick={()=>setShowPhoneVerifyModal(true)} style={{border:'none',background:'#ccfbf1',color:'#0f766e',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Verify now</button>}
+           </div>}
            {/* Edit profile + QR buttons */}
            <div style={{display:'flex',gap:'8px'}}>
-             <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
+             <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
              <button onClick={()=>setShowQRModal(true)} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
                My QR
@@ -8292,12 +8645,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {scanResult && (
               <div style={{width:'100%',maxWidth:'340px',background:'#fff',borderRadius:'20px',padding:'24px',textAlign:'center'}}>
                 <div style={{fontSize:'48px',marginBottom:'8px'}}>{scanResult.order.paid ? '✅' : '⏳'}</div>
-                <div style={{fontSize:'18px',fontWeight:'800',color: scanResult.order.paid ? '#065f46' : '#92400e',marginBottom:'4px'}}>
+                <div style={{fontSize:'18px',fontWeight:'800',color: scanResult.order.paid ? '#065f46' : '#0f766e',marginBottom:'4px'}}>
                   {scanResult.order.paid ? 'CONFIRMED PAID' : 'NOT YET PAID'}
                 </div>
                 <div style={{fontSize:'20px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
-                {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#fef3c7',color:'#92400e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
+                {scanResult.groupTitle && <div style={{fontSize:'12px',color:'#0d9488',fontWeight:'800',marginBottom:'8px'}}>{scanResult.groupTitle}</div>}
+                {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
                 {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'#166534',background:'#f0fdf4',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
                 <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
                   {!scanResult.order.paid && (
@@ -8446,9 +8800,50 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
             </label>
             
+            <div style={{marginBottom:'16px'}}>
+              <div style={{fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'8px',textAlign:'center'}}>Or choose an avatar</div>
+              <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
+                {AVATAR_COLORS.map(color => {
+                  const selected = editProfileData.avatarPreset === color;
+                  const previewUrl = makeInitialAvatarUrl(editProfileData.name || userName, color);
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setEditProfileData({
+                        ...editProfileData,
+                        avatarFile: null,
+                        avatarPreset: color,
+                        avatarPreview: previewUrl,
+                      })}
+                      aria-label="Choose avatar color"
+                      style={{
+                        width:'38px',
+                        height:'38px',
+                        borderRadius:'50%',
+                        border:selected?'3px solid #0f1b2d':'2px solid #e2e6ea',
+                        backgroundImage:`url(${previewUrl})`,
+                        backgroundSize:'cover',
+                        backgroundPosition:'center',
+                        cursor:'pointer',
+                        padding:0,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label>
-              <input type="text" value={editProfileData.name} onChange={e=>setEditProfileData({...editProfileData,name:e.target.value})} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+              <input type="text" value={editProfileData.name} onChange={e=>{
+                const nextName = e.target.value;
+                setEditProfileData({
+                  ...editProfileData,
+                  name: nextName,
+                  avatarPreview: editProfileData.avatarPreset ? makeInitialAvatarUrl(nextName || userName, editProfileData.avatarPreset) : editProfileData.avatarPreview,
+                });
+              }} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
             </div>
 
             {/* BIO FIELD HIDDEN FOR NOW — uncomment to re-enable */}
@@ -8960,7 +9355,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             onClick={() => toggleSave(viewingListing)}
             style={{
               padding:'16px',
-              background:cart.some(c => c.id === viewingListing.id)?'#f59e0b':'#f4f6f8',
+              background:cart.some(c => c.id === viewingListing.id)?'#0d9488':'#f4f6f8',
               color:cart.some(c => c.id === viewingListing.id)?'#fff':'#0f1b2d',
               border:'none',
               borderRadius:'10px',
@@ -9559,6 +9954,53 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
 
+      {ENABLE_PHONE_VERIFICATION && showPhoneVerifyModal && user && !phoneVerified && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowPhoneVerifyModal(false)}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'390px',boxShadow:'0 18px 50px rgba(15,27,45,0.22)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'20px',fontWeight:'900',color:'#0f1b2d',marginBottom:'6px'}}>Verify your phone</div>
+            <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.5,marginBottom:'16px'}}>
+              This helps protect groups, orders, payments, and event registrations.
+            </div>
+            <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Phone number</label>
+            <input
+              type="tel"
+              value={userPhone}
+              disabled={phoneOtpBusy}
+              onChange={e=>{setUserPhone(e.target.value);setPhoneOtpSent(false);setPhoneOtpCode("");}}
+              placeholder="0712345678"
+              style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'10px'}}
+            />
+            {phoneOtpSent && (
+              <>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>SMS code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={phoneOtpCode}
+                  onChange={e=>setPhoneOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))}
+                  placeholder="Enter 6 digit code"
+                  style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'10px'}}
+                />
+              </>
+            )}
+            <div style={{display:'flex',gap:'8px',marginTop:'6px'}}>
+              <button type="button" onClick={requestPhoneOtp} disabled={phoneOtpBusy} style={{flex:1,padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer'}}>
+                {phoneOtpBusy ? 'Please wait...' : phoneOtpSent ? 'Resend code' : 'Send code'}
+              </button>
+              {phoneOtpSent && (
+                <button type="button" onClick={verifyPhoneOtp} disabled={phoneOtpBusy || phoneOtpCode.length!==6} style={{flex:1,padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer',opacity:phoneOtpCode.length===6?1:0.55}}>
+                  Verify
+                </button>
+              )}
+            </div>
+            <button type="button" onClick={()=>setShowPhoneVerifyModal(false)} style={{width:'100%',padding:'11px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
+              Skip for now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* PWA Install Banner */}
       {showInstallBanner && !isStandalone && (
         <div style={{
@@ -9655,6 +10097,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <button onClick={()=>{ if(!user){requireAuth("groups",()=>setPage("communities"));return;} setPage("communities"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
+          {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{groupUnreadCount}</span>}
         </button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
@@ -9694,3 +10137,5 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 }
 
 export default App;
+
+

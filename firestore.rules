@@ -1,0 +1,196 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function groupMember(groupId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    function groupMemberData(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data;
+    }
+
+    function groupMemberAfter(groupId) {
+      return signedIn()
+        && getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.uid == request.auth.uid;
+    }
+
+    function groupMemberDataAfter(groupId) {
+      return getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data;
+    }
+
+    function activeGroupMember(groupId) {
+      return groupMember(groupId) && groupMemberData(groupId).status != 'removed';
+    }
+
+    function activeGroupMemberAfter(groupId) {
+      return groupMemberAfter(groupId) && groupMemberDataAfter(groupId).status != 'removed';
+    }
+
+    function groupRole(groupId) {
+      return groupMemberData(groupId).role;
+    }
+
+    function groupRoleAfter(groupId) {
+      return groupMemberDataAfter(groupId).role;
+    }
+
+    function canManageGroup(groupId) {
+      return activeGroupMember(groupId)
+        && groupRole(groupId) in ['owner', 'admin', 'treasurer'];
+    }
+
+    function canAdminGroup(groupId) {
+      return activeGroupMember(groupId)
+        && groupRole(groupId) in ['owner', 'admin'];
+    }
+
+    function canAdminGroupAfter(groupId) {
+      return activeGroupMemberAfter(groupId)
+        && groupRoleAfter(groupId) in ['owner', 'admin'];
+    }
+
+    function validRole(role) {
+      return role in ['owner', 'admin', 'treasurer', 'member'];
+    }
+
+    function memberPaymentFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'uid',
+        'studentName',
+        'phone',
+        'payerName',
+        'paymentRef',
+        'amountDue',
+        'amountPaid',
+        'paymentProofUrl',
+        'proofRequested',
+        'proofRequestMessage',
+        'registeredAt',
+        'status',
+        'submittedAt',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function groupActivityFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'activityAt',
+        'lastActivityByUid',
+        'memberCount',
+        'updatedAt'
+      ]);
+    }
+
+    function groupManagerFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'activityAt',
+        'currentAction',
+        'lastActivityByUid',
+        'memberCount',
+        'updatedAt'
+      ]);
+    }
+
+    match /groups/{groupId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.adminUid == request.auth.uid;
+      allow update: if canAdminGroup(groupId)
+        || (canManageGroup(groupId) && groupManagerFieldsOnly())
+        || (activeGroupMember(groupId) && groupActivityFieldsOnly());
+      allow delete: if canAdminGroup(groupId);
+
+      match /members/{uid} {
+        allow read: if activeGroupMember(groupId) || resource.data.uid == request.auth.uid;
+        allow create: if signedIn()
+          && validRole(request.resource.data.role)
+          && (
+            (
+              uid == request.auth.uid
+              && request.resource.data.uid == request.auth.uid
+              && request.resource.data.role == 'member'
+            )
+            || (
+              uid == request.auth.uid
+              && request.resource.data.uid == request.auth.uid
+              &&
+              request.resource.data.role == 'owner'
+              && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid == request.auth.uid
+            )
+            || (
+              request.resource.data.role in ['admin', 'treasurer', 'member']
+              && (canAdminGroup(groupId) || canAdminGroupAfter(groupId))
+            )
+          );
+        allow update: if signedIn()
+          && validRole(request.resource.data.role)
+          && (
+            (
+              uid == request.auth.uid
+              && request.resource.data.uid == request.auth.uid
+              && request.resource.data.role == resource.data.role
+              && request.resource.data.status in ['active', 'left']
+            )
+            || canAdminGroup(groupId)
+          );
+        allow delete: if canAdminGroup(groupId);
+      }
+
+      match /channels/{channelId} {
+        allow read: if activeGroupMember(groupId);
+        allow create: if canAdminGroup(groupId) || canAdminGroupAfter(groupId);
+        allow update, delete: if canAdminGroup(groupId);
+
+        match /messages/{messageId} {
+          allow read: if activeGroupMember(groupId);
+          allow create: if (activeGroupMember(groupId) || activeGroupMemberAfter(groupId))
+            && request.resource.data.authorUid == request.auth.uid;
+          allow update, delete: if canManageGroup(groupId);
+        }
+      }
+
+      match /collections/{collectionId} {
+        allow read: if activeGroupMember(groupId) || resource.data.visibility == 'public';
+        allow create: if canManageGroup(groupId) || canAdminGroupAfter(groupId);
+        allow update, delete: if canManageGroup(groupId);
+
+        match /payments/{paymentId} {
+          allow read: if activeGroupMember(groupId)
+            && (paymentId == request.auth.uid || canManageGroup(groupId));
+          allow create: if (activeGroupMember(groupId) || activeGroupMemberAfter(groupId))
+            && (
+              paymentId == request.auth.uid
+              || canManageGroup(groupId)
+              || canAdminGroupAfter(groupId)
+            );
+          allow update: if activeGroupMember(groupId)
+            && (
+              (
+                paymentId == request.auth.uid
+                && request.resource.data.uid == request.auth.uid
+                && request.resource.data.status in ['pending', 'registered']
+                && memberPaymentFieldsOnly()
+              )
+              || canManageGroup(groupId)
+            );
+          allow delete: if canManageGroup(groupId);
+        }
+      }
+    }
+
+    // Compatibility for existing marketplace/chat collections while the app is
+    // migrated into more granular rule blocks.
+    match /{document=**} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+  }
+}

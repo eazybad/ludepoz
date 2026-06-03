@@ -148,16 +148,69 @@ exports.sendNewListingNotification = onDocumentCreated(
     }
   }
 );
+
+// Send push notification for in-app notification documents.
+exports.sendInAppNotificationPush = onDocumentCreated(
+  "notifications/{notificationId}",
+  async (event) => {
+    const notification = event.data.data();
+
+    if (!notification || !notification.userId) {
+      console.log("Notification missing userId");
+      return null;
+    }
+
+    try {
+      const userDoc = await getFirestore()
+        .collection("users")
+        .doc(notification.userId)
+        .get();
+
+      if (!userDoc.exists) {
+        console.log("Notification recipient not found:", notification.userId);
+        return null;
+      }
+
+      const fcmToken = userDoc.data().fcmToken;
+      if (!fcmToken) {
+        console.log("No FCM token for notification recipient:", notification.userId);
+        return null;
+      }
+
+      const payload = {
+        notification: {
+          title: String(notification.title || "Kampasika"),
+          body: String(notification.message || "You have a new notification").substring(0, 180),
+        },
+        data: {
+          type: String(notification.type || "notification"),
+          notificationId: event.params.notificationId,
+          groupId: String(notification.groupId || ""),
+          messageId: String(notification.messageId || ""),
+        },
+        token: fcmToken,
+      };
+
+      await getMessaging().send(payload);
+      console.log("In-app notification push sent:", event.params.notificationId);
+      return null;
+    } catch (error) {
+      console.error("Error sending in-app notification push:", error);
+      return null;
+    }
+  }
+);
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
-
-admin.initializeApp();
+const crypto = require("crypto");
 
 const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
+const AFRICASTALKING_API_KEY = defineSecret("AFRICASTALKING_API_KEY");
+const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
 
 function assertAdmin(request) {
   const callerUid = request.auth && request.auth.uid;
@@ -204,6 +257,136 @@ exports.adminSendPasswordReset = onCall({ secrets: [KAMPASIKA_WEB_API_KEY] }, as
   }
 
   return { success: true };
+});
+
+function normalizeTanzaniaPhone(rawPhone) {
+  const compact = String(rawPhone || "").replace(/\s+/g, "").replace(/-/g, "");
+  if (/^0[67]\d{8}$/.test(compact)) return `+255${compact.slice(1)}`;
+  if (/^255[67]\d{8}$/.test(compact)) return `+${compact}`;
+  if (/^\+255[67]\d{8}$/.test(compact)) return compact;
+  return "";
+}
+
+function otpHash(uid, phone, code, secret) {
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`${uid}:${phone}:${code}`)
+    .digest("hex");
+}
+
+exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALKING_USERNAME] }, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const phone = normalizeTanzaniaPhone(request.data && request.data.phone);
+  if (!phone) {
+    throw new HttpsError("invalid-argument", "Enter a valid Tanzania phone number.");
+  }
+
+  const apiKey = AFRICASTALKING_API_KEY.value();
+  const username = AFRICASTALKING_USERNAME.value();
+  if (!apiKey || !username) {
+    throw new HttpsError("failed-precondition", "Africa's Talking secrets are not configured.");
+  }
+
+  const code = String(crypto.randomInt(100000, 999999));
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const db = getFirestore();
+
+  await db.collection("phoneOtps").doc(uid).set({
+    phone,
+    codeHash: otpHash(uid, phone, code, apiKey),
+    attempts: 0,
+    expiresAt,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  const body = new URLSearchParams({
+    username,
+    to: phone,
+    message: `Kampasika verification code: ${code}. Do not share this code.`,
+  });
+
+  const response = await fetch("https://api.africastalking.com/version1/messaging", {
+    method: "POST",
+    headers: {
+      "apiKey": apiKey,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    const lower = text.toLowerCase();
+    if (response.status === 401 || lower.includes("authentication") || lower.includes("auth")) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Africa's Talking authentication failed. Check AFRICASTALKING_USERNAME and AFRICASTALKING_API_KEY belong to the same sandbox or live account."
+      );
+    }
+    throw new HttpsError("internal", text || "SMS failed to send.");
+  }
+
+  await db.collection("users").doc(uid).set({
+    phone,
+    phoneVerified: false,
+    phoneVerificationSentAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { success: true, phone };
+});
+
+exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const code = String(request.data && request.data.code || "").trim();
+  if (!/^\d{6}$/.test(code)) {
+    throw new HttpsError("invalid-argument", "Enter the 6 digit code.");
+  }
+
+  const apiKey = AFRICASTALKING_API_KEY.value();
+  const db = getFirestore();
+  const otpRef = db.collection("phoneOtps").doc(uid);
+  const otpSnap = await otpRef.get();
+
+  if (!otpSnap.exists) {
+    throw new HttpsError("not-found", "Request a new code first.");
+  }
+
+  const otp = otpSnap.data();
+  if (!otp || Date.now() > Number(otp.expiresAt || 0)) {
+    await otpRef.delete();
+    throw new HttpsError("deadline-exceeded", "Code expired. Request a new one.");
+  }
+
+  if (Number(otp.attempts || 0) >= 5) {
+    await otpRef.delete();
+    throw new HttpsError("resource-exhausted", "Too many attempts. Request a new code.");
+  }
+
+  const expectedHash = otpHash(uid, otp.phone, code, apiKey);
+  if (expectedHash !== otp.codeHash) {
+    await otpRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+      lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw new HttpsError("permission-denied", "Wrong code.");
+  }
+
+  await db.collection("users").doc(uid).set({
+    phone: otp.phone,
+    phoneVerified: true,
+    phoneVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await otpRef.delete();
+
+  return { success: true, phone: otp.phone };
 });
 
 exports.adminDeleteUser = onCall(async (request) => {
