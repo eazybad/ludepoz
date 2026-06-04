@@ -4657,7 +4657,7 @@ return (
     </>
   ) : page==="chat" && activeConversation ? (
     activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
-  ) : page==="groupDetail" ? (
+  ) : page==="groupDetail" || page==="home" ? (
     null
   ) : (
     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
@@ -4712,9 +4712,6 @@ return (
         </button>
       </div>
       
-    )}
-    {!user && page === "home" && (
-      <button onClick={()=>{setAuthMode("signup");setShowAuthModal(true);}} style={{padding:'8px 14px',background:'linear-gradient(135deg,#0d9488,#0ea5a0)',color:'#fff',border:'none',borderRadius:'22px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginLeft:'6px',boxShadow:'0 2px 8px rgba(13,148,136,0.25)'}}>Sign Up</button>
     )}
   </div>
 )}

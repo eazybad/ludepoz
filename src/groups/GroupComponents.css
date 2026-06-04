@@ -265,6 +265,28 @@
   font-size: 13px;
 }
 
+.group-preview-lock {
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
+  text-align: center;
+}
+
+.group-preview-title {
+  color: #0f1b2d;
+  font-size: 16px;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.group-preview-lock p {
+  margin: 0 0 14px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .group-modal-backdrop {
   position: fixed;
   inset: 0;

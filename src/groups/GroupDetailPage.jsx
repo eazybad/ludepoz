@@ -187,6 +187,7 @@ export function GroupDetailPage({
   const memberCanEditGroup = ["owner", "admin"].includes(currentMember?.role) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanVerify = canVerifyPayments(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanChat = isGroupMember(currentMember) || memberCanManage;
+  const canViewGroupContent = isGroupMember(currentMember) || memberCanManage;
   const groupInviteUrl = group.inviteLink?.startsWith("http")
     ? group.inviteLink
     : `${window.location.origin}/g/${group.inviteCode || group.id}`;
@@ -926,30 +927,34 @@ export function GroupDetailPage({
                 <button type="button" className="group-menu-scrim" aria-label="Close group menu" onClick={() => setMenuOpen(false)} />
                 <div className="group-side-menu">
                   <div className="group-side-menu-title">{group.name}</div>
-                  {[
-                    ["chats", "Chats"],
-                    ["payments", "Payments"],
-                    ["members", "Members"],
-                    ["resources", "Resources"],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={`group-menu-item ${activeTab === id ? "active" : ""}`}
-                      onClick={() => switchGroupTab(id)}
-                    >
-                      <span><MenuIcon name={id} /></span>
-                      <strong>{label}</strong>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className={`group-menu-item ${activeTab === "events" ? "active" : ""}`}
-                    onClick={() => switchGroupTab("events")}
-                  >
-                    <span><MenuIcon name="events" /></span>
-                    <strong>Events</strong>
-                  </button>
+                  {canViewGroupContent && (
+                    <>
+                      {[
+                        ["chats", "Chats"],
+                        ["payments", "Payments"],
+                        ["members", "Members"],
+                        ["resources", "Resources"],
+                      ].map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className={`group-menu-item ${activeTab === id ? "active" : ""}`}
+                          onClick={() => switchGroupTab(id)}
+                        >
+                          <span><MenuIcon name={id} /></span>
+                          <strong>{label}</strong>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className={`group-menu-item ${activeTab === "events" ? "active" : ""}`}
+                        onClick={() => switchGroupTab("events")}
+                      >
+                        <span><MenuIcon name="events" /></span>
+                        <strong>Events</strong>
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     className="group-menu-item"
@@ -1005,23 +1010,49 @@ export function GroupDetailPage({
         {currentAction && group.desc ? (
           <div className="group-description-strip">{group.desc}</div>
         ) : null}
-        {membersLoaded && !isGroupMember(currentMember) && user && (
+        {membersLoaded && !isGroupMember(currentMember) && (
           <div style={{ padding: "0 12px 10px" }}>
             <button type="button" className="group-btn secondary" style={{ width: "100%" }} disabled={joiningGroup || !!pendingCurrentMember} onClick={onJoinGroup}>
               {pendingCurrentMember
                 ? "Join request pending"
                 : joiningGroup
                   ? "Joining..."
+                  : !user
+                    ? group.joinPolicy === "approvalRequired" ? "Sign in to request access" : "Sign in to join"
+                    : group.joinPolicy === "approvalRequired"
+                      ? "Request to join"
+                      : "Join Group"}
+            </button>
+          </div>
+        )}
+        {canViewGroupContent && <div className="group-current-channel">{activeTab}</div>}
+      </div>
+
+      {membersLoaded && !canViewGroupContent && (
+        <div className="group-panel">
+          <div className="group-preview-lock">
+            <div className="group-preview-title">{group.visibility === "public" ? "Public group preview" : "Private group"}</div>
+            <p>
+              {pendingCurrentMember
+                ? "Your join request is waiting for a group leader to approve it."
+                : user
+                  ? "Join this group to see chats, payments, events, members, and resources."
+                  : "Sign in first, then join this group to see chats, payments, events, members, and resources."}
+            </p>
+            <button type="button" className="group-btn primary" disabled={joiningGroup || !!pendingCurrentMember} onClick={onJoinGroup}>
+              {pendingCurrentMember
+                ? "Request pending"
+                : !user
+                  ? group.joinPolicy === "approvalRequired" ? "Sign in to request access" : "Sign in to join"
                   : group.joinPolicy === "approvalRequired"
                     ? "Request to join"
                     : "Join Group"}
             </button>
           </div>
-        )}
-        <div className="group-current-channel">{activeTab}</div>
-      </div>
+        </div>
+      )}
 
-      {activeTab === "chats" && (
+      {canViewGroupContent && activeTab === "chats" && (
         <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
           {messages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
@@ -1158,7 +1189,7 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {activeTab === "payments" && (
+      {canViewGroupContent && activeTab === "payments" && (
         <div className="group-panel">
           {selectedCollection && <div className="payment-grid">
             {memberCanVerify ? (
@@ -1350,7 +1381,7 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {activeTab === "events" && (
+      {canViewGroupContent && activeTab === "events" && (
         <div className="group-panel">
           {memberCanManage && (
             <div style={{ marginBottom: 10 }}>
@@ -1483,7 +1514,7 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {activeTab === "members" && (
+      {canViewGroupContent && activeTab === "members" && (
         <div className="group-panel">
           {members.length === 0 ? (
             <div className="group-empty">No members loaded yet.</div>
@@ -1546,7 +1577,7 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {activeTab === "resources" && (
+      {canViewGroupContent && activeTab === "resources" && (
         <div className="group-panel">
           {resources.length === 0 ? (
             <div className="resource-box">No resources yet.</div>
