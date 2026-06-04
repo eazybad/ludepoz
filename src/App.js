@@ -6364,7 +6364,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             onDeleteGroup={handleArchiveGroup}
             onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
             onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
-            onOpenScanner={openScanner}
+            onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
             onSeedDemoGroups={handleSeedDemoGroups}
             canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
             groupReadAt={groupReadAt}

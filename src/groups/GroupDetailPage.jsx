@@ -1010,7 +1010,7 @@ export function GroupDetailPage({
         {currentAction && group.desc ? (
           <div className="group-description-strip">{group.desc}</div>
         ) : null}
-        {membersLoaded && !isGroupMember(currentMember) && (
+        {(!user || membersLoaded) && !isGroupMember(currentMember) && (
           <div style={{ padding: "0 12px 10px" }}>
             <button type="button" className="group-btn secondary" style={{ width: "100%" }} disabled={joiningGroup || !!pendingCurrentMember} onClick={onJoinGroup}>
               {pendingCurrentMember
@@ -1028,7 +1028,7 @@ export function GroupDetailPage({
         {canViewGroupContent && <div className="group-current-channel">{activeTab}</div>}
       </div>
 
-      {membersLoaded && !canViewGroupContent && (
+      {(!user || membersLoaded) && !canViewGroupContent && (
         <div className="group-panel">
           <div className="group-preview-lock">
             <div className="group-preview-title">{group.visibility === "public" ? "Public group preview" : "Private group"}</div>
