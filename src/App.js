@@ -230,11 +230,11 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [page, setPageRaw] = useState("home");
+  const [page, setPageRaw] = useState("communities");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
-  const pageHistory = useRef(["home"]);
+  const pageHistory = useRef(["communities"]);
   const isGoingBack = useRef(false)
   const groupInternalBackRef = useRef(null);
 
@@ -262,10 +262,10 @@ function App() {
     isGoingBack.current = true;
     if (pageHistory.current.length > 1) {
       pageHistory.current.pop();
-      const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
+      const prev = pageHistory.current[pageHistory.current.length - 1] || "communities";
       setPageRaw(prev);
     } else {
-      setPageRaw("home");
+      setPageRaw("communities");
     }
     setTimeout(() => { isGoingBack.current = false; }, 50);
   }, []);
@@ -2412,7 +2412,7 @@ await updateDoc(convRef, {
     }
     
     // Push initial state so browser back works step-by-step
-    window.history.replaceState({ page: 'home' }, '', window.location.pathname);
+    window.history.replaceState({ page: 'communities' }, '', window.location.pathname);
     
     // Handle browser/Android back button — go back one step instead of exiting
     const handlePopState = (e) => {
@@ -2462,7 +2462,7 @@ await updateDoc(convRef, {
         }
         if (pageHistory.current.length > 1) {
   pageHistory.current.pop();
-  const prev = pageHistory.current[pageHistory.current.length - 1] || "home";
+  const prev = pageHistory.current[pageHistory.current.length - 1] || "communities";
 
   if (prev !== "chat") {
     setActiveConversation(null);
@@ -2635,6 +2635,39 @@ await updateDoc(convRef, {
                 scanStreamRef.current.getTracks().forEach(t => t.stop());
                 scanStreamRef.current = null;
                 handleVerifyScan(colId, ordId);
+                return;
+              }
+            }
+            if (code && code.data.includes('/g/') && !code.data.includes('/verify/')) {
+              let invitePath = "";
+              try {
+                invitePath = new URL(code.data).pathname;
+              } catch (_) {
+                invitePath = code.data;
+              }
+              const pathParts = invitePath.split('/').filter(Boolean);
+              if (pathParts.length === 2 && pathParts[0] === "g") {
+                const inviteCode = decodeURIComponent(pathParts[1]);
+                cancelAnimationFrame(scanAnimRef.current);
+                scanStreamRef.current.getTracks().forEach(t => t.stop());
+                scanStreamRef.current = null;
+                setScanLoading(true);
+                getDocs(query(collection(db, "groups"), where("inviteCode", "==", inviteCode)))
+                  .then(async snap => {
+                    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+                    const fallbackSnap = await getDoc(doc(db, "groups", inviteCode));
+                    return fallbackSnap.exists() ? { id: fallbackSnap.id, ...fallbackSnap.data() } : null;
+                  })
+                  .then(group => {
+                    if (!group) {
+                      setScanError("Group QR not found.");
+                      return;
+                    }
+                    setShowQRScanner(false);
+                    openGroup(group);
+                  })
+                  .catch(err => setScanError("Could not open group QR: " + err.message))
+                  .finally(() => setScanLoading(false));
                 return;
               }
             }
@@ -3181,7 +3214,7 @@ useEffect(() => {
         : "Akaunti yako imeundwa! Sasa wanafunzi wanaweza kukupata.");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
-      setPage("home");
+      setPage("communities");
     } catch (err) {
       console.error("Signup error:", err);
       setError(getAuthErrorMessage(err, "signup"));
@@ -3219,7 +3252,7 @@ useEffect(() => {
       setSuccess("Logged in successfully!");
       setTimeout(() => setSuccess(""), 4000);
       setShowAuthModal(false);
-      setPage("home");
+      setPage("communities");
     } catch (err) {
       console.error("Login error:", err);
       setError(getAuthErrorMessage(err, "login"));
@@ -3230,7 +3263,7 @@ useEffect(() => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setPage("home");
+      setPage("communities");
       setListings([]);
       setCart([]);
       setConversations([]);
@@ -4460,7 +4493,7 @@ return (
 )}
       
       {/* EMAIL VERIFICATION BANNER REMOVED */}
-    {page !== "chat" && page !== "groupDetail" && (
+    {page !== "chat" && page !== "groupDetail" && page !== "communities" && (
   <div
     style={{
       background:'#fff',
@@ -4473,7 +4506,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communities"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
+    {(page==="home"||page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -6334,6 +6367,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             onDeleteGroup={handleArchiveGroup}
             onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
             onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
+            onOpenScanner={openScanner}
             onSeedDemoGroups={handleSeedDemoGroups}
             canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
             groupReadAt={groupReadAt}
@@ -10157,12 +10191,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   boxSizing:'border-box',
   padding:'6px 0 env(safe-area-inset-bottom, 8px) 0'
 }}>
-        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
-        <button onClick={()=>{ if(!user){requireAuth("groups",()=>setPage("communities"));return;} setPage("communities"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
+        <button onClick={()=>setPage("communities")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
           {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{groupUnreadCount}</span>}
         </button>
+        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
         <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>

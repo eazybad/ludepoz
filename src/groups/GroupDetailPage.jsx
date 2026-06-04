@@ -78,6 +78,7 @@ function MenuIcon({ name }) {
     mute: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /><path d="M3 3l18 18" /></>,
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 19.4 9c.2.6.8 1 1.5 1H21a2 2 0 1 1 0 4h-.2c-.7 0-1.3.4-1.5 1Z" /></>,
+    qr: <><path d="M4 4h6v6H4z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6H4z" /><path d="M14 14h2v2h-2z" /><path d="M18 14h2v6h-2z" /><path d="M14 18h2v2h-2z" /></>,
     back: <><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></>,
     leave: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
     send: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7Z" /></>,
@@ -167,6 +168,7 @@ export function GroupDetailPage({
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showGroupQr, setShowGroupQr] = useState(false);
   const [notificationPrefsDraft, setNotificationPrefsDraft] = useState(DEFAULT_GROUP_NOTIFICATION_PREFS);
   const [busy, setBusy] = useState(false);
   const groupNavDepth = useRef(0);
@@ -181,6 +183,9 @@ export function GroupDetailPage({
   const memberCanEditGroup = ["owner", "admin"].includes(currentMember?.role) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanVerify = canVerifyPayments(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanChat = isGroupMember(currentMember) || memberCanManage;
+  const groupInviteUrl = group.inviteLink?.startsWith("http")
+    ? group.inviteLink
+    : `${window.location.origin}/g/${group.inviteCode || group.id}`;
   const selectedCollection = collections.find(item => item.id === selectedCollectionId) || null;
   const eventCollections = collections.filter(item => (item.collectionType || "") === "event");
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
@@ -878,6 +883,17 @@ export function GroupDetailPage({
                     <span><MenuIcon name="events" /></span>
                     <strong>Events</strong>
                   </button>
+                  <button
+                    type="button"
+                    className="group-menu-item"
+                    onClick={() => {
+                      setShowGroupQr(true);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <span><MenuIcon name="qr" /></span>
+                    <strong>Group QR</strong>
+                  </button>
                   {isGroupMember(currentMember) && (
                     <>
                       <div className="group-menu-divider" />
@@ -1522,6 +1538,56 @@ export function GroupDetailPage({
               </button>
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowNotificationSettings(false)}>
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGroupQr && (
+        <div className="group-modal-backdrop" onClick={() => setShowGroupQr(false)}>
+          <div className="group-modal group-qr-modal" onClick={event => event.stopPropagation()}>
+            <h3>Group QR</h3>
+            <div className="group-qr-card">
+              <div
+                className="group-avatar group-qr-avatar"
+                style={{
+                  backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
+              </div>
+              <strong>{group.name}</strong>
+              <span>Scan to open or join this group.</span>
+              <div className="group-qr-box">
+                <QRCodeSVG value={groupInviteUrl} size={190} bgColor="#ffffff" fgColor="#0f1b2d" level="M" />
+              </div>
+              <small>{groupInviteUrl}</small>
+            </div>
+            <div className="group-inline-actions">
+              <button
+                className="group-btn primary"
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(groupInviteUrl).then(() => onSuccess("Group link copied."));
+                }}
+              >
+                Copy link
+              </button>
+              <button
+                className="group-btn secondary"
+                type="button"
+                onClick={() => {
+                  if (navigator.share) navigator.share({ title: group.name, text: `Join ${group.name} on Kampasika`, url: groupInviteUrl });
+                  else navigator.clipboard?.writeText(groupInviteUrl).then(() => onSuccess("Group link copied."));
+                }}
+              >
+                Share
+              </button>
+              <button className="group-btn ghost" type="button" onClick={() => setShowGroupQr(false)}>
+                Close
               </button>
             </div>
           </div>

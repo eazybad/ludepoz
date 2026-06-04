@@ -11,6 +11,7 @@
 
 .groups-page {
   background: #f6f8fb;
+  padding-top: 8px;
 }
 
 .groups-hero {
@@ -22,10 +23,54 @@
 }
 
 .groups-hero h2 {
-  margin: 0 0 12px;
+  margin: 0;
   color: #0f1b2d;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.groups-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.groups-camera-btn {
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 50%;
+  background: #ecfeff;
+  color: #0f766e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.groups-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 14px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  background: #eef4f4;
+  color: #667085;
+}
+
+.groups-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #0f1b2d;
+  font: inherit;
+  font-size: 15px;
 }
 
 .groups-hero p {
@@ -241,6 +286,47 @@
   color: #0f1b2d;
   font-size: 18px;
   font-weight: 900;
+}
+
+.group-qr-modal {
+  text-align: center;
+}
+
+.group-qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+  background: #f0fffe;
+}
+
+.group-qr-avatar {
+  width: 58px;
+  height: 58px;
+  font-size: 18px;
+}
+
+.group-qr-card strong {
+  color: #0f1b2d;
+  font-size: 17px;
+}
+
+.group-qr-card span,
+.group-qr-card small {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.group-qr-box {
+  padding: 12px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.08);
 }
 
 .group-field {
