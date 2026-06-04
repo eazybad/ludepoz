@@ -555,7 +555,7 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
       status: "pending",
       requestedAt: serverTimestamp(),
     }, { merge: true });
-    return;
+    return "pending";
   }
   await setDoc(doc(db, "groups", group.id, "members", user.uid), {
     uid: user.uid,
@@ -572,12 +572,24 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
     lastActivityByUid: user.uid,
     updatedAt: serverTimestamp(),
   });
+  return "active";
 }
 
 export function subscribeGroupMembers(db, groupId, onNext, onError = console.error) {
-  const q = query(collection(db, "groups", groupId, "members"), orderBy("joinedAt", "asc"));
-  return onSnapshot(q, snap => {
-    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), joinedAt: d.data().joinedAt?.toDate?.() || null })));
+  return onSnapshot(collection(db, "groups", groupId, "members"), snap => {
+    const items = snap.docs
+      .map(d => ({
+        id: d.id,
+        ...d.data(),
+        joinedAt: d.data().joinedAt?.toDate?.() || null,
+        requestedAt: d.data().requestedAt?.toDate?.() || null,
+      }))
+      .sort((a, b) => {
+        const aTime = a.joinedAt?.getTime?.() || a.requestedAt?.getTime?.() || 0;
+        const bTime = b.joinedAt?.getTime?.() || b.requestedAt?.getTime?.() || 0;
+        return aTime - bTime;
+      });
+    onNext(items);
   }, onError);
 }
 
@@ -1047,6 +1059,28 @@ export async function updateMemberRole(db, { groupId, uid, role }) {
   if (!GROUP_ROLES.includes(role)) throw new Error("Invalid role");
   await updateDoc(doc(db, "groups", groupId, "members", uid), {
     role,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function approveGroupMember(db, { groupId, member }) {
+  await updateDoc(doc(db, "groups", groupId, "members", member.uid), {
+    status: "active",
+    joinedAt: serverTimestamp(),
+    approvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "groups", groupId), {
+    memberCount: increment(1),
+    activityAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function rejectGroupMember(db, { groupId, member }) {
+  await updateDoc(doc(db, "groups", groupId, "members", member.uid), {
+    status: "rejected",
+    rejectedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }

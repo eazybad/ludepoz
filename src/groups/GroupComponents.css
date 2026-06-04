@@ -126,6 +126,11 @@
   cursor: wait;
 }
 
+.group-btn.compact {
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
 .group-section {
   margin: 0 16px 16px;
 }
@@ -1429,6 +1434,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.member-request-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 0;
 }
 
 .member-meta {

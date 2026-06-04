@@ -2825,8 +2825,8 @@ await updateDoc(convRef, {
     if (currentGroupMember) return;
     setJoiningGroup(true);
     try {
-      await joinUniversityGroup(db, { group, user, profile: { name: userName, avatarUrl: userAvatar } });
-      setSuccess("Joined group!");
+      const joinStatus = await joinUniversityGroup(db, { group, user, profile: { name: userName, avatarUrl: userAvatar } });
+      setSuccess(joinStatus === "pending" ? "Join request sent for admin approval." : "Joined group!");
       setTimeout(() => setSuccess(""), 2000);
     } catch (e) { setError("Failed to join group: " + e.message); }
     finally { setJoiningGroup(false); }

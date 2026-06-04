@@ -25,11 +25,11 @@ service cloud.firestore {
     }
 
     function activeGroupMember(groupId) {
-      return groupMember(groupId) && groupMemberData(groupId).status != 'removed';
+      return groupMember(groupId) && groupMemberData(groupId).status == 'active';
     }
 
     function activeGroupMemberAfter(groupId) {
-      return groupMemberAfter(groupId) && groupMemberDataAfter(groupId).status != 'removed';
+      return groupMemberAfter(groupId) && groupMemberDataAfter(groupId).status == 'active';
     }
 
     function groupRole(groupId) {

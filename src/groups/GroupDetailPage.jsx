@@ -13,7 +13,9 @@ import {
   leaveUniversityGroup,
   paymentSummary,
   addGroupResource,
+  approveGroupMember,
   reactToGroupMessage,
+  rejectGroupMember,
   sendGroupMessage,
   submitGroupPayment,
   registerGroupEvent,
@@ -146,6 +148,7 @@ export function GroupDetailPage({
   const [activeTab, setActiveTab] = useState("chats");
   const [menuOpen, setMenuOpen] = useState(false);
   const [members, setMembers] = useState([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
   const [resources, setResources] = useState([]);
   const [collections, setCollections] = useState([]);
@@ -179,6 +182,7 @@ export function GroupDetailPage({
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
+  const pendingCurrentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "pending") || null, [members, user]);
   const memberCanManage = canManageGroup(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanEditGroup = ["owner", "admin"].includes(currentMember?.role) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanVerify = canVerifyPayments(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
@@ -210,6 +214,8 @@ export function GroupDetailPage({
         ].some(value => String(value || "").toLowerCase().includes(term));
       })
     : payments;
+  const pendingMembers = members.filter(member => member.status === "pending");
+  const activeMembers = members.filter(member => member.status !== "pending" && member.status !== "rejected" && member.status !== "removed");
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
   const pinnedMessage = messages.find(message => message.pinned || message.kind === "announcement");
   const currentAction = group.currentAction || (pinnedMessage ? {
@@ -287,7 +293,14 @@ export function GroupDetailPage({
 
   useEffect(() => {
     if (!group?.id) return undefined;
-    const unsubMembers = subscribeGroupMembers(db, group.id, setMembers, onError);
+    setMembersLoaded(false);
+    const unsubMembers = subscribeGroupMembers(db, group.id, items => {
+      setMembers(items);
+      setMembersLoaded(true);
+    }, err => {
+      setMembersLoaded(true);
+      onError(err);
+    });
     const unsubMessages = subscribeChannelMessages(db, group.id, "chats", setMessages, onError);
     const unsubResources = subscribeChannelMessages(db, group.id, "resources", setResources, onError);
     const unsubCollections = subscribeGroupCollections(db, group.id, items => {
@@ -644,6 +657,60 @@ export function GroupDetailPage({
     }
   };
 
+  const handleApproveMember = async (member) => {
+    setBusy(true);
+    try {
+      await approveGroupMember(db, { groupId: group.id, member });
+      onSuccess("Member approved.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRejectMember = async (member) => {
+    setBusy(true);
+    try {
+      await rejectGroupMember(db, { groupId: group.id, member });
+      onSuccess("Join request rejected.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExportPayments = () => {
+    if (!selectedCollection) return;
+    const rows = [
+      ["Name", "Status", "Amount Paid", "Amount Due", "Phone", "Reference", "Proof URL", "Submitted At"],
+      ...payments.map(payment => [
+        payment.studentName || "",
+        payment.status || "pending",
+        payment.amountPaid || "",
+        payment.amountDue || selectedCollection.amount || "",
+        payment.phone || "",
+        payment.paymentRef || "",
+        payment.paymentProofUrl || "",
+        formatDate(payment.submittedAt?.toDate?.() || payment.submittedAt || payment.createdAt || ""),
+      ]),
+    ];
+    const csv = rows
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeTitle = (selectedCollection.title || "group-payments").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    link.href = url;
+    link.download = `${safeTitle || "group-payments"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleMentionPermissionChange = async (nextMentionPermission) => {
     setBusy(true);
     try {
@@ -938,10 +1005,16 @@ export function GroupDetailPage({
         {currentAction && group.desc ? (
           <div className="group-description-strip">{group.desc}</div>
         ) : null}
-        {!isGroupMember(currentMember) && user && (
+        {membersLoaded && !isGroupMember(currentMember) && user && (
           <div style={{ padding: "0 12px 10px" }}>
-            <button type="button" className="group-btn secondary" style={{ width: "100%" }} disabled={joiningGroup} onClick={onJoinGroup}>
-              {joiningGroup ? "Joining..." : "Join Group"}
+            <button type="button" className="group-btn secondary" style={{ width: "100%" }} disabled={joiningGroup || !!pendingCurrentMember} onClick={onJoinGroup}>
+              {pendingCurrentMember
+                ? "Join request pending"
+                : joiningGroup
+                  ? "Joining..."
+                  : group.joinPolicy === "approvalRequired"
+                    ? "Request to join"
+                    : "Join Group"}
             </button>
           </div>
         )}
@@ -1168,6 +1241,9 @@ export function GroupDetailPage({
                     <div className="group-inline-actions" style={{ marginTop: 10 }}>
                       <button className="group-btn secondary" type="button" disabled={busy} onClick={handleSendDeadlineReminder}>
                         Send deadline reminder
+                      </button>
+                      <button className="group-btn secondary" type="button" disabled={payments.length === 0} onClick={handleExportPayments}>
+                        Export CSV
                       </button>
                       {memberCanVerify && (
                         <button className="group-btn primary" type="button" onClick={onOpenScanner}>
@@ -1428,7 +1504,26 @@ export function GroupDetailPage({
                   </select>
                 </div>
               )}
-              {members.map(member => (
+              {memberCanEditGroup && pendingMembers.length > 0 && (
+                <div className="member-admin-box">
+                  <div className="member-name">Join requests</div>
+                  <div className="member-role">Approve students who requested access to this group.</div>
+                  {pendingMembers.map(member => (
+                    <div key={member.uid || member.id} className="member-request-row">
+                      <div className="group-avatar" style={{ width: 34, height: 34, fontSize: 11, backgroundImage: member.avatarUrl ? `url(${member.avatarUrl})` : undefined, backgroundSize: "cover" }}>
+                        {!member.avatarUrl && groupAvatarText(member.name || member.email || "M")}
+                      </div>
+                      <div className="member-meta">
+                        <div className="member-name">{member.name || member.email || "Member"}</div>
+                        <div className="member-role">Requested to join</div>
+                      </div>
+                      <button type="button" className="group-btn secondary compact" disabled={busy} onClick={() => handleApproveMember(member)}>Approve</button>
+                      <button type="button" className="group-btn ghost compact" disabled={busy} onClick={() => handleRejectMember(member)}>Reject</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {activeMembers.map(member => (
                 <div key={member.uid || member.id} className="member-row">
                   <div className="group-avatar" style={{ width: 38, height: 38, fontSize: 12, backgroundImage: member.avatarUrl ? `url(${member.avatarUrl})` : undefined, backgroundSize: "cover" }}>
                     {!member.avatarUrl && groupAvatarText(member.name || member.email || "M")}
@@ -1437,7 +1532,7 @@ export function GroupDetailPage({
                     <div className="member-name">{member.name || member.email || "Member"}</div>
                     <div className="member-role">{member.role || "member"}</div>
                   </div>
-                  {memberCanManage && member.role !== "owner" ? (
+                  {memberCanEditGroup && member.role !== "owner" ? (
                     <select className="member-role-select" value={member.role || "member"} disabled={busy} onChange={event => handleRoleChange(member, event.target.value)}>
                       {GROUP_ROLES.filter(role => role !== "owner").map(role => <option key={role} value={role}>{role}</option>)}
                     </select>
