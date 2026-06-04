@@ -55,6 +55,11 @@ service cloud.firestore {
         && groupRoleAfter(groupId) in ['owner', 'admin'];
     }
 
+    function publicEventCollection(groupId, collectionId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)/collections/$(collectionId)).data.visibility == 'public'
+        && get(/databases/$(database)/documents/groups/$(groupId)/collections/$(collectionId)).data.collectionType == 'event';
+    }
+
     function validRole(role) {
       return role in ['owner', 'admin', 'treasurer', 'member'];
     }
@@ -172,21 +177,35 @@ service cloud.firestore {
         allow update, delete: if canManageGroup(groupId);
 
         match /payments/{paymentId} {
-          allow read: if activeGroupMember(groupId)
-            && (paymentId == request.auth.uid || canManageGroup(groupId));
-          allow create: if (activeGroupMember(groupId) || activeGroupMemberAfter(groupId))
+          allow read: if signedIn()
+            && (
+              (
+                activeGroupMember(groupId)
+                && (paymentId == request.auth.uid || canManageGroup(groupId))
+              )
+              || (
+                publicEventCollection(groupId, collectionId)
+                && paymentId == request.auth.uid
+              )
+            );
+          allow create: if (
+              activeGroupMember(groupId)
+              || activeGroupMemberAfter(groupId)
+              || publicEventCollection(groupId, collectionId)
+            )
             && (
               paymentId == request.auth.uid
               || canManageGroup(groupId)
               || canAdminGroupAfter(groupId)
             );
-          allow update: if activeGroupMember(groupId)
+          allow update: if signedIn()
             && (
               (
                 paymentId == request.auth.uid
                 && request.resource.data.uid == request.auth.uid
                 && request.resource.data.status in ['pending', 'registered']
                 && memberPaymentFieldsOnly()
+                && (activeGroupMember(groupId) || publicEventCollection(groupId, collectionId))
               )
               || canManageGroup(groupId)
             );

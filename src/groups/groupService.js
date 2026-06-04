@@ -123,6 +123,96 @@ function demoTrackerFor(group) {
   };
 }
 
+function demoEventsFor(group) {
+  const shared = {
+    church: [
+      {
+        id: "demo-event-worship-night",
+        title: "Friday worship night",
+        description: "Evening worship, prayer, and small group sharing at ARU main hall.",
+        amount: 0,
+        expectedPeople: 90,
+        deadline: "2026-06-12",
+        photoUrl: "https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80",
+      },
+      {
+        id: "demo-event-sunday-trip",
+        title: "Sunday fellowship transport",
+        description: "Register for Sunday transport and food coordination.",
+        amount: 3000,
+        expectedPeople: 80,
+        deadline: "2026-06-13",
+        paymentMethods: ["Tigo Pesa 255 713 444 555 - TUCASA Treasurer"],
+        photoUrl: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=80",
+      },
+    ],
+    class: [
+      {
+        id: "demo-event-studio-review",
+        title: "Studio review day",
+        description: "Pin-up review for housing studio. Bring printed drawings and model photos.",
+        amount: 0,
+        expectedPeople: 45,
+        deadline: "2026-06-18",
+        photoUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80",
+      },
+      {
+        id: "demo-event-site-visit",
+        title: "Kigamboni site visit",
+        description: "Class field visit for urban housing analysis. Transport contribution required.",
+        amount: 8000,
+        expectedPeople: 45,
+        deadline: "2026-06-20",
+        paymentMethods: ["M-Pesa 255 715 333 444 - Class Treasurer"],
+        photoUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=80",
+      },
+    ],
+    freshers: [
+      {
+        id: "demo-event-campus-tour",
+        title: "Freshers campus tour",
+        description: "Meet at the administration block for campus tour, registration help, and Q&A.",
+        amount: 0,
+        expectedPeople: 160,
+        deadline: "2026-06-10",
+        photoUrl: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=900&q=80",
+      },
+      {
+        id: "demo-event-welcome-bonfire",
+        title: "Freshers welcome night",
+        description: "Welcome night with games, music, and student mentors.",
+        amount: 5000,
+        expectedPeople: 120,
+        deadline: "2026-06-15",
+        paymentMethods: ["Airtel Money 255 688 222 333 - Freshers Rep"],
+        photoUrl: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=900&q=80",
+      },
+    ],
+    hostel: [
+      {
+        id: "demo-event-block-meeting",
+        title: "Block A residents meeting",
+        description: "Quick meeting about cleaning schedule, security, and water updates.",
+        amount: 0,
+        expectedPeople: 64,
+        deadline: "2026-06-09",
+        photoUrl: "https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=900&q=80",
+      },
+      {
+        id: "demo-event-hostel-dinner",
+        title: "Hostel shared dinner",
+        description: "Optional dinner contribution for Block A residents after exams.",
+        amount: 4000,
+        expectedPeople: 50,
+        deadline: "2026-06-21",
+        paymentMethods: ["M-Pesa 255 700 111 222 - Hostel Treasurer"],
+        photoUrl: "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=900&q=80",
+      },
+    ],
+  };
+  return shared[group.type] || shared.class;
+}
+
 function addDemoSampleData(batch, groupRef, group, { user, profile }) {
   const ownerName = profile.name || user.email || "Group owner";
   const tracker = demoTrackerFor(group);
@@ -189,6 +279,52 @@ function addDemoSampleData(batch, groupRef, group, { user, profile }) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
+
+  demoEventsFor(group).forEach(eventItem => {
+    const eventRef = doc(groupRef, "collections", eventItem.id);
+    batch.set(eventRef, {
+      title: eventItem.title,
+      description: eventItem.description,
+      collectionType: "event",
+      amount: eventItem.amount,
+      expectedPeople: eventItem.expectedPeople,
+      paymentMethods: eventItem.paymentMethods || [],
+      deadline: eventItem.deadline,
+      photoUrl: eventItem.photoUrl,
+      photos: [eventItem.photoUrl],
+      visibility: "public",
+      status: "active",
+      demo: true,
+      groupId: groupRef.id,
+      groupName: group.name,
+      communityName: group.name,
+      universityName: group.universityName || "ARU",
+      createdByUid: user.uid,
+      createdByName: ownerName,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    batch.set(doc(eventRef, "payments", "demo-member-1"), {
+      uid: "demo-member-1",
+      studentName: "Asha Msuya",
+      phone: "07xx xxx xxx",
+      payerName: "Asha Msuya",
+      amountDue: eventItem.amount,
+      amountPaid: eventItem.amount,
+      paymentRef: eventItem.amount > 0 ? "MPESA-EVT42" : "Registered",
+      status: eventItem.amount > 0 ? "paid" : "registered",
+      paymentProofUrl: "",
+      submittedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...(eventItem.amount > 0 ? {
+        verifiedByUid: user.uid,
+        verifiedByName: ownerName,
+        verifiedAt: serverTimestamp(),
+      } : {}),
+    }, { merge: true });
+  });
 
   DEMO_PAYMENTS.forEach(payment => {
     batch.set(doc(trackerRef, "payments", payment.uid), {
@@ -292,10 +428,11 @@ export function paymentSummary(collectionItem, payments) {
   const amount = Number(collectionItem?.amount || collectionItem?.price || 0);
   const paid = payments.filter(payment => payment.status === "paid");
   const pending = payments.filter(payment => payment.status === "pending");
+  const registered = payments.filter(payment => payment.status === "registered");
   const rejected = payments.filter(payment => payment.status === "rejected");
   const totalCollected = paid.reduce((sum, payment) => sum + Number(payment.amountPaid || amount || 0), 0);
   const paidCount = paid.length;
-  const unpaidCount = Math.max(0, expectedMembers - paidCount);
+  const unpaidCount = Math.max(0, expectedMembers - paidCount - pending.length - registered.length);
   const expectedTotal = expectedMembers * amount;
   const progress = expectedTotal > 0 ? Math.min(100, Math.round((totalCollected / expectedTotal) * 100)) : 0;
 
@@ -303,6 +440,7 @@ export function paymentSummary(collectionItem, payments) {
     paidCount,
     unpaidCount,
     pendingCount: pending.length,
+    registeredCount: registered.length,
     rejectedCount: rejected.length,
     totalCollected,
     expectedTotal,
@@ -380,6 +518,25 @@ async function notifyGroupUser(db, { groupId, uid, notification }) {
     ...notification,
     category,
   });
+}
+
+async function getGroupReviewers(db, groupId) {
+  const groupSnap = await getDoc(doc(db, "groups", groupId));
+  const groupData = groupSnap.exists() ? groupSnap.data() : {};
+  let members = [];
+  try {
+    members = await getGroupMembers(db, groupId);
+  } catch (_) {
+    members = [];
+  }
+  const reviewers = members.filter(member => ["owner", "admin", "treasurer"].includes(member.role));
+  if (reviewers.length > 0) return { groupName: groupData.name || "Group", reviewers };
+
+  const fallbackReviewers = [
+    groupData.ownerUid ? { uid: groupData.ownerUid, role: "owner", status: "active" } : null,
+    groupData.adminUid && groupData.adminUid !== groupData.ownerUid ? { uid: groupData.adminUid, role: "admin", status: "active" } : null,
+  ].filter(Boolean);
+  return { groupName: groupData.name || "Group", reviewers: fallbackReviewers };
 }
 
 function mentionKey(value) {
@@ -481,7 +638,7 @@ export async function seedDemoGroups(db, { selectedUni, user, profile }) {
     existing.docs.forEach(groupDoc => {
       addDemoSampleData(batch, doc(db, "groups", groupDoc.id), groupDoc.data(), { user, profile });
       batch.set(doc(db, "groups", groupDoc.id), {
-      demoVersion: 2,
+      demoVersion: 3,
       currentAction: {
         type: demoTrackerFor(groupDoc.data()).collectionType === "event" ? "event" : "payment",
         title: demoTrackerFor(groupDoc.data()).title,
@@ -518,7 +675,7 @@ export async function seedDemoGroups(db, { selectedUni, user, profile }) {
       universityName: selectedUni?.short || "ARU",
       active: true,
       demo: true,
-      demoVersion: 2,
+      demoVersion: 3,
       currentAction: {
         type: demoTrackerFor(group).collectionType === "event" ? "event" : "payment",
         title: demoTrackerFor(group).title,
@@ -776,6 +933,12 @@ export function subscribeGroupCollections(db, groupId, onNext, onError = console
   }, onError);
 }
 
+export function subscribeGroupCollection(db, groupId, collectionId, onNext, onError = console.error) {
+  return onSnapshot(doc(db, "groups", groupId, "collections", collectionId), snap => {
+    onNext(snap.exists() ? [{ id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate?.() || null }] : []);
+  }, onError);
+}
+
 export async function uploadCollectionPhoto(storage, { groupId, collectionId, uid, file }) {
   const photoRef = ref(storage, `groups/${groupId}/collections/${collectionId}/media/${uid}_${Date.now()}.jpg`);
   const snap = await uploadBytes(photoRef, file);
@@ -903,7 +1066,7 @@ export async function submitGroupPayment(db, storage, { groupId, collectionItem,
     payerName: data.payerName.trim(),
     paymentRef: data.paymentRef.trim(),
     amountDue: Number(collectionItem.amount || 0),
-    amountPaid: Number(data.amountPaid || collectionItem.amount || 0),
+    amountPaid: Number(data.amountPaid || 0),
     ...(paymentProofUrl ? { paymentProofUrl } : {}),
     proofRequested: false,
     proofRequestMessage: "",
@@ -913,12 +1076,7 @@ export async function submitGroupPayment(db, storage, { groupId, collectionItem,
     updatedAt: serverTimestamp(),
   }, { merge: true });
 
-  const [groupSnap, members] = await Promise.all([
-    getDoc(doc(db, "groups", groupId)),
-    getGroupMembers(db, groupId),
-  ]);
-  const groupName = groupSnap.exists() ? groupSnap.data().name : "Group";
-  const reviewers = members.filter(member => ["owner", "admin", "treasurer"].includes(member.role));
+  const { groupName, reviewers } = await getGroupReviewers(db, groupId);
   await notifyMembers(db, reviewers, {
     excludeUid: user.uid,
     type: "group_payment_submitted",
@@ -949,12 +1107,7 @@ export async function registerGroupEvent(db, { groupId, collectionItem, user, pr
     updatedAt: serverTimestamp(),
   }, { merge: true });
 
-  const [groupSnap, members] = await Promise.all([
-    getDoc(doc(db, "groups", groupId)),
-    getGroupMembers(db, groupId),
-  ]);
-  const groupName = groupSnap.exists() ? groupSnap.data().name : "Group";
-  const reviewers = members.filter(member => ["owner", "admin", "treasurer"].includes(member.role));
+  const { groupName, reviewers } = await getGroupReviewers(db, groupId);
   await notifyMembers(db, reviewers, {
     excludeUid: user.uid,
     type: "group_event_registered",
@@ -1059,6 +1212,17 @@ export async function updateMemberRole(db, { groupId, uid, role }) {
   if (!GROUP_ROLES.includes(role)) throw new Error("Invalid role");
   await updateDoc(doc(db, "groups", groupId, "members", uid), {
     role,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateGroupPaymentAmount(db, { groupId, collectionId, paymentId, amountPaid, verifier }) {
+  const paymentRef = doc(db, "groups", groupId, "collections", collectionId, "payments", paymentId);
+  await updateDoc(paymentRef, {
+    amountPaid: Number(amountPaid || 0),
+    adjustedByUid: verifier.uid,
+    adjustedByName: verifier.name || verifier.email || "Verifier",
+    adjustedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }

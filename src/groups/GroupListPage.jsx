@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./GroupComponents.css";
 import { DEMO_GROUPS, groupAvatarText } from "./groupService";
 
@@ -15,6 +15,7 @@ export function GroupListPage({
   groups,
   publicEvents = [],
   legacyCollections,
+  initialViewMode = "groups",
   onOpenGroup,
   onDeleteGroup,
   onCreateGroup,
@@ -30,11 +31,16 @@ export function GroupListPage({
   currentUserId = "",
 }) {
   const hasGroups = groups.length > 0;
+  const [viewMode, setViewMode] = useState(initialViewMode || "groups");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [searchText, setSearchText] = useState("");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const normalizedSearch = searchText.trim().toLowerCase();
+
+  useEffect(() => {
+    setViewMode(initialViewMode || "groups");
+  }, [initialViewMode]);
 
   const clearLongPress = () => {
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
@@ -87,7 +93,7 @@ export function GroupListPage({
     <div className="groups-page">
       <div className="groups-hero">
         <div className="groups-topbar">
-          <h2>Groups</h2>
+          <h2>Kampasika</h2>
           <button className="groups-camera-btn" type="button" aria-label="Scan group QR" onClick={onOpenScanner}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M4 8a2 2 0 0 1 2-2h2l1.3-2h5.4L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -116,28 +122,50 @@ export function GroupListPage({
             </button>
           )}
         </div>
+        <div className="groups-mode-grid" role="tablist" aria-label="Browse Kampasika">
+          <button
+            type="button"
+            className={`groups-mode-card ${viewMode === "groups" ? "active" : ""}`}
+            onClick={() => setViewMode("groups")}
+          >
+            <strong>Groups</strong>
+            <span>{filteredGroups.length} available</span>
+          </button>
+          <button
+            type="button"
+            className={`groups-mode-card ${viewMode === "events" ? "active" : ""}`}
+            onClick={() => setViewMode("events")}
+          >
+            <strong>Events</strong>
+            <span>{filteredPublicEvents.length} public</span>
+          </button>
+        </div>
       </div>
 
-      {filteredPublicEvents.length > 0 && (
+      {viewMode === "events" && (
         <div className="group-section">
           <div className="group-section-title">Public events</div>
-          {filteredPublicEvents.map(eventItem => (
+          {filteredPublicEvents.length > 0 ? filteredPublicEvents.map(eventItem => (
             <button key={`${eventItem.groupId}-${eventItem.id}`} type="button" className="group-card" onClick={() => onOpenPublicEvent(eventItem)}>
-              <div className="group-avatar" style={{ borderRadius: 8 }}>EV</div>
+              {eventItem.photoUrl ? <img className="group-event-thumb" src={eventItem.photoUrl} alt="" /> : <div className="group-avatar">EV</div>}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="group-card-title">{eventItem.title}</div>
                 <div className="group-card-subtitle">
                   {eventItem.description || "Public group event"}
-                  {eventItem.amount ? ` · ${Number(eventItem.amount).toLocaleString()} TSh` : ""}
+                  {eventItem.amount ? ` - ${Number(eventItem.amount).toLocaleString()} TSh` : " - Free"}
                 </div>
               </div>
-              <span className="group-role-pill">Register</span>
+              <span className="group-role-pill">Public</span>
             </button>
-          ))}
+          )) : (
+            <div className="group-empty">
+              {normalizedSearch ? "No public events match your search." : "No public events yet."}
+            </div>
+          )}
         </div>
       )}
 
-      <div className="group-section">
+      {viewMode === "groups" && <div className="group-section">
         <div className="group-section-title">Groups</div>
         {selectedGroup && canDeleteGroup(selectedGroup) && (
           <div className="group-selection-bar">
@@ -181,11 +209,14 @@ export function GroupListPage({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="group-card-title">{group.name}</div>
                 <div className="group-card-subtitle">
-                  {(group.memberCount || 0).toLocaleString()} members · {groupTypes[group.type] || "Group"}
-                  {group.desc ? ` · ${group.desc}` : ""}
+                  {(group.memberCount || 0).toLocaleString()} members - {groupTypes[group.type] || "Group"}
+                  {group.desc ? ` - ${group.desc}` : ""}
                 </div>
               </div>
               {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
+              <span className="group-visibility-pill">
+                {group.joinPolicy === "approvalRequired" ? "Approval" : group.joinPolicy === "inviteOnly" || group.visibility === "inviteOnly" ? "Invite" : "Public"}
+              </span>
               {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
             </button>
           ))
@@ -194,9 +225,9 @@ export function GroupListPage({
             {hasGroups ? "No groups match your search." : `No groups yet. Start with one of the demo groups: ${DEMO_GROUPS.map(g => g.name).join(", ")}.`}
           </div>
         )}
-      </div>
+      </div>}
 
-      {legacyCollections.length > 0 && (
+      {viewMode === "groups" && legacyCollections.length > 0 && (
         <div className="group-section">
           <div className="group-section-title">Legacy orders and events</div>
           {Object.values(legacyCollections.reduce((acc, item) => {
@@ -208,12 +239,12 @@ export function GroupListPage({
             return acc;
           }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
             <button key={group.name} type="button" className="group-card" onClick={() => onOpenLegacyCommunity(group)}>
-              <div className="group-avatar" style={{ borderRadius: 8, background: "#0d9488" }}>
+              <div className="group-avatar" style={{ background: "#0d9488" }}>
                 {groupAvatarText(group.name)}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="group-card-title">{group.name}</div>
-                <div className="group-card-subtitle">{group.orders} orders · {group.events} events · {group.items.length} total</div>
+                <div className="group-card-subtitle">{group.orders} orders - {group.events} events - {group.items.length} total</div>
               </div>
             </button>
           ))}

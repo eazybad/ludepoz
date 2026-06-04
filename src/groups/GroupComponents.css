@@ -87,6 +87,46 @@
   flex-wrap: wrap;
 }
 
+.groups-mode-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.groups-mode-card {
+  border: 1px solid #dbe8e7;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 11px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groups-mode-card strong,
+.groups-mode-card span {
+  display: block;
+}
+
+.groups-mode-card strong {
+  color: #0f1b2d;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.groups-mode-card span {
+  margin-top: 2px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.groups-mode-card.active {
+  border-color: #0d9488;
+  background: #ecfeff;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.1);
+}
+
 .group-btn {
   border: none;
   border-radius: 8px;
@@ -201,6 +241,9 @@
 .group-avatar {
   width: 46px;
   height: 46px;
+  min-width: 46px;
+  min-height: 46px;
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   background: #0d9488;
   color: #ffffff;
@@ -245,6 +288,16 @@
   color: #0f766e;
 }
 
+.group-visibility-pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f3f6f8;
+  color: #344054;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .group-new-pill {
   border-radius: 999px;
   padding: 4px 8px;
@@ -253,6 +306,15 @@
   font-size: 10px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.group-event-thumb {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #ecfeff;
 }
 
 .group-empty {
@@ -424,16 +486,17 @@
 }
 
 .group-header-main {
-  padding: 13px 10px 12px;
+  padding: 8px 8px 7px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 3px;
 }
 
 .group-back-btn {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 30px;
+  margin-right: -2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -455,7 +518,7 @@
 
 .group-header-title h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.2;
   font-weight: 900;
   white-space: nowrap;
@@ -464,7 +527,7 @@
 }
 
 .group-header-title div {
-  margin-top: 3px;
+  margin-top: 1px;
   color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
   white-space: nowrap;
@@ -522,8 +585,8 @@
 .group-icon-btn {
   position: relative;
   z-index: 46;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border: 1px solid rgba(255, 255, 255, 0.26);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.16);
@@ -536,6 +599,71 @@
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.group-header-main .group-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(15, 27, 45, 0.08);
+}
+
+.group-pin-float {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  width: min(86%, 440px);
+  max-width: min(86%, 440px);
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(13, 148, 136, 0.14);
+  border-radius: 8px;
+  background: rgba(204, 251, 241, 0.72);
+  color: #0f1b2d;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.11);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.group-pin-float strong {
+  color: #0f766e;
+}
+
+.group-pin-float span {
+  color: #0f1b2d;
+  font-weight: 700;
+}
+
+.pinned-focus-modal p {
+  margin: 0 0 12px;
+  color: #0f1b2d;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.pinned-focus-modal small {
+  display: block;
+  margin: 0 0 12px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pinned-focus-amount {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .group-menu-wrap {
@@ -599,6 +727,18 @@
   white-space: nowrap;
 }
 
+.group-menu-new {
+  margin-left: auto;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
 .group-menu-item span {
   width: 24px;
   min-width: 24px;
@@ -653,12 +793,17 @@
 }
 
 .group-current-channel {
-  margin: 0 12px 10px;
+  width: fit-content;
+  min-width: 120px;
+  margin: 0 auto 7px;
+  padding: 0 12px;
   color: rgba(255, 255, 255, 0.86);
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  text-align: center;
 }
 
 .group-panel {
@@ -668,9 +813,9 @@
 .chat-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   position: relative;
-  height: calc(100dvh - 225px);
+  height: calc(100dvh - 150px);
   min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
@@ -717,7 +862,7 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
   touch-action: pan-y;
-  padding-bottom: 10px;
+  padding: 6px 0 10px;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
@@ -1051,14 +1196,14 @@
 
 .message-action-sheet {
   position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 150px;
+  left: 28px;
+  right: 28px;
+  bottom: 118px;
   z-index: 71;
-  max-width: 380px;
+  max-width: 320px;
   margin: 0 auto;
-  padding: 10px;
-  border-radius: 14px;
+  padding: 7px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 18px 46px rgba(15, 27, 45, 0.24);
 }
@@ -1066,17 +1211,17 @@
 .message-action-emojis {
   display: flex;
   justify-content: space-around;
-  gap: 8px;
-  padding: 6px 4px 10px;
+  gap: 5px;
+  padding: 4px 3px 6px;
 }
 
 .message-action-emojis button {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 50%;
   background: #f8fafc;
-  font-size: 20px;
+  font-size: 18px;
   cursor: pointer;
 }
 
@@ -1086,9 +1231,9 @@
   border-top: 1px solid #eef2f5;
   background: #ffffff;
   color: #0f1b2d;
-  padding: 11px 10px;
+  padding: 9px 10px;
   text-align: left;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
 }

@@ -20,6 +20,7 @@ import {
   submitGroupPayment,
   registerGroupEvent,
   subscribeChannelMessages,
+  subscribeGroupCollection,
   subscribeCollectionPayments,
   subscribeGroupCollections,
   subscribeGroupMembers,
@@ -30,6 +31,7 @@ import {
   updateGroupCurrentAction,
   updateGroupMute,
   updateGroupNotificationPreferences,
+  updateGroupPaymentAmount,
   updateMemberRole,
   updateUniversityGroupProfile,
   verifyGroupPayment,
@@ -144,21 +146,27 @@ export function GroupDetailPage({
   onBackHandlerChange,
   onGroupUpdated,
   onOpenScanner,
+  initialTab = "chats",
+  initialCollectionId = "",
+  initialCollection = null,
+  initialSource = "",
+  groupHasUnread = false,
 }) {
-  const [activeTab, setActiveTab] = useState("chats");
+  const [activeTab, setActiveTab] = useState(initialTab || "chats");
   const [menuOpen, setMenuOpen] = useState(false);
   const [members, setMembers] = useState([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
   const [resources, setResources] = useState([]);
-  const [collections, setCollections] = useState([]);
-  const [selectedCollectionId, setSelectedCollectionId] = useState("");
+  const [collections, setCollections] = useState(initialCollection ? [initialCollection] : []);
+  const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionId || "");
   const [payments, setPayments] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [showChatComposer, setShowChatComposer] = useState(false);
   const [showChatTools, setShowChatTools] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [activeMessageActions, setActiveMessageActions] = useState(null);
+  const [showPinnedFocus, setShowPinnedFocus] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
@@ -194,11 +202,16 @@ export function GroupDetailPage({
   const selectedCollection = collections.find(item => item.id === selectedCollectionId) || null;
   const eventCollections = collections.filter(item => (item.collectionType || "") === "event");
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
+  const selectedPaidEvent = selectedCollection?.collectionType === "event" && selectedNeedsPayment;
+  const canViewPublicSelectedEvent = selectedCollection?.collectionType === "event" && selectedCollection.visibility === "public";
   const myPayment = payments.find(payment => payment.uid === user?.uid || payment.id === user?.uid) || null;
+  const myPaymentRemaining = Math.max(0, Number(selectedCollection?.amount || 0) - Number(myPayment?.amountPaid || 0));
   const myPaymentStatusLabel = myPayment?.status === "paid"
     ? "Paid"
     : myPayment?.status === "registered"
       ? "Registered"
+      : myPayment && selectedNeedsPayment && myPaymentRemaining > 0
+        ? "Payment submitted"
       : myPayment
         ? "Payment submitted"
         : "";
@@ -277,6 +290,9 @@ export function GroupDetailPage({
       setReplyToMessage(null);
       return true;
     }
+    if (initialSource === "publicEvents" && activeTab === "events") {
+      return false;
+    }
     if (selectedCollectionId) {
       setSelectedCollectionId("");
       setPayments([]);
@@ -290,10 +306,34 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeMessageActions, activeTab, expandedProofUrl, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showTrackerForm]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showTrackerForm]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
+    setActiveTab(initialTab || "chats");
+    setMenuOpen(false);
+    setCollections(initialCollection ? [initialCollection] : []);
+    setSelectedCollectionId(initialCollectionId || "");
+    setPayments([]);
+    setPaymentSearch("");
+    setShowPaymentForm(false);
+    setShowTrackerForm(false);
+    setShowChatComposer(false);
+    setShowChatTools(false);
+    setReplyToMessage(null);
+    setActiveMessageActions(null);
+    setShowPinnedFocus(false);
+    setExpandedProofUrl("");
+    setShowGroupQr(false);
+  }, [group?.id, user?.uid, initialTab, initialCollectionId, initialCollection]);
+
+  useEffect(() => {
+    if (!group?.id) return undefined;
+    if (!user?.uid) {
+      setMembers([]);
+      setMembersLoaded(true);
+      return undefined;
+    }
     setMembersLoaded(false);
     const unsubMembers = subscribeGroupMembers(db, group.id, items => {
       setMembers(items);
@@ -302,19 +342,36 @@ export function GroupDetailPage({
       setMembersLoaded(true);
       onError(err);
     });
-    const unsubMessages = subscribeChannelMessages(db, group.id, "chats", setMessages, onError);
-    const unsubResources = subscribeChannelMessages(db, group.id, "resources", setResources, onError);
-    const unsubCollections = subscribeGroupCollections(db, group.id, items => {
-      setCollections(items);
-      setSelectedCollectionId(prev => (prev && items.some(item => item.id === prev)) ? prev : "");
-    }, onError);
     return () => {
       unsubMembers();
-      unsubMessages();
-      unsubResources();
+    };
+  }, [db, group?.id, onError, user?.uid]);
+
+  useEffect(() => {
+    const canReadCollections = canViewGroupContent || !!initialCollectionId;
+    if (!group?.id || !canReadCollections) {
+      setMessages([]);
+      setResources([]);
+      setCollections(initialCollection ? [initialCollection] : []);
+      setSelectedCollectionId(initialCollectionId || "");
+      return undefined;
+    }
+    const unsubMessages = canViewGroupContent ? subscribeChannelMessages(db, group.id, "chats", setMessages, onError) : null;
+    const unsubResources = canViewGroupContent ? subscribeChannelMessages(db, group.id, "resources", setResources, onError) : null;
+    const subscribeCollections = canViewGroupContent
+      ? (next) => subscribeGroupCollections(db, group.id, next, onError)
+      : (next) => subscribeGroupCollection(db, group.id, initialCollectionId, next, onError);
+    const unsubCollections = subscribeCollections(items => {
+      const nextItems = items.length ? items : initialCollection ? [initialCollection] : [];
+      setCollections(nextItems);
+      setSelectedCollectionId(prev => (prev && nextItems.some(item => item.id === prev)) ? prev : (initialCollectionId || ""));
+    });
+    return () => {
+      unsubMessages?.();
+      unsubResources?.();
       unsubCollections();
     };
-  }, [db, group?.id, onError]);
+  }, [canViewGroupContent, db, group?.id, initialCollection, initialCollectionId, onError]);
 
   useEffect(() => {
     if (!group?.id || !selectedCollection?.id) {
@@ -658,6 +715,31 @@ export function GroupDetailPage({
     }
   };
 
+  const handleAdjustAmount = async (payment) => {
+    const nextAmount = window.prompt("Amount paid so far", String(payment.amountPaid || ""));
+    if (nextAmount === null) return;
+    const cleanAmount = Number(nextAmount);
+    if (Number.isNaN(cleanAmount) || cleanAmount < 0) {
+      onError(new Error("Enter a valid amount."));
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateGroupPaymentAmount(db, {
+        groupId: group.id,
+        collectionId: selectedCollection.id,
+        paymentId: payment.id,
+        amountPaid: cleanAmount,
+        verifier: { uid: user.uid, name: userName, email: user.email },
+      });
+      onSuccess("Amount paid updated.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleApproveMember = async (member) => {
     setBusy(true);
     try {
@@ -943,6 +1025,7 @@ export function GroupDetailPage({
                         >
                           <span><MenuIcon name={id} /></span>
                           <strong>{label}</strong>
+                          {groupHasUnread && ["chats", "payments"].includes(id) && <em className="group-menu-new">New</em>}
                         </button>
                       ))}
                       <button
@@ -952,6 +1035,7 @@ export function GroupDetailPage({
                       >
                         <span><MenuIcon name="events" /></span>
                         <strong>Events</strong>
+                        {groupHasUnread && <em className="group-menu-new">New</em>}
                       </button>
                     </>
                   )}
@@ -996,20 +1080,6 @@ export function GroupDetailPage({
             )}
           </div>
         </div>
-        {currentAction || group.desc ? (
-          <button
-            type="button"
-            className={`group-pin ${isGroupMember(currentMember) ? "active-member" : ""} ${memberCanManage ? "editable" : ""}`}
-            onClick={memberCanManage ? handleEditPinnedUpdate : undefined}
-          >
-            <strong>{currentAction?.title || "Pinned update"}:</strong>{" "}
-            <span className="group-pin-text">{currentAction?.description || group.desc}</span>
-            {currentAction?.amount ? <span className="group-pin-text"> - {Number(currentAction.amount).toLocaleString()} TSh</span> : null}
-          </button>
-        ) : null}
-        {currentAction && group.desc ? (
-          <div className="group-description-strip">{group.desc}</div>
-        ) : null}
         {(!user || membersLoaded) && !isGroupMember(currentMember) && (
           <div style={{ padding: "0 12px 10px" }}>
             <button type="button" className="group-btn secondary" style={{ width: "100%" }} disabled={joiningGroup || !!pendingCurrentMember} onClick={onJoinGroup}>
@@ -1025,10 +1095,10 @@ export function GroupDetailPage({
             </button>
           </div>
         )}
-        {canViewGroupContent && <div className="group-current-channel">{activeTab}</div>}
+        {(canViewGroupContent || canViewPublicSelectedEvent) && <div className="group-current-channel">{activeTab}</div>}
       </div>
 
-      {(!user || membersLoaded) && !canViewGroupContent && (
+      {(!user || membersLoaded) && !canViewGroupContent && !canViewPublicSelectedEvent && (
         <div className="group-panel">
           <div className="group-preview-lock">
             <div className="group-preview-title">{group.visibility === "public" ? "Public group preview" : "Private group"}</div>
@@ -1054,6 +1124,16 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "chats" && (
         <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
+          {(currentAction || group.desc) && (
+            <button
+              type="button"
+              className="group-pin-float"
+              onClick={() => setShowPinnedFocus(true)}
+            >
+              <strong>{currentAction?.title || "Pinned update"}:</strong>{" "}
+              <span>{currentAction?.description || group.desc}</span>
+            </button>
+          )}
           {messages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
           ) : (
@@ -1262,6 +1342,7 @@ export function GroupDetailPage({
               )}
               {selectedCollection && (
                 <div className="payment-card">
+                  {selectedCollection.photoUrl && <img className="tracker-card-photo" src={selectedCollection.photoUrl} alt="" />}
                   <h4>{selectedCollection.title}</h4>
                   <div className="payment-meta">
                     {selectedNeedsPayment ? `${(selectedCollection.amount || 0).toLocaleString()} TSh per member` : "Registration only"}
@@ -1298,6 +1379,7 @@ export function GroupDetailPage({
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
                       <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       {myPayment.paymentProofUrl && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(myPayment.paymentProofUrl)}><img className="payment-proof-thumb" src={myPayment.paymentProofUrl} alt="Your payment proof" /></button>}
                       <details className="group-payment-qr">
                         <summary>Your QR</summary>
@@ -1308,7 +1390,13 @@ export function GroupDetailPage({
                       </details>
                     </div>
                   )}
-                  {!myPayment || showPaymentForm || myPayment.proofRequested ? (
+                  {selectedPaidEvent && !myPayment && !showPaymentForm && (
+                    <div className="group-inline-actions">
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={handleRegisterEvent}>Register first</button>
+                      <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>Pay now</button>
+                    </div>
+                  )}
+                  {(!myPayment && !selectedPaidEvent) || showPaymentForm || myPayment?.proofRequested ? (
                     <>
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
@@ -1323,10 +1411,10 @@ export function GroupDetailPage({
                           {paymentData.paymentProofPreview && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(paymentData.paymentProofPreview)}><img className="payment-proof-thumb large" src={paymentData.paymentProofPreview} alt="Selected payment proof preview" /></button>}
                         </>
                       )}
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Pay / submit proof" : "Submit proof") : "Register"}</button>
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Pay / submit proof" : "Submit proof") : "Register"}</button>
                     </>
                   ) : myPayment?.status === "paid" ? null : (
-                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? "Resubmit proof" : "Update registration"}</button>
+                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
                   )}
                 </div>
               )}
@@ -1343,6 +1431,7 @@ export function GroupDetailPage({
                       <div className="member-name">{payment.studentName || "Student"}</div>
                       <div className="payment-detail-grid">
                         <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
+                        {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
                         {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
                         {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
                       </div>
@@ -1366,10 +1455,11 @@ export function GroupDetailPage({
                         </div>
                       </details>
                     </div>
-                    {memberCanVerify && payment.status !== "paid" && (
+                    {memberCanVerify && (
                       <div className="group-inline-actions">
-                        <button className="group-btn secondary" type="button" disabled={busy} onClick={() => handleVerify(payment, "paid")}>Paid</button>
-                        <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleVerify(payment, "rejected")}>Reject</button>
+                        {payment.status !== "paid" && <button className="group-btn secondary" type="button" disabled={busy} onClick={() => handleVerify(payment, "paid")}>Paid</button>}
+                        {payment.status !== "rejected" && <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleVerify(payment, "rejected")}>Reject</button>}
+                        <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleAdjustAmount(payment)}>Adjust amount</button>
                         <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleRequestProof(payment)}>Request proof</button>
                       </div>
                     )}
@@ -1381,7 +1471,7 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {canViewGroupContent && activeTab === "events" && (
+      {(canViewGroupContent || canViewPublicSelectedEvent) && activeTab === "events" && (
         <div className="group-panel">
           {memberCanManage && (
             <div style={{ marginBottom: 10 }}>
@@ -1411,6 +1501,7 @@ export function GroupDetailPage({
                 setPayments([]);
               }}>Back to events</button>
               <div className="payment-card">
+                {selectedCollection.photoUrl && <img className="tracker-card-photo" src={selectedCollection.photoUrl} alt="" />}
                 <h4>{selectedCollection.title}</h4>
                 <div className="payment-meta">
                   {selectedCollection.description || "Event details"}
@@ -1438,6 +1529,7 @@ export function GroupDetailPage({
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
                       <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       <details className="group-payment-qr">
                         <summary>{selectedNeedsPayment ? "Payment QR" : "Registration QR"}</summary>
                         <div className="group-payment-qr-box">
@@ -1447,7 +1539,13 @@ export function GroupDetailPage({
                       </details>
                     </div>
                   )}
-                  {!myPayment || showPaymentForm || myPayment.proofRequested ? (
+                  {selectedPaidEvent && !myPayment && !showPaymentForm && (
+                    <div className="group-inline-actions">
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={handleRegisterEvent}>Register first</button>
+                      <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>Pay now</button>
+                    </div>
+                  )}
+                  {(!myPayment && !selectedPaidEvent) || showPaymentForm || myPayment?.proofRequested ? (
                     <>
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
@@ -1461,11 +1559,20 @@ export function GroupDetailPage({
                           }} /></div>
                         </>
                       )}
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update details" : selectedNeedsPayment ? "Pay / submit proof" : "Register"}</button>
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? "Pay / submit proof" : "Register"}</button>
                     </>
                   ) : myPayment?.status === "paid" ? null : (
-                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? "Resubmit proof" : "Update registration"}</button>
+                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
                   )}
+                </div>
+              )}
+              {!user && (
+                <div className="payment-card">
+                  <h4>{selectedNeedsPayment ? "Register, then pay" : "Register"}</h4>
+                  <div className="payment-meta">Sign in to register for this public event. You can pay later if payment is required.</div>
+                  <button className="group-btn primary" type="button" onClick={onJoinGroup} style={{ marginTop: 10 }}>
+                    Sign in to register
+                  </button>
                 </div>
               )}
               {memberCanVerify && (
@@ -1477,8 +1584,21 @@ export function GroupDetailPage({
                       <span className={`payment-pill ${statusClass(payment.status)}`}>{payment.status || "pending"}</span>
                       <div className="payment-row-main">
                         <div className="member-name">{payment.studentName || "Student"}</div>
-                        <div className="payment-meta">{payment.phone || "No phone"}{payment.paymentRef ? ` - ${payment.paymentRef}` : ""}</div>
+                        <div className="payment-detail-grid">
+                          <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
+                          {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
+                          {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
+                          {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
+                        </div>
                       </div>
+                      {memberCanVerify && (
+                        <div className="group-inline-actions">
+                          {payment.status !== "paid" && <button className="group-btn secondary" type="button" disabled={busy} onClick={() => handleVerify(payment, "paid")}>Paid</button>}
+                          {payment.status !== "rejected" && <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleVerify(payment, "rejected")}>Reject</button>}
+                          <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleAdjustAmount(payment)}>Adjust amount</button>
+                          <button className="group-btn ghost" type="button" disabled={busy} onClick={() => handleRequestProof(payment)}>Request proof</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1589,6 +1709,27 @@ export function GroupDetailPage({
               <div className="message-time">{formatDate(resource.createdAt)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showPinnedFocus && (
+        <div className="group-modal-backdrop" onClick={() => setShowPinnedFocus(false)}>
+          <div className="group-modal pinned-focus-modal" onClick={event => event.stopPropagation()}>
+            <h3>{currentAction?.title || "Pinned update"}</h3>
+            <p>{currentAction?.description || group.desc}</p>
+            {currentAction?.amount ? <div className="pinned-focus-amount">{Number(currentAction.amount).toLocaleString()} TSh</div> : null}
+            {group.desc && currentAction ? <small>{group.desc}</small> : null}
+            <div className="group-inline-actions">
+              {memberCanManage && (
+                <button className="group-btn primary" type="button" onClick={() => { setShowPinnedFocus(false); handleEditPinnedUpdate(); }}>
+                  Edit
+                </button>
+              )}
+              <button className="group-btn ghost" type="button" onClick={() => setShowPinnedFocus(false)}>
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

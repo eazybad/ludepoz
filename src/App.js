@@ -313,6 +313,8 @@ function App() {
     catch (_) { return {}; }
   });
   const [viewingGroup, setViewingGroup] = useState(null);
+  const [groupInitialView, setGroupInitialView] = useState({ tab: "chats", collectionId: "", collection: null, source: "" });
+  const [groupsInitialMode, setGroupsInitialMode] = useState("groups");
   const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "public" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupAnnouncements, setGroupAnnouncements] = useState([]);
@@ -2807,8 +2809,14 @@ await updateDoc(convRef, {
     finally { setUploading(false); }
   };
 
-  const openGroup = (group) => {
+  const openGroup = (group, initialView = {}) => {
     setViewingGroup(group);
+    setGroupInitialView({
+      tab: initialView.tab || "chats",
+      collectionId: initialView.collectionId || "",
+      collection: initialView.collection || null,
+      source: initialView.source || "",
+    });
     setGroupAnnouncements([]);
     setGroupMembers([]);
     setCurrentGroupMember(null);
@@ -6360,7 +6368,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             groups={groupsForSelectedUni}
             publicEvents={publicEventsForGroups}
             legacyCollections={collections}
-            onOpenGroup={openGroup}
+            initialViewMode={groupsInitialMode}
+            onOpenGroup={(group) => {
+              setGroupsInitialMode("groups");
+              openGroup(group);
+            }}
             onDeleteGroup={handleArchiveGroup}
             onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
             onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
@@ -6372,7 +6384,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             onOpenLegacyCommunity={(group) => { setViewingCommunity(group); setPage("communityDetail"); }}
             onOpenPublicEvent={(eventItem) => {
               const hostGroup = groupsForSelectedUni.find(g => g.id === eventItem.groupId);
-              if (hostGroup) openGroup(hostGroup);
+              if (hostGroup) {
+                setGroupsInitialMode("events");
+                openGroup(hostGroup, { tab: "events", collectionId: eventItem.id, collection: eventItem, source: "publicEvents" });
+              }
               else setError("Open the host group to register for this event.");
             }}
             isGroupAdmin={isGroupAdmin}
@@ -6524,6 +6539,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           onBackHandlerChange={(handler) => {
             groupInternalBackRef.current = handler;
           }}
+          initialTab={groupInitialView.tab}
+          initialCollectionId={groupInitialView.collectionId}
+          initialCollection={groupInitialView.collection}
+          initialSource={groupInitialView.source}
+          groupHasUnread={
+            viewingGroup.active !== false
+            && viewingGroup.lastActivityByUid !== user?.uid
+            && viewingGroup.activityAt?.toMillis
+            && viewingGroup.activityAt.toMillis() > (groupReadAt[viewingGroup.id] || 0)
+          }
           onGroupUpdated={(updatedGroup) => {
             setViewingGroup(updatedGroup);
             setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));
