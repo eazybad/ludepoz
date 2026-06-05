@@ -913,13 +913,15 @@ export function GroupDetailPage({
 
   const handleEditPinnedUpdate = async () => {
     if (!memberCanManage || !user) return;
-    const nextDescription = window.prompt("Pinned update", currentAction?.description || group.desc || "");
+    const nextTitleInput = window.prompt("Pinned update title", currentAction?.title || "Pinned update");
+    if (nextTitleInput === null) return;
+    const nextDescription = window.prompt("Pinned update message", currentAction?.description || group.desc || "");
     if (nextDescription === null) return;
     setBusy(true);
     try {
       const nextAction = {
         ...(currentAction || {}),
-        title: currentAction?.title || "Pinned update",
+        title: nextTitleInput.trim() || "Pinned update",
         description: nextDescription.trim(),
       };
       await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
