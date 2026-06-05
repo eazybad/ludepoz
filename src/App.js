@@ -4617,7 +4617,7 @@ return (
                 onClick={() => {
                   setShowAppMenu(false);
                   setShowAboutBanner(true);
-                  if (page !== 'home') setPage('home');
+                  if (page !== 'profile') setPage('profile');
                 }}
                 style={{
                   width:'100%',
@@ -4735,7 +4735,7 @@ return (
     paddingBottom:'100px'
   }}>
 
-         {showAboutBanner && (
+         {false && showAboutBanner && (
   <div style={{margin:'0 16px 12px 16px'}}>
   <div style={{
     position:'relative',
@@ -4803,7 +4803,7 @@ return (
 )}
 
 {/* ── SLIM STRIP: already verified ── */}
-{showVerifiedBanner && (
+{false && showVerifiedBanner && (
   <div style={{margin:'0 16px 8px 16px'}}>
     {/* Slim strip at top */}
     <div style={{
@@ -4846,7 +4846,7 @@ return (
 )}
 
 {/* ── GET VERIFIED: unverified user banner ── */}
-{showGetVerifiedBanner && (
+{false && showGetVerifiedBanner && (
   <div style={{margin:'0 16px 8px 16px'}}>
     {/* Slim orange strip */}
     <div style={{
@@ -8447,6 +8447,58 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
           ) : (
           <>
+          {showAboutBanner && (
+            <div style={{background:'#fff',borderRadius:'16px',padding:'16px',marginBottom:'16px',border:'1px solid #ccfbf1',boxShadow:'0 4px 16px rgba(15,27,45,0.06)'}}>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
+                <div>
+                  <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
+                    Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika
+                  </div>
+                  <p style={{fontSize:'12px',lineHeight:1.55,color:'#4a5568',margin:'0 0 10px'}}>
+                    Mtandao wa wanachuo kwa kununua, kuuza, kutoa huduma, kupata vyumba, na kuunda jamii za chuo.
+                  </p>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
+                    {['Goods', 'Services', 'Groups', 'Verified'].map(tag => (
+                      <span key={tag} style={{fontSize:'10px',fontWeight:'800',color:'#0f766e',background:'#ecfeff',padding:'4px 8px',borderRadius:'8px'}}>{tag}</span>
+                    ))}
+                  </div>
+                </div>
+                <button type="button" aria-label="Close about" onClick={()=>setShowAboutBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'#f4f6f8',color:'#344054',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
+              </div>
+            </div>
+          )}
+
+          {showVerifiedBanner && (
+            <div style={{background:'linear-gradient(135deg,#042f2e,#0f766e)',borderRadius:'16px',padding:'16px',marginBottom:'16px',color:'#fff',boxShadow:'0 4px 16px rgba(15,27,45,0.12)'}}>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
+                <div>
+                  <div style={{fontSize:'15px',fontWeight:'800',marginBottom:'6px'}}>Uko Verified</div>
+                  <p style={{fontSize:'12px',lineHeight:1.55,margin:0,color:'rgba(255,255,255,0.86)'}}>
+                    Akaunti yako imethibitishwa. Listings na huduma zako zinaonyesha badge ya uaminifu.
+                  </p>
+                </div>
+                <button type="button" aria-label="Close verification status" onClick={()=>setShowVerifiedBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.15)',color:'#fff',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
+              </div>
+            </div>
+          )}
+
+          {showGetVerifiedBanner && (
+            <div style={{background:'linear-gradient(135deg,#0f766e,#06d6c7)',borderRadius:'16px',padding:'16px',marginBottom:'16px',color:'#fff',boxShadow:'0 4px 16px rgba(6,214,199,0.22)'}}>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
+                <div>
+                  <div style={{fontSize:'15px',fontWeight:'800',marginBottom:'6px'}}>Pata Verified Badge</div>
+                  <p style={{fontSize:'12px',lineHeight:1.55,margin:0,color:'rgba(255,255,255,0.9)'}}>
+                    Thibitisha akaunti yako ili wanunuzi wakuamini zaidi na listings zako zionekane vizuri.
+                  </p>
+                </div>
+                <button type="button" aria-label="Close get verified" onClick={()=>setShowGetVerifiedBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.18)',color:'#fff',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
+              </div>
+              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',padding:'11px',background:'#fff',color:'#0f766e',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>
+                Anza kuthibitisha
+              </button>
+            </div>
+          )}
+
           <div style={{background:'#fff',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px'}}>
            {/* Top row: avatar + stats */}
            <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
@@ -8509,8 +8561,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              </button>
            </div>
            <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
-             <button type="button" onClick={()=>{isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
-             <button type="button" onClick={()=>{setShowAboutBanner(true);setPage("home");}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#344054',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
+             <button type="button" onClick={()=>{setShowAboutBanner(false);setShowGetVerifiedBanner(false);isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
+             <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#344054',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
           </div>
           
