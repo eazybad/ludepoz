@@ -71,8 +71,11 @@ const emptyResource = {
   title: "",
   subject: "",
   topic: "",
+  resourceType: "",
   description: "",
   url: "",
+  file: null,
+  fileName: "",
   deadline: "",
 };
 
@@ -161,6 +164,19 @@ function statusClass(status) {
 
 function groupPaymentVerifyUrl(groupId, collectionId, paymentId) {
   return `https://kampasika.org/g/${groupId}/verify/${collectionId}/${paymentId}`;
+}
+
+function inferResourceType(value = "") {
+  const clean = value.toLowerCase().split("?")[0];
+  if (clean.includes("drive.google.com/drive/folders")) return "Drive folder";
+  if (clean.includes("docs.google.com/presentation") || clean.endsWith(".ppt") || clean.endsWith(".pptx")) return "PPT";
+  if (clean.includes("docs.google.com/document") || clean.endsWith(".doc") || clean.endsWith(".docx")) return "DOC";
+  if (clean.includes("docs.google.com/spreadsheets") || clean.endsWith(".xls") || clean.endsWith(".xlsx")) return "Sheet";
+  if (clean.endsWith(".pdf")) return "PDF";
+  if (/\.(png|jpe?g|webp|gif)$/i.test(clean)) return "Image";
+  if (clean.includes("drive.google.com")) return "Drive file";
+  if (clean.includes("youtube.com") || clean.includes("youtu.be")) return "Video";
+  return "";
 }
 
 export function GroupDetailPage({
@@ -633,37 +649,54 @@ export function GroupDetailPage({
       title: resource.title || resource.text || "",
       subject: resource.subject || "",
       topic: resource.topic || "",
+      resourceType: resource.resourceType || inferResourceType(resource.url || resource.title || ""),
       description: resource.description || (resource.text && resource.text !== resource.title ? resource.text : ""),
       url: resource.url || "",
+      file: null,
+      fileName: resource.fileName || "",
       deadline: resource.deadline || "",
     });
     setShowResourceForm(true);
   };
 
   const handleSaveResource = async () => {
-    if (!resourceData.title.trim() && !resourceData.url.trim()) {
-      onError(new Error("Add a resource title or link."));
+    if (!resourceData.title.trim() && !resourceData.url.trim() && !resourceData.file) {
+      onError(new Error("Add a resource title, link, or file."));
       return;
     }
     setBusy(true);
     try {
+      let resourceUrl = resourceData.url.trim();
+      let fileName = resourceData.fileName || "";
+      if (storage && resourceData.file) {
+        const safeName = resourceData.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+        const fileRef = ref(storage, `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`);
+        const snap = await uploadBytes(fileRef, resourceData.file);
+        resourceUrl = await getDownloadURL(snap.ref);
+        fileName = resourceData.file.name;
+      }
+      const title = resourceData.title || fileName || resourceUrl;
+      const resourceType = resourceData.resourceType || inferResourceType(fileName || resourceUrl || title) || "Resource";
+      const payload = {
+        ...resourceData,
+        title,
+        url: resourceUrl,
+        fileName,
+        resourceType,
+      };
       if (editingResourceId) {
         await updateGroupResource(db, {
           groupId: group.id,
           resourceId: editingResourceId,
           user,
-          data: {
-            ...resourceData,
-            title: resourceData.title || resourceData.url,
-          },
+          data: payload,
         });
       } else {
         await addGroupResource(db, {
           groupId: group.id,
           user,
           profile,
-          ...resourceData,
-          title: resourceData.title || resourceData.url,
+          ...payload,
         });
       }
       setResourceData(emptyResource);
@@ -2131,6 +2164,7 @@ export function GroupDetailPage({
                     <div className="resource-text">{resource.description || resource.text}</div>
                   )}
                   <div className="class-board-meta">
+                    {resource.resourceType && <span>{resource.resourceType}</span>}
                     {resource.deadline && <span>Deadline: {resource.deadline}</span>}
                     {resource.createdAt && <span>Added {formatDate(resource.createdAt)}</span>}
                   </div>
@@ -2164,7 +2198,45 @@ export function GroupDetailPage({
             </div>
             <div className="group-field">
               <label>Link</label>
-              <input value={resourceData.url} onChange={event => setResourceData({ ...resourceData, url: event.target.value })} placeholder="Google Drive, PDF, YouTube, or any resource link" />
+              <input value={resourceData.url} onChange={event => {
+                const url = event.target.value;
+                setResourceData(prev => ({ ...prev, url, resourceType: prev.resourceType || inferResourceType(url) }));
+              }} placeholder="Google Drive, PDF, YouTube, or any resource link" />
+            </div>
+            <div className="group-field">
+              <label>Upload file</label>
+              <input type="file" onChange={event => {
+                const file = event.target.files?.[0] || null;
+                if (!file) {
+                  setResourceData(prev => ({ ...prev, file: null, fileName: "" }));
+                  return;
+                }
+                setResourceData(prev => ({
+                  ...prev,
+                  file,
+                  fileName: file.name,
+                  title: prev.title || file.name.replace(/\.[^.]+$/, ""),
+                  resourceType: prev.resourceType || inferResourceType(file.name) || "File",
+                }));
+              }} />
+              {resourceData.fileName && <small className="field-hint">Selected: {resourceData.fileName}</small>}
+            </div>
+            <div className="group-field">
+              <label>Type</label>
+              <select value={resourceData.resourceType} onChange={event => setResourceData({ ...resourceData, resourceType: event.target.value })}>
+                <option value="">Auto / not sure</option>
+                <option value="Drive folder">Drive folder</option>
+                <option value="Drive file">Drive file</option>
+                <option value="PPT">PPT</option>
+                <option value="PDF">PDF</option>
+                <option value="DOC">DOC</option>
+                <option value="Sheet">Sheet</option>
+                <option value="Image">Image</option>
+                <option value="Video">Video</option>
+                <option value="Assignment">Assignment</option>
+                <option value="Past paper">Past paper</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
             <div className="group-field">
               <label>Deadline, optional</label>
