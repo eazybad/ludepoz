@@ -9,6 +9,7 @@ import {
   canVerifyPayments,
   createGroupCollection,
   createGroupWorkGroup,
+  deleteGroupMessage,
   deleteGroupResource,
   deleteGroupWorkGroup,
   groupAvatarText,
@@ -634,6 +635,22 @@ export function GroupDetailPage({
       setActiveMessageActions(null);
     } catch (err) {
       onError(err);
+    }
+  };
+
+  const handleDeleteMessage = async (message) => {
+    const isOwnMessage = message.authorUid === user?.uid;
+    if (!isOwnMessage && !memberCanManage) return;
+    if (!window.confirm(isOwnMessage ? "Unsend this message?" : "Delete this message from the group?")) return;
+    setBusy(true);
+    try {
+      await deleteGroupMessage(db, { groupId: group.id, messageId: message.id, user });
+      setActiveMessageActions(null);
+      onSuccess(isOwnMessage ? "Message unsent." : "Message deleted.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1544,6 +1561,11 @@ export function GroupDetailPage({
                     </div>
                     <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setShowChatComposer(true); setActiveMessageActions(null); }}>Reply</button>
                     {memberCanManage && <button type="button" className="message-action-row" onClick={() => { setMessageText(activeMessageActions.text || ""); setActiveMessageActions(null); }}>Copy to composer</button>}
+                    {(activeMessageActions.authorUid === user?.uid || memberCanManage) && (
+                      <button type="button" className="message-action-row danger" disabled={busy} onClick={() => handleDeleteMessage(activeMessageActions)}>
+                        {activeMessageActions.authorUid === user?.uid ? "Unsend" : "Delete"}
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -1574,10 +1596,10 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        {memberCanManage && <button type="button" onClick={openCreateResourceForm}>Add board resource</button>}
+                        {memberCanManage && <button type="button" onClick={openCreateResourceForm}>Organize resource</button>}
                         {memberCanManage && (
                           <label className="chat-tool-file">
-                            Upload file
+                            Quick upload
                             <input type="file" onChange={handleUploadResourceFile} disabled={busy} />
                           </label>
                         )}
@@ -2183,7 +2205,7 @@ export function GroupDetailPage({
       {showResourceForm && (
         <div className="group-modal-backdrop" onClick={() => setShowResourceForm(false)}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
-            <h3>{editingResourceId ? "Edit Board Resource" : "Add Board Resource"}</h3>
+            <h3>{editingResourceId ? "Edit Board Resource" : "Organize Board Resource"}</h3>
             <div className="group-field">
               <label>Title</label>
               <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection and Intersection notes" />

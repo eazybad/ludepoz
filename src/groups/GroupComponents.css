@@ -1353,6 +1353,10 @@
   cursor: pointer;
 }
 
+.message-action-row.danger {
+  color: #b91c1c;
+}
+
 .payment-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1828,10 +1832,11 @@
   display: block;
   margin-bottom: 7px;
   padding: 10px 12px;
-  border: 1px solid #d5f5f1;
+  border: 1px solid #86efac;
   border-radius: 8px;
-  background: #ecfeff;
+  background: #dcfce7;
   text-decoration: none;
+  box-shadow: 0 2px 7px rgba(34, 197, 94, 0.18);
 }
 
 .class-board-update strong,
@@ -1847,7 +1852,7 @@
 
 .class-board-update span {
   margin-top: 2px;
-  color: #0f766e;
+  color: #166534;
   font-size: 11px;
   font-weight: 800;
 }

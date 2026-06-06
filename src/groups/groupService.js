@@ -900,6 +900,15 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text,
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
 }
 
+export async function deleteGroupMessage(db, { groupId, channelId = "chats", messageId, user }) {
+  await deleteDoc(doc(db, "groups", groupId, "channels", channelId, "messages", messageId));
+  await updateDoc(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function reactToGroupMessage(db, { groupId, channelId = "chats", messageId, emoji, user }) {
   const safeEmoji = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F64F}", "\u{1F525}"].includes(emoji) ? emoji : "\u{1F44D}";
   await updateDoc(doc(db, "groups", groupId, "channels", channelId, "messages", messageId), {
