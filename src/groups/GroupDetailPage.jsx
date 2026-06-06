@@ -433,7 +433,8 @@ export function GroupDetailPage({
   }, [db, group?.id, onError, user?.uid]);
 
   useEffect(() => {
-    const canReadCollections = canViewGroupContent || !!initialCollectionId;
+    const canPreviewPublicGroup = group.visibility === "public" || group.joinPolicy === "public";
+    const canReadCollections = canViewGroupContent || canPreviewPublicGroup || !!initialCollectionId;
     if (!group?.id || !canReadCollections) {
       setMessages([]);
       setResources([]);
@@ -443,9 +444,9 @@ export function GroupDetailPage({
       return undefined;
     }
     const unsubMessages = canViewGroupContent ? subscribeChannelMessages(db, group.id, "chats", setMessages, onError) : null;
-    const unsubResources = canViewGroupContent ? subscribeChannelMessages(db, group.id, "resources", setResources, onError) : null;
-    const unsubWorkGroups = canViewGroupContent ? subscribeGroupWorkGroups(db, group.id, setWorkGroups, onError) : null;
-    const subscribeCollections = canViewGroupContent
+    const unsubResources = (canViewGroupContent || canPreviewPublicGroup) ? subscribeChannelMessages(db, group.id, "resources", setResources, onError) : null;
+    const unsubWorkGroups = (canViewGroupContent || canPreviewPublicGroup) ? subscribeGroupWorkGroups(db, group.id, setWorkGroups, onError) : null;
+    const subscribeCollections = (canViewGroupContent || canPreviewPublicGroup)
       ? (next) => subscribeGroupCollections(db, group.id, next, onError)
       : (next) => subscribeGroupCollection(db, group.id, initialCollectionId, next, onError);
     const unsubCollections = subscribeCollections(items => {
@@ -459,7 +460,7 @@ export function GroupDetailPage({
       unsubWorkGroups?.();
       unsubCollections();
     };
-  }, [canViewGroupContent, db, group?.id, initialCollection, initialCollectionId, onError]);
+  }, [canViewGroupContent, db, group?.id, group.visibility, group.joinPolicy, initialCollection, initialCollectionId, onError]);
 
   useEffect(() => {
     if (!group?.id || !selectedCollection?.id) {
@@ -1373,6 +1374,37 @@ export function GroupDetailPage({
         <div className="group-panel">
           <div className="group-preview-lock">
             <div className="group-preview-title">{group.visibility === "public" ? "Public group preview" : "Private group"}</div>
+            {(group.visibility === "public" || group.joinPolicy === "public") && (
+              <>
+                <div className="group-preview-stats">
+                  <span><strong>{sortedResources.length}</strong><small>Resources</small></span>
+                  <span><strong>{workGroups.length}</strong><small>Work groups</small></span>
+                  <span><strong>{collections.filter(item => (item.collectionType || "") === "event").length}</strong><small>Events</small></span>
+                </div>
+                {sortedResources.length > 0 && (
+                  <div className="group-preview-section">
+                    <strong>Latest class board</strong>
+                    {sortedResources.slice(0, 3).map(resource => (
+                      <div key={resource.id} className="group-preview-row">
+                        <span>{resource.title || resource.text}</span>
+                        <small>{resource.subject || "General"}</small>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {workGroups.length > 0 && (
+                  <div className="group-preview-section">
+                    <strong>Work groups</strong>
+                    {workGroups.slice(0, 3).map(workGroup => (
+                      <div key={workGroup.id} className="group-preview-row">
+                        <span>{workGroup.name}</span>
+                        <small>{workGroup.status === "submitted" ? "Submitted" : workGroup.deadline ? `Deadline: ${workGroup.deadline}` : "Open"}</small>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
             <p>
               {pendingCurrentMember
                 ? "Your join request is waiting for a group leader to approve it."
