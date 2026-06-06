@@ -6549,6 +6549,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             && viewingGroup.activityAt?.toMillis
             && viewingGroup.activityAt.toMillis() > (groupReadAt[viewingGroup.id] || 0)
           }
+          groupReadAtValue={groupReadAt[viewingGroup.id] || 0}
           onGroupUpdated={(updatedGroup) => {
             setViewingGroup(updatedGroup);
             setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));

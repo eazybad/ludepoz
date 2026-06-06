@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -757,6 +758,95 @@ export function subscribeChannelMessages(db, groupId, channelId, onNext, onError
   }, onError);
 }
 
+export function subscribeGroupWorkGroups(db, groupId, onNext, onError = console.error) {
+  const q = query(collection(db, "groups", groupId, "workGroups"), orderBy("createdAt", "asc"));
+  return onSnapshot(q, snap => {
+    onNext(snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: d.data().createdAt?.toDate?.() || null,
+      submittedAt: d.data().submittedAt?.toDate?.() || null,
+    })));
+  }, onError);
+}
+
+export async function createGroupWorkGroup(db, { groupId, user, profile, data }) {
+  const name = (data.name || "").trim();
+  if (!name) throw new Error("Work group name is required.");
+  const memberUids = Array.from(new Set(data.memberUids || [])).filter(Boolean);
+  const leaderUid = data.leaderUid || memberUids[0] || "";
+  await addDoc(collection(db, "groups", groupId, "workGroups"), {
+    name,
+    description: (data.description || "").trim(),
+    taskTitle: (data.taskTitle || "").trim(),
+    taskInstructions: (data.taskInstructions || "").trim(),
+    deadline: data.deadline || null,
+    leaderUid,
+    leaderName: data.leaderName || "",
+    memberUids,
+    memberNames: data.memberNames || [],
+    status: "open",
+    createdByUid: user.uid,
+    createdByName: profile.name || user.email || "Leader",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateGroupWorkGroup(db, { groupId, workGroupId, user, data }) {
+  const memberUids = Array.from(new Set(data.memberUids || [])).filter(Boolean);
+  await updateDoc(doc(db, "groups", groupId, "workGroups", workGroupId), {
+    name: (data.name || "").trim(),
+    description: (data.description || "").trim(),
+    taskTitle: (data.taskTitle || "").trim(),
+    taskInstructions: (data.taskInstructions || "").trim(),
+    deadline: data.deadline || null,
+    leaderUid: data.leaderUid || memberUids[0] || "",
+    leaderName: data.leaderName || "",
+    memberUids,
+    memberNames: data.memberNames || [],
+    editedByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteGroupWorkGroup(db, { groupId, workGroupId, user }) {
+  await deleteDoc(doc(db, "groups", groupId, "workGroups", workGroupId));
+  await updateDoc(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function submitGroupWork(db, { groupId, workGroupId, user, profile, data }) {
+  await updateDoc(doc(db, "groups", groupId, "workGroups", workGroupId), {
+    status: "submitted",
+    submissionTitle: (data.title || "").trim(),
+    submissionNote: (data.note || "").trim(),
+    submissionUrl: (data.url || "").trim(),
+    submittedByUid: user.uid,
+    submittedByName: profile.name || user.email || "Member",
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function sendGroupMessage(db, { groupId, channelId = "chats", text, user, profile, kind = "message", pinned = false, group = null, members = [], replyTo = null }) {
   const cleanText = text.trim();
   const mentionCategory = notificationCategory("group_mention");
@@ -818,20 +908,48 @@ export async function reactToGroupMessage(db, { groupId, channelId = "chats", me
   });
 }
 
-export async function addGroupResource(db, { groupId, user, profile, title, url = "" }) {
+export async function addGroupResource(db, { groupId, user, profile, title, url = "", subject = "", topic = "", description = "", deadline = "" }) {
   const text = title.trim();
   const cleanUrl = url.trim();
+  const cleanDescription = description.trim();
   if (!text) throw new Error("Resource title is required.");
   await addDoc(collection(db, "groups", groupId, "channels", "resources", "messages"), {
     title: text,
-    text,
+    text: cleanDescription || text,
     url: cleanUrl,
+    subject: subject.trim(),
+    topic: topic.trim(),
+    description: cleanDescription,
+    deadline: deadline || null,
     authorName: profile.name || user.email || "Admin",
     authorUid: user.uid,
     kind: "resource",
     pinned: false,
     createdAt: serverTimestamp(),
   });
+  await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
+}
+
+export async function updateGroupResource(db, { groupId, resourceId, user, data }) {
+  const text = (data.title || "").trim();
+  const cleanDescription = (data.description || "").trim();
+  if (!text) throw new Error("Resource title is required.");
+  await updateDoc(doc(db, "groups", groupId, "channels", "resources", "messages", resourceId), {
+    title: text,
+    text: cleanDescription || text,
+    url: (data.url || "").trim(),
+    subject: (data.subject || "").trim(),
+    topic: (data.topic || "").trim(),
+    description: cleanDescription,
+    deadline: data.deadline || null,
+    editedByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
+}
+
+export async function deleteGroupResource(db, { groupId, resourceId, user }) {
+  await deleteDoc(doc(db, "groups", groupId, "channels", "resources", "messages", resourceId));
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
 }
 

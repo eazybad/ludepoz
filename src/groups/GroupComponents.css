@@ -161,6 +161,14 @@
   color: #991b1b;
 }
 
+.group-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
 .group-btn:disabled {
   opacity: 0.5;
   cursor: wait;
@@ -741,6 +749,20 @@
   box-shadow: 0 2px 7px rgba(34, 197, 94, 0.28);
 }
 
+.inline-new-pill {
+  display: inline-flex !important;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: #22c55e;
+  color: #ffffff !important;
+  padding: 2px 6px;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  line-height: 1.2;
+  box-shadow: 0 2px 7px rgba(34, 197, 94, 0.24);
+}
+
 .group-menu-item span {
   width: 24px;
   min-width: 24px;
@@ -887,6 +909,17 @@
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 800;
+}
+
+.message-unread-chip {
+  align-self: center;
+  border-radius: 999px;
+  background: #22c55e;
+  color: #ffffff;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 2px 7px rgba(34, 197, 94, 0.28);
 }
 
 .message-bubble {
@@ -1678,6 +1711,252 @@
   color: #0f766e;
   font-size: 12px;
   font-weight: 900;
+}
+
+.class-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.class-board-header strong {
+  display: block;
+  color: #0f1b2d;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.class-board-header span {
+  display: block;
+  margin-top: 3px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.class-board-latest {
+  margin-bottom: 14px;
+}
+
+.class-board-update {
+  display: block;
+  margin-bottom: 7px;
+  padding: 10px 12px;
+  border: 1px solid #d5f5f1;
+  border-radius: 8px;
+  background: #ecfeff;
+  text-decoration: none;
+}
+
+.class-board-update strong,
+.class-board-update span {
+  display: block;
+}
+
+.class-board-update strong {
+  color: #0f1b2d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.class-board-update span {
+  margin-top: 2px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.class-board-subject {
+  margin-bottom: 14px;
+}
+
+.class-board-subject-title {
+  margin-bottom: 8px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.class-board-resource {
+  border-color: #e2e8f0;
+  background: #ffffff;
+}
+
+.class-board-topic {
+  margin-bottom: 7px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.class-board-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.class-board-meta span {
+  border-radius: 999px;
+  background: #f0fdfa;
+  color: #0f766e;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.workgroup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workgroup-card,
+.workgroup-submit-box {
+  border: 1px solid #d5f5f1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.workgroup-card p {
+  margin: 8px 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workgroup-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workgroup-card-head strong,
+.workgroup-card-head span {
+  display: block;
+}
+
+.workgroup-card-head strong {
+  color: #0f1b2d;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.workgroup-card-head span {
+  margin-top: 3px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workgroup-status {
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0f766e;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.workgroup-status.submitted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.workgroup-task,
+.workgroup-submission {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.workgroup-task strong,
+.workgroup-submission strong {
+  color: #0f1b2d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workgroup-task span,
+.workgroup-submission span {
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workgroup-task small,
+.workgroup-submission small {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workgroup-submission a {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workgroup-members,
+.workgroup-member-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workgroup-members span {
+  border-radius: 999px;
+  background: #f0fdfa;
+  color: #0f766e;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.workgroup-member-picker {
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.workgroup-member-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e0e8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.workgroup-member-option.selected {
+  border-color: #0d9488;
+  background: #ecfeff;
+  color: #0f766e;
+}
+
+.workgroup-member-option input {
+  accent-color: #0d9488;
 }
 
 .notification-settings-list {

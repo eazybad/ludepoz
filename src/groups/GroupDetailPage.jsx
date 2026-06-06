@@ -8,6 +8,9 @@ import {
   canManageGroup,
   canVerifyPayments,
   createGroupCollection,
+  createGroupWorkGroup,
+  deleteGroupResource,
+  deleteGroupWorkGroup,
   groupAvatarText,
   isGroupMember,
   leaveUniversityGroup,
@@ -18,12 +21,14 @@ import {
   rejectGroupMember,
   sendGroupMessage,
   submitGroupPayment,
+  submitGroupWork,
   registerGroupEvent,
   subscribeChannelMessages,
   subscribeGroupCollection,
   subscribeCollectionPayments,
   subscribeGroupCollections,
   subscribeGroupMembers,
+  subscribeGroupWorkGroups,
   subscribeMyCollectionPayment,
   requestGroupPaymentProof,
   sendCollectionDeadlineReminder,
@@ -32,6 +37,8 @@ import {
   updateGroupMute,
   updateGroupNotificationPreferences,
   updateGroupPaymentAmount,
+  updateGroupResource,
+  updateGroupWorkGroup,
   updateMemberRole,
   updateUniversityGroupProfile,
   verifyGroupPayment,
@@ -60,6 +67,33 @@ const emptyPayment = {
   paymentProofPreview: "",
 };
 
+const emptyResource = {
+  title: "",
+  subject: "",
+  topic: "",
+  description: "",
+  url: "",
+  deadline: "",
+};
+
+const emptyWorkGroup = {
+  name: "",
+  description: "",
+  taskTitle: "",
+  taskInstructions: "",
+  deadline: "",
+  leaderUid: "",
+  memberUids: [],
+};
+
+const emptyWorkSubmission = {
+  title: "",
+  note: "",
+  url: "",
+  file: null,
+  filePreview: "",
+};
+
 function MenuIcon({ name }) {
   const common = {
     width: "22",
@@ -75,6 +109,7 @@ function MenuIcon({ name }) {
   const paths = {
     chats: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /><path d="M8 9h8" /><path d="M8 13h5" /></>,
     payments: <><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /><path d="M7 15h4" /></>,
+    workgroups: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.8" /><path d="M16 3.1a4 4 0 0 1 0 7.8" /></>,
     members: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.8" /><path d="M16 3.1a4 4 0 0 1 0 7.8" /></>,
     resources: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8" /><path d="M8 17h5" /></>,
     events: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4" /><path d="M8 2v4" /><path d="M3 10h18" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /></>,
@@ -151,6 +186,7 @@ export function GroupDetailPage({
   initialCollection = null,
   initialSource = "",
   groupHasUnread = false,
+  groupReadAtValue = 0,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || "chats");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -158,6 +194,7 @@ export function GroupDetailPage({
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
   const [resources, setResources] = useState([]);
+  const [workGroups, setWorkGroups] = useState([]);
   const [collections, setCollections] = useState(initialCollection ? [initialCollection] : []);
   const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionId || "");
   const [payments, setPayments] = useState([]);
@@ -170,7 +207,15 @@ export function GroupDetailPage({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
+  const [showResourceForm, setShowResourceForm] = useState(false);
+  const [editingResourceId, setEditingResourceId] = useState("");
+  const [showWorkGroupForm, setShowWorkGroupForm] = useState(false);
+  const [editingWorkGroupId, setEditingWorkGroupId] = useState("");
+  const [submittingWorkGroupId, setSubmittingWorkGroupId] = useState("");
   const [trackerData, setTrackerData] = useState(emptyTracker);
+  const [resourceData, setResourceData] = useState(emptyResource);
+  const [workGroupData, setWorkGroupData] = useState(emptyWorkGroup);
+  const [workSubmissionData, setWorkSubmissionData] = useState(emptyWorkSubmission);
   const [paymentData, setPaymentData] = useState(emptyPayment);
   const [paymentSearch, setPaymentSearch] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -187,6 +232,7 @@ export function GroupDetailPage({
   const messageListRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
+  const openedReadAtRef = useRef(groupReadAtValue || 0);
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
@@ -230,6 +276,10 @@ export function GroupDetailPage({
     : payments;
   const pendingMembers = members.filter(member => member.status === "pending");
   const activeMembers = members.filter(member => member.status !== "pending" && member.status !== "rejected" && member.status !== "removed");
+  const memberNameByUid = useMemo(() => activeMembers.reduce((acc, member) => {
+    acc[member.uid] = member.name || member.email || "Member";
+    return acc;
+  }, {}), [activeMembers]);
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
   const pinnedMessage = messages.find(message => message.pinned || message.kind === "announcement");
   const currentAction = group.currentAction || (pinnedMessage ? {
@@ -240,6 +290,21 @@ export function GroupDetailPage({
   const chatMessages = useMemo(() => [...messages].sort((a, b) => (
     (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0)
   )), [messages]);
+  const unreadChatMessages = useMemo(() => chatMessages.filter(message => (
+    message.authorUid !== user?.uid
+    && message.createdAt?.getTime
+    && message.createdAt.getTime() > openedReadAtRef.current
+  )), [chatMessages, user?.uid]);
+  const firstUnreadMessageId = unreadChatMessages[0]?.id || "";
+  const sortedResources = useMemo(() => [...resources].sort((a, b) => (
+    (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0)
+  )), [resources]);
+  const groupedResources = useMemo(() => sortedResources.reduce((acc, resource) => {
+    const key = (resource.subject || "General").trim() || "General";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(resource);
+    return acc;
+  }, {}), [sortedResources]);
 
   const pushGroupHistory = () => {
     try {
@@ -255,6 +320,7 @@ export function GroupDetailPage({
     setSelectedCollectionId("");
     setShowPaymentForm(false);
     setShowTrackerForm(false);
+    setShowWorkGroupForm(false);
     setPaymentSearch("");
   };
 
@@ -278,6 +344,20 @@ export function GroupDetailPage({
     }
     if (showTrackerForm) {
       setShowTrackerForm(false);
+      return true;
+    }
+    if (showResourceForm) {
+      setShowResourceForm(false);
+      setEditingResourceId("");
+      return true;
+    }
+    if (showWorkGroupForm) {
+      setShowWorkGroupForm(false);
+      setEditingWorkGroupId("");
+      return true;
+    }
+    if (submittingWorkGroupId) {
+      setSubmittingWorkGroupId("");
       return true;
     }
     if (activeMessageActions) {
@@ -306,7 +386,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showTrackerForm]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -318,6 +398,11 @@ export function GroupDetailPage({
     setPaymentSearch("");
     setShowPaymentForm(false);
     setShowTrackerForm(false);
+    setShowWorkGroupForm(false);
+    setShowResourceForm(false);
+    setEditingResourceId("");
+    setEditingWorkGroupId("");
+    setSubmittingWorkGroupId("");
     setShowChatComposer(false);
     setShowChatTools(false);
     setReplyToMessage(null);
@@ -352,12 +437,14 @@ export function GroupDetailPage({
     if (!group?.id || !canReadCollections) {
       setMessages([]);
       setResources([]);
+      setWorkGroups([]);
       setCollections(initialCollection ? [initialCollection] : []);
       setSelectedCollectionId(initialCollectionId || "");
       return undefined;
     }
     const unsubMessages = canViewGroupContent ? subscribeChannelMessages(db, group.id, "chats", setMessages, onError) : null;
     const unsubResources = canViewGroupContent ? subscribeChannelMessages(db, group.id, "resources", setResources, onError) : null;
+    const unsubWorkGroups = canViewGroupContent ? subscribeGroupWorkGroups(db, group.id, setWorkGroups, onError) : null;
     const subscribeCollections = canViewGroupContent
       ? (next) => subscribeGroupCollections(db, group.id, next, onError)
       : (next) => subscribeGroupCollection(db, group.id, initialCollectionId, next, onError);
@@ -369,6 +456,7 @@ export function GroupDetailPage({
     return () => {
       unsubMessages?.();
       unsubResources?.();
+      unsubWorkGroups?.();
       unsubCollections();
     };
   }, [canViewGroupContent, db, group?.id, initialCollection, initialCollectionId, onError]);
@@ -532,15 +620,193 @@ export function GroupDetailPage({
     }
   };
 
-  const handleAddResourceFromChat = async () => {
-    const title = window.prompt("Resource title or file name");
-    if (!title) return;
-    const url = window.prompt("Resource link (optional)", "");
+  const openCreateResourceForm = () => {
+    setEditingResourceId("");
+    setResourceData(emptyResource);
+    setShowResourceForm(true);
+  };
+
+  const openEditResourceForm = (resource) => {
+    setEditingResourceId(resource.id);
+    setResourceData({
+      title: resource.title || resource.text || "",
+      subject: resource.subject || "",
+      topic: resource.topic || "",
+      description: resource.description || (resource.text && resource.text !== resource.title ? resource.text : ""),
+      url: resource.url || "",
+      deadline: resource.deadline || "",
+    });
+    setShowResourceForm(true);
+  };
+
+  const handleSaveResource = async () => {
+    if (!resourceData.title.trim() && !resourceData.url.trim()) {
+      onError(new Error("Add a resource title or link."));
+      return;
+    }
     setBusy(true);
     try {
-      await addGroupResource(db, { groupId: group.id, user, profile, title, url: url || "" });
+      if (editingResourceId) {
+        await updateGroupResource(db, {
+          groupId: group.id,
+          resourceId: editingResourceId,
+          user,
+          data: {
+            ...resourceData,
+            title: resourceData.title || resourceData.url,
+          },
+        });
+      } else {
+        await addGroupResource(db, {
+          groupId: group.id,
+          user,
+          profile,
+          ...resourceData,
+          title: resourceData.title || resourceData.url,
+        });
+      }
+      setResourceData(emptyResource);
+      setEditingResourceId("");
+      setShowResourceForm(false);
       setShowChatTools(false);
-      onSuccess("Resource shared.");
+      onSuccess(editingResourceId ? "Resource updated." : "Resource shared.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteResource = async (resource) => {
+    if (!window.confirm(`Delete "${resource.title || resource.text || "this resource"}"?`)) return;
+    setBusy(true);
+    try {
+      await deleteGroupResource(db, { groupId: group.id, resourceId: resource.id, user });
+      onSuccess("Resource deleted.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleWorkGroupMember = (uid) => {
+    setWorkGroupData(prev => {
+      const hasMember = prev.memberUids.includes(uid);
+      const memberUids = hasMember ? prev.memberUids.filter(item => item !== uid) : [...prev.memberUids, uid];
+      return {
+        ...prev,
+        memberUids,
+        leaderUid: memberUids.includes(prev.leaderUid) ? prev.leaderUid : (memberUids[0] || ""),
+      };
+    });
+  };
+
+  const openCreateWorkGroupForm = () => {
+    setEditingWorkGroupId("");
+    setWorkGroupData(emptyWorkGroup);
+    setShowWorkGroupForm(true);
+  };
+
+  const openEditWorkGroupForm = (workGroup) => {
+    setEditingWorkGroupId(workGroup.id);
+    setWorkGroupData({
+      name: workGroup.name || "",
+      description: workGroup.description || "",
+      taskTitle: workGroup.taskTitle || "",
+      taskInstructions: workGroup.taskInstructions || "",
+      deadline: workGroup.deadline || "",
+      leaderUid: workGroup.leaderUid || "",
+      memberUids: workGroup.memberUids || [],
+    });
+    setShowWorkGroupForm(true);
+  };
+
+  const handleSaveWorkGroup = async () => {
+    if (!workGroupData.name.trim()) {
+      onError(new Error("Work group name is required."));
+      return;
+    }
+    if (workGroupData.memberUids.length === 0) {
+      onError(new Error("Add at least one member to this work group."));
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = {
+        ...workGroupData,
+        leaderName: memberNameByUid[workGroupData.leaderUid] || "",
+        memberNames: workGroupData.memberUids.map(uid => memberNameByUid[uid] || uid),
+      };
+      if (editingWorkGroupId) {
+        await updateGroupWorkGroup(db, {
+          groupId: group.id,
+          workGroupId: editingWorkGroupId,
+          user,
+          data: payload,
+        });
+      } else {
+        await createGroupWorkGroup(db, {
+          groupId: group.id,
+          user,
+          profile,
+          data: payload,
+        });
+      }
+      setWorkGroupData(emptyWorkGroup);
+      setEditingWorkGroupId("");
+      setShowWorkGroupForm(false);
+      markCurrentGroupRead();
+      onSuccess(editingWorkGroupId ? "Work group updated." : "Work group created.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteWorkGroup = async (workGroup) => {
+    if (!window.confirm(`Delete "${workGroup.name || "this work group"}"? Submissions for it will be removed from this view.`)) return;
+    setBusy(true);
+    try {
+      await deleteGroupWorkGroup(db, { groupId: group.id, workGroupId: workGroup.id, user });
+      onSuccess("Work group deleted.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSubmitWork = async (workGroup) => {
+    if (!workSubmissionData.title.trim() && !workSubmissionData.url.trim() && !workSubmissionData.file) {
+      onError(new Error("Add a submission title, link, or file."));
+      return;
+    }
+    setBusy(true);
+    try {
+      let submissionUrl = workSubmissionData.url.trim();
+      if (storage && workSubmissionData.file) {
+        const safeName = workSubmissionData.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "submission";
+        const fileRef = ref(storage, `groups/${group.id}/workGroups/${workGroup.id}/${user.uid}_${Date.now()}_${safeName}`);
+        const snap = await uploadBytes(fileRef, workSubmissionData.file);
+        submissionUrl = await getDownloadURL(snap.ref);
+      }
+      await submitGroupWork(db, {
+        groupId: group.id,
+        workGroupId: workGroup.id,
+        user,
+        profile,
+        data: {
+          ...workSubmissionData,
+          title: workSubmissionData.title || workGroup.taskTitle || workGroup.name,
+          url: submissionUrl,
+        },
+      });
+      setWorkSubmissionData(emptyWorkSubmission);
+      setSubmittingWorkGroupId("");
+      markCurrentGroupRead();
+      onSuccess("Work submitted to the group leader.");
     } catch (err) {
       onError(err);
     } finally {
@@ -568,6 +834,8 @@ export function GroupDetailPage({
         profile,
         title: file.name,
         url,
+        subject: "Files",
+        topic: "Uploaded file",
       });
       setShowChatTools(false);
       onSuccess("File shared in resources.");
@@ -1016,6 +1284,7 @@ export function GroupDetailPage({
                       {[
                         ["chats", "Chats"],
                         ["payments", "Payments"],
+                        ["workgroups", "Work Groups"],
                         ["members", "Members"],
                         ["resources", "Resources"],
                       ].map(([id, label]) => (
@@ -1027,7 +1296,7 @@ export function GroupDetailPage({
                         >
                           <span><MenuIcon name={id} /></span>
                           <strong>{label}</strong>
-                          {groupHasUnread && ["chats", "payments"].includes(id) && <em className="group-menu-new">New</em>}
+                          {groupHasUnread && ["chats", "payments", "workgroups", "resources"].includes(id) && <em className="group-menu-new">New</em>}
                         </button>
                       ))}
                       <button
@@ -1145,6 +1414,11 @@ export function GroupDetailPage({
                   {(index === 0 || !sameMessageDay(chatMessages[index - 1]?.createdAt, message.createdAt)) && (
                     <div className="message-date-chip">{formatMessageDay(message.createdAt)}</div>
                   )}
+                  {message.id === firstUnreadMessageId && (
+                    <div className="message-unread-chip">
+                      {unreadChatMessages.length} unread {unreadChatMessages.length === 1 ? "message" : "messages"}
+                    </div>
+                  )}
                   <button
                     type="button"
                     className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}
@@ -1235,7 +1509,7 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        {memberCanManage && <button type="button" onClick={handleAddResourceFromChat}>Share resource link</button>}
+                        {memberCanManage && <button type="button" onClick={openCreateResourceForm}>Add board resource</button>}
                         {memberCanManage && (
                           <label className="chat-tool-file">
                             Upload file
@@ -1473,6 +1747,95 @@ export function GroupDetailPage({
         </div>
       )}
 
+      {canViewGroupContent && activeTab === "workgroups" && (
+        <div className="group-panel">
+          <div className="class-board-header">
+            <div>
+              <strong>Work Groups</strong>
+              <span>Create class groups, assign tasks, and receive submissions from each group.</span>
+            </div>
+            {memberCanManage && (
+              <button type="button" className="group-btn primary compact" onClick={openCreateWorkGroupForm}>
+                Add
+              </button>
+            )}
+          </div>
+
+          {workGroups.length === 0 ? (
+            <div className="resource-box">No work groups yet. Leaders can create Group 01, Group 02, assign members, and collect submissions here.</div>
+          ) : (
+            <div className="workgroup-list">
+              {workGroups.map(workGroup => {
+                const isAssigned = workGroup.memberUids?.includes(user?.uid);
+                const canSubmit = memberCanManage || isAssigned || workGroup.leaderUid === user?.uid;
+                const isSubmitting = submittingWorkGroupId === workGroup.id;
+                return (
+                  <div key={workGroup.id} className="workgroup-card">
+                  <div className="workgroup-card-head">
+                      <div>
+                        <strong>{workGroup.name}{workGroup.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</strong>
+                        <span>{workGroup.memberNames?.length || workGroup.memberUids?.length || 0} members{workGroup.leaderName ? ` - Leader: ${workGroup.leaderName}` : ""}</span>
+                      </div>
+                      <em className={`workgroup-status ${workGroup.status === "submitted" ? "submitted" : ""}`}>{workGroup.status === "submitted" ? "Submitted" : "Open"}</em>
+                    </div>
+                    {workGroup.description && <p>{workGroup.description}</p>}
+                    {(workGroup.taskTitle || workGroup.taskInstructions || workGroup.deadline) && (
+                      <div className="workgroup-task">
+                        {workGroup.taskTitle && <strong>{workGroup.taskTitle}</strong>}
+                        {workGroup.taskInstructions && <span>{workGroup.taskInstructions}</span>}
+                        {workGroup.deadline && <small>Deadline: {workGroup.deadline}</small>}
+                      </div>
+                    )}
+                    {workGroup.memberNames?.length > 0 && (
+                      <div className="workgroup-members">
+                        {workGroup.memberNames.slice(0, 10).map(name => <span key={name}>{name}</span>)}
+                        {workGroup.memberNames.length > 10 && <span>+{workGroup.memberNames.length - 10}</span>}
+                      </div>
+                    )}
+                    {workGroup.status === "submitted" && (
+                      <div className="workgroup-submission">
+                        <strong>{workGroup.submissionTitle || "Submitted work"}</strong>
+                        {workGroup.submissionNote && <span>{workGroup.submissionNote}</span>}
+                        {workGroup.submissionUrl && <a href={workGroup.submissionUrl} target="_blank" rel="noreferrer">Open submission</a>}
+                        <small>Submitted by {workGroup.submittedByName || "member"}{workGroup.submittedAt ? ` - ${formatDate(workGroup.submittedAt)}` : ""}</small>
+                      </div>
+                    )}
+                    {canSubmit && (
+                      <div className="group-inline-actions">
+                        <button className="group-btn secondary" type="button" onClick={() => {
+                          setSubmittingWorkGroupId(isSubmitting ? "" : workGroup.id);
+                          setWorkSubmissionData(emptyWorkSubmission);
+                        }}>
+                          {workGroup.status === "submitted" ? "Update submission" : "Submit work"}
+                        </button>
+                        {workGroup.submissionUrl && <a className="group-btn ghost group-link-btn" href={workGroup.submissionUrl} target="_blank" rel="noreferrer">Open</a>}
+                        {memberCanManage && <button className="group-btn ghost" type="button" onClick={() => openEditWorkGroupForm(workGroup)}>Edit</button>}
+                        {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteWorkGroup(workGroup)}>Delete</button>}
+                      </div>
+                    )}
+                    {isSubmitting && (
+                      <div className="workgroup-submit-box">
+                        <div className="group-field"><label>Submission title</label><input value={workSubmissionData.title} onChange={event => setWorkSubmissionData({ ...workSubmissionData, title: event.target.value })} placeholder="Group 01 field report" /></div>
+                        <div className="group-field"><label>Link, optional</label><input value={workSubmissionData.url} onChange={event => setWorkSubmissionData({ ...workSubmissionData, url: event.target.value })} placeholder="Drive link, PDF link, or submission URL" /></div>
+                        <div className="group-field"><label>Upload file, optional</label><input type="file" onChange={event => {
+                          const file = event.target.files?.[0] || null;
+                          setWorkSubmissionData({ ...workSubmissionData, file, filePreview: file ? file.name : "" });
+                        }} />{workSubmissionData.filePreview && <small>{workSubmissionData.filePreview}</small>}</div>
+                        <div className="group-field"><label>Note</label><textarea value={workSubmissionData.note} onChange={event => setWorkSubmissionData({ ...workSubmissionData, note: event.target.value })} placeholder="Anything the class rep or lecturer should know." /></div>
+                        <div className="group-inline-actions">
+                          <button className="group-btn primary" type="button" disabled={busy} onClick={() => handleSubmitWork(workGroup)}>{busy ? "Submitting..." : "Submit to leader"}</button>
+                          <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setSubmittingWorkGroupId("")}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {(canViewGroupContent || canViewPublicSelectedEvent) && activeTab === "events" && (
         <div className="group-panel">
           {memberCanManage && (
@@ -1701,16 +2064,155 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "resources" && (
         <div className="group-panel">
-          {resources.length === 0 ? (
-            <div className="resource-box">No resources yet.</div>
-          ) : resources.map(resource => (
-            <div key={resource.id} className="resource-box">
-              <div className="resource-title">{resource.title || resource.text}</div>
-              {resource.text && resource.title && <div className="resource-text">{resource.text}</div>}
-              {resource.url && <a href={resource.url} target="_blank" rel="noreferrer">Open file / resource</a>}
-              <div className="message-time">{formatDate(resource.createdAt)}</div>
+          <div className="class-board-header">
+            <div>
+              <strong>Class Board</strong>
+              <span>Organized links, notes, deadlines, and files for this group.</span>
+            </div>
+            {memberCanManage && (
+              <button type="button" className="group-btn primary compact" onClick={openCreateResourceForm}>
+                Add
+              </button>
+            )}
+          </div>
+          {sortedResources.length > 0 && (
+            <div className="class-board-latest">
+              <div className="group-section-title">Latest updates</div>
+              {sortedResources.slice(0, 3).map(resource => (
+                <a key={resource.id} className="class-board-update" href={resource.url || undefined} target={resource.url ? "_blank" : undefined} rel="noreferrer">
+                  <strong>{resource.title || resource.text}</strong>
+                  <span>{resource.subject || "General"}{resource.topic ? ` - ${resource.topic}` : ""}</span>
+                </a>
+              ))}
+            </div>
+          )}
+          {sortedResources.length === 0 ? (
+            <div className="resource-box">No resources yet. Add Drive links, notes, past papers, deadlines, or class files here.</div>
+          ) : Object.entries(groupedResources).map(([subject, items]) => (
+            <div key={subject} className="class-board-subject">
+              <div className="class-board-subject-title">{subject}</div>
+              {items.map(resource => (
+                <div key={resource.id} className="resource-box class-board-resource">
+                  <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</div>
+                  {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
+                  {(resource.description || (resource.text && resource.title && resource.text !== resource.title)) && (
+                    <div className="resource-text">{resource.description || resource.text}</div>
+                  )}
+                  <div className="class-board-meta">
+                    {resource.deadline && <span>Deadline: {resource.deadline}</span>}
+                    {resource.createdAt && <span>Added {formatDate(resource.createdAt)}</span>}
+                  </div>
+                  <div className="group-inline-actions">
+                    {resource.url && <a className="group-btn secondary group-link-btn" href={resource.url} target="_blank" rel="noreferrer">Open file / resource</a>}
+                    {memberCanManage && <button className="group-btn ghost" type="button" onClick={() => openEditResourceForm(resource)}>Edit</button>}
+                    {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteResource(resource)}>Delete</button>}
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {showResourceForm && (
+        <div className="group-modal-backdrop" onClick={() => setShowResourceForm(false)}>
+          <div className="group-modal" onClick={event => event.stopPropagation()}>
+            <h3>{editingResourceId ? "Edit Board Resource" : "Add Board Resource"}</h3>
+            <div className="group-field">
+              <label>Title</label>
+              <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection and Intersection notes" />
+            </div>
+            <div className="group-field">
+              <label>Subject / folder</label>
+              <input value={resourceData.subject} onChange={event => setResourceData({ ...resourceData, subject: event.target.value })} placeholder="Topographical Surveying" />
+            </div>
+            <div className="group-field">
+              <label>Topic</label>
+              <input value={resourceData.topic} onChange={event => setResourceData({ ...resourceData, topic: event.target.value })} placeholder="Week 4 - Resection / Intersection" />
+            </div>
+            <div className="group-field">
+              <label>Link</label>
+              <input value={resourceData.url} onChange={event => setResourceData({ ...resourceData, url: event.target.value })} placeholder="Google Drive, PDF, YouTube, or any resource link" />
+            </div>
+            <div className="group-field">
+              <label>Deadline, optional</label>
+              <input type="date" value={resourceData.deadline} onChange={event => setResourceData({ ...resourceData, deadline: event.target.value })} />
+            </div>
+            <div className="group-field">
+              <label>Description</label>
+              <textarea value={resourceData.description} onChange={event => setResourceData({ ...resourceData, description: event.target.value })} placeholder="What changed, who should read it, or where it belongs." />
+            </div>
+            <div className="group-inline-actions">
+              <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveResource}>
+                {busy ? "Saving..." : editingResourceId ? "Update resource" : "Save resource"}
+              </button>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowResourceForm(false); setEditingResourceId(""); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWorkGroupForm && (
+        <div className="group-modal-backdrop" onClick={() => setShowWorkGroupForm(false)}>
+          <div className="group-modal" onClick={event => event.stopPropagation()}>
+            <h3>{editingWorkGroupId ? "Edit Work Group" : "Create Work Group"}</h3>
+            <div className="group-field">
+              <label>Group name</label>
+              <input value={workGroupData.name} onChange={event => setWorkGroupData({ ...workGroupData, name: event.target.value })} placeholder="Group 01" />
+            </div>
+            <div className="group-field">
+              <label>Description</label>
+              <input value={workGroupData.description} onChange={event => setWorkGroupData({ ...workGroupData, description: event.target.value })} placeholder="Topographical surveying assignment group" />
+            </div>
+            <div className="group-field">
+              <label>Task title</label>
+              <input value={workGroupData.taskTitle} onChange={event => setWorkGroupData({ ...workGroupData, taskTitle: event.target.value })} placeholder="Submit field report" />
+            </div>
+            <div className="group-field">
+              <label>Task instructions</label>
+              <textarea value={workGroupData.taskInstructions} onChange={event => setWorkGroupData({ ...workGroupData, taskInstructions: event.target.value })} placeholder="What this group should do and submit." />
+            </div>
+            <div className="group-field">
+              <label>Deadline</label>
+              <input type="date" value={workGroupData.deadline} onChange={event => setWorkGroupData({ ...workGroupData, deadline: event.target.value })} />
+            </div>
+            <div className="group-field">
+              <label>Members</label>
+              <div className="workgroup-member-picker">
+                {activeMembers.length === 0 ? (
+                  <div className="payment-meta">No active members yet.</div>
+                ) : activeMembers.map(member => {
+                  const selected = workGroupData.memberUids.includes(member.uid);
+                  return (
+                    <label key={member.uid} className={`workgroup-member-option ${selected ? "selected" : ""}`}>
+                      <input type="checkbox" checked={selected} onChange={() => toggleWorkGroupMember(member.uid)} />
+                      <span>{member.name || member.email || "Member"}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            {workGroupData.memberUids.length > 0 && (
+              <div className="group-field">
+                <label>Group leader</label>
+                <select value={workGroupData.leaderUid} onChange={event => setWorkGroupData({ ...workGroupData, leaderUid: event.target.value })}>
+                  {workGroupData.memberUids.map(uid => (
+                    <option key={uid} value={uid}>{memberNameByUid[uid] || uid}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="group-inline-actions">
+              <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveWorkGroup}>
+                {busy ? "Saving..." : editingWorkGroupId ? "Update work group" : "Create work group"}
+              </button>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
