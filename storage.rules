@@ -35,6 +35,12 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    match /groups/{groupId}/resources/{fileName} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+
     match /{allPaths=**} {
       allow read: if true;
       allow write: if signedIn()

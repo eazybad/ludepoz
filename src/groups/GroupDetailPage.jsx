@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { compressImage, COMPRESSION_PRESETS } from "../imageCompression";
 import "./GroupComponents.css";
 import {
   GROUP_ROLES,
@@ -99,6 +100,7 @@ const emptyWorkSubmission = {
 };
 
 const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
+const MAX_RESOURCE_FILE_BYTES = 25 * 1024 * 1024;
 
 function offlineResourceStoreKey(groupId) {
   return `kampasikaOfflineResources:${groupId || "unknown"}`;
@@ -247,6 +249,7 @@ export function GroupDetailPage({
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [editingResourceId, setEditingResourceId] = useState("");
   const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
+  const [resourceSortMode, setResourceSortMode] = useState("latest");
   const [showWorkGroupForm, setShowWorkGroupForm] = useState(false);
   const [editingWorkGroupId, setEditingWorkGroupId] = useState("");
   const [submittingWorkGroupId, setSubmittingWorkGroupId] = useState("");
@@ -350,8 +353,14 @@ export function GroupDetailPage({
     acc[key].push(resource);
     return acc;
   }, {}), [sortedResources]);
-  const resourceSubjectEntries = useMemo(() => Object.entries(groupedResources), [groupedResources]);
-  const selectedResourceItems = selectedResourceSubject ? (groupedResources[selectedResourceSubject] || []) : [];
+  const resourceSubjectEntries = useMemo(() => Object.entries(groupedResources).sort(([a], [b]) => a.localeCompare(b)), [groupedResources]);
+  const selectedResourceItems = useMemo(() => {
+    const items = selectedResourceSubject ? [...(groupedResources[selectedResourceSubject] || [])] : [];
+    if (resourceSortMode === "alpha") {
+      return items.sort((a, b) => String(a.title || a.text || "").localeCompare(String(b.title || b.text || "")));
+    }
+    return items.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+  }, [groupedResources, resourceSortMode, selectedResourceSubject]);
 
   useEffect(() => {
     setSavedOfflineResources(readOfflineResourceStore(group.id));
@@ -368,6 +377,8 @@ export function GroupDetailPage({
     if (tabId !== activeTab) pushGroupHistory();
     setActiveTab(tabId);
     setMenuOpen(false);
+    setResourcePreview(null);
+    if (tabId !== "resources") setSelectedResourceSubject("");
     setSelectedCollectionId("");
     setShowPaymentForm(false);
     setShowTrackerForm(false);
@@ -382,9 +393,19 @@ export function GroupDetailPage({
     setPaymentSearch("");
   };
 
+  const openResourceSubject = (subject) => {
+    if (!subject) return;
+    if (subject !== selectedResourceSubject) pushGroupHistory();
+    setSelectedResourceSubject(subject);
+  };
+
   const goBackWithinGroup = useCallback(() => {
     setMenuOpen(false);
 
+    if (resourcePreview) {
+      setResourcePreview(null);
+      return true;
+    }
     if (expandedProofUrl) {
       setExpandedProofUrl("");
       return true;
@@ -430,6 +451,10 @@ export function GroupDetailPage({
       setPaymentSearch("");
       return true;
     }
+    if (selectedResourceSubject) {
+      setSelectedResourceSubject("");
+      return true;
+    }
     if (activeTab !== "chats") {
       setActiveTab("chats");
       setPaymentSearch("");
@@ -437,7 +462,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, selectedCollectionId, showChatComposer, showChatTools, showPaymentForm, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showPaymentForm, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -451,6 +476,8 @@ export function GroupDetailPage({
     setShowTrackerForm(false);
     setShowWorkGroupForm(false);
     setShowResourceForm(false);
+    setSelectedResourceSubject("");
+    setResourcePreview(null);
     setEditingResourceId("");
     setEditingWorkGroupId("");
     setSubmittingWorkGroupId("");
@@ -865,6 +892,9 @@ export function GroupDetailPage({
     if (!url) return "";
     const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
     if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
+    if (/\.(doc|docx|ppt|pptx|xls|xlsx)(\?|#|$)/i.test(url)) {
+      return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+    }
     return url;
   };
 
@@ -874,6 +904,7 @@ export function GroupDetailPage({
       window.open(resource.url, "_blank", "noopener,noreferrer");
       return;
     }
+    pushGroupHistory();
     setResourcePreview({
       title: resource.title || resource.text || "Resource",
       url: resource.url,
@@ -882,33 +913,51 @@ export function GroupDetailPage({
     });
   };
 
-  const handleUploadFolderResourceFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !memberCanManage || !storage || !group?.id || !selectedResourceSubject) return;
-    if (file.size > 12 * 1024 * 1024) {
-      onError(new Error("File is too large. Maximum size is 12MB."));
-      return;
+  const prepareResourceUploadFile = async (file) => {
+    if (!file) return null;
+    if (file.size <= MAX_RESOURCE_FILE_BYTES) return file;
+    if (file.type?.startsWith("image/")) {
+      const { file: compressed } = await compressImage(file, {
+        ...COMPRESSION_PRESETS.verification,
+        maxSizeKB: 1400,
+        maxWidth: 1800,
+        maxHeight: 1800,
+      });
+      if (compressed.size <= MAX_RESOURCE_FILE_BYTES) return compressed;
     }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+    throw new Error(`${file.name} is too large. Images can be compressed automatically, but PDF/DOC/PPT files must be under 25MB or shared as an exact Drive file link.`);
+  };
+
+  const uploadResourceFileToFolder = async (file, subject) => {
+    const uploadFile = await prepareResourceUploadFile(file);
+    const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
     const filePath = `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`;
+    const snap = await uploadBytes(ref(storage, filePath), uploadFile);
+    const url = await getDownloadURL(snap.ref);
+    await addGroupResource(db, {
+      groupId: group.id,
+      user,
+      profile,
+      title: file.name.replace(/\.[^.]+$/, "") || file.name,
+      url,
+      subject,
+      topic: file.name,
+      resourceType: inferResourceType(uploadFile.name || file.name) || "File",
+      fileName: file.name,
+    });
+  };
+
+  const handleUploadFolderResourceFile = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0 || !memberCanManage || !storage || !group?.id || !selectedResourceSubject) return;
     setBusy(true);
     try {
-      const snap = await uploadBytes(ref(storage, filePath), file);
-      const url = await getDownloadURL(snap.ref);
-      await addGroupResource(db, {
-        groupId: group.id,
-        user,
-        profile,
-        title: file.name.replace(/\.[^.]+$/, "") || file.name,
-        url,
-        subject: selectedResourceSubject,
-        topic: file.name,
-        resourceType: inferResourceType(file.name) || "File",
-        fileName: file.name,
-      });
+      for (const file of files) {
+        await uploadResourceFileToFolder(file, selectedResourceSubject);
+      }
       markCurrentGroupRead();
-      onSuccess(`Added to ${selectedResourceSubject}.`);
+      onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} added to ${selectedResourceSubject}.`);
     } catch (err) {
       onError(err);
     } finally {
@@ -1041,30 +1090,16 @@ export function GroupDetailPage({
   };
 
   const handleUploadResourceFile = async (event) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!file || !memberCanManage || !storage || !group?.id) return;
-    if (file.size > 12 * 1024 * 1024) {
-      onError(new Error("File is too large. Maximum size is 12MB."));
-      return;
-    }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
-    const filePath = `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`;
+    if (files.length === 0 || !memberCanManage || !storage || !group?.id) return;
     setBusy(true);
     try {
-      const snap = await uploadBytes(ref(storage, filePath), file);
-      const url = await getDownloadURL(snap.ref);
-      await addGroupResource(db, {
-        groupId: group.id,
-        user,
-        profile,
-        title: file.name,
-        url,
-        subject: "Files",
-        topic: "Uploaded file",
-      });
+      for (const file of files) {
+        await uploadResourceFileToFolder(file, "Files");
+      }
       setShowChatTools(false);
-      onSuccess("File shared in resources.");
+      onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} shared in resources.`);
     } catch (err) {
       onError(err);
     } finally {
@@ -1774,7 +1809,7 @@ export function GroupDetailPage({
                         {memberCanManage && (
                           <label className="chat-tool-file">
                             Quick upload
-                            <input type="file" onChange={handleUploadResourceFile} disabled={busy} />
+                            <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
                           </label>
                         )}
                         {memberCanManage && <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin as announcement</button>}
@@ -2328,6 +2363,7 @@ export function GroupDetailPage({
           <input
             ref={folderResourceInputRef}
             type="file"
+            multiple
             style={{ display: "none" }}
             onChange={handleUploadFolderResourceFile}
           />
@@ -2346,7 +2382,7 @@ export function GroupDetailPage({
             <div className="class-board-latest">
               <div className="group-section-title">Latest updates</div>
               {sortedResources.slice(0, 3).map(resource => (
-                <button key={resource.id} type="button" className="class-board-update" onClick={() => setSelectedResourceSubject((resource.subject || "General").trim() || "General")}>
+                <button key={resource.id} type="button" className="class-board-update" onClick={() => openResourceSubject((resource.subject || "General").trim() || "General")}>
                   <strong>{resource.title || resource.text}</strong>
                   <span>{resource.subject || "General"}{resource.topic ? ` - ${resource.topic}` : ""}</span>
                 </button>
@@ -2362,6 +2398,10 @@ export function GroupDetailPage({
                 <div>
                   <strong>{selectedResourceSubject}</strong>
                   <span>{selectedResourceItems.length} {selectedResourceItems.length === 1 ? "resource" : "resources"}</span>
+                </div>
+                <div className="class-board-sort">
+                  <button type="button" className={resourceSortMode === "latest" ? "active" : ""} onClick={() => setResourceSortMode("latest")}>Latest</button>
+                  <button type="button" className={resourceSortMode === "alpha" ? "active" : ""} onClick={() => setResourceSortMode("alpha")}>A-Z</button>
                 </div>
                 {memberCanManage && (
                   <button type="button" className="group-btn primary compact" disabled={busy} onClick={() => folderResourceInputRef.current?.click()}>
@@ -2413,7 +2453,7 @@ export function GroupDetailPage({
               {resourceSubjectEntries.map(([subject, items]) => {
                 const latest = items[0];
                 return (
-                  <button key={subject} type="button" className="class-board-folder-card" onClick={() => setSelectedResourceSubject(subject)}>
+                  <button key={subject} type="button" className="class-board-folder-card" onClick={() => openResourceSubject(subject)}>
                     <div className="class-board-folder-icon">+</div>
                     <strong>{subject}</strong>
                     <span>{items.length} {items.length === 1 ? "resource" : "resources"}</span>
