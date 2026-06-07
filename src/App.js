@@ -272,8 +272,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      setOfflineBannerDismissed(false);
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      setOfflineBannerDismissed(false);
+    };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -504,8 +510,10 @@ useEffect(() => {
   // PWA Install Prompt state
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showNotificationBanner, setShowNotificationBanner] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
 
   // Saved search alerts — track which queries the user has already subscribed to in this session
   const [savedAlerts, setSavedAlerts] = useState(new Set());
@@ -1273,6 +1281,18 @@ useEffect(() => {
     const alreadySaved = alertKey && savedAlerts.has(alertKey);
 
     if (!hasQuery) {
+      if (isOffline) {
+        const offlineKind = kind === "listing" ? "Discover posts" : kind === "service" ? "services" : kind === "room" ? "rooms" : "updates";
+        return (
+          <div style={{textAlign:'center',padding:'44px 18px',background:'#fff',borderRadius:'12px',border:'1px solid #dbe8e7'}}>
+            <div style={{fontSize:'34px',marginBottom:'12px'}}>⌁</div>
+            <div style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>You're offline</div>
+            <div style={{fontSize:'13px',color:'#667085',marginTop:'6px',lineHeight:1.45}}>
+              No saved {offlineKind} are available on this device yet. Open this page when online once, then Kampasika can show saved results here.
+            </div>
+          </div>
+        );
+      }
       // No active search — just an empty list. Use the original fallback.
       return (
         <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
@@ -1873,6 +1893,11 @@ useEffect(() => {
 const requestNotificationPermission = async (currentUser) => {
   try {
     if (!currentUser) return;
+    if (!("Notification" in window)) {
+      setShowNotificationBanner(false);
+      setError("Notifications are not supported on this browser.");
+      return;
+    }
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
       const token = await getToken(messaging, {
@@ -1883,12 +1908,18 @@ const requestNotificationPermission = async (currentUser) => {
       await updateDoc(doc(db, "users", currentUser.uid), {
         fcmToken: token
       });
+      setShowNotificationBanner(false);
+      localStorage.setItem("notificationBannerDismissed", Date.now().toString());
+      setSuccess("Notifications enabled. Hutapitwa na updates.");
 
     } else {
       console.log("Notification permission denied");
+      setShowNotificationBanner(false);
+      localStorage.setItem("notificationBannerDismissed", Date.now().toString());
     }
   } catch (error) {
     console.error("Error getting token:", error);
+    setError("Could not enable notifications right now. Try again later.");
   }
 };
 
@@ -2527,7 +2558,6 @@ await updateDoc(convRef, {
             } catch(e) { console.error("Error loading shared collection:", e); }
           }
         }
-        setTimeout(() => requestNotificationPermission(currentUser), 3000);
       } else {
         setUser(null);
         setUserName("");
@@ -3029,6 +3059,26 @@ await updateDoc(convRef, {
     localStorage.setItem('installBannerDismissed', Date.now().toString());
   };
 
+  useEffect(() => {
+    if (!user || !("Notification" in window) || Notification.permission !== "default") {
+      setShowNotificationBanner(false);
+      return;
+    }
+
+    const dismissed = localStorage.getItem("notificationBannerDismissed");
+    if (dismissed && Date.now() - parseInt(dismissed, 10) < 7 * 24 * 60 * 60 * 1000) {
+      return;
+    }
+
+    const timer = setTimeout(() => setShowNotificationBanner(true), 4500);
+    return () => clearTimeout(timer);
+  }, [user]);
+
+  const dismissNotificationBanner = () => {
+    setShowNotificationBanner(false);
+    localStorage.setItem("notificationBannerDismissed", Date.now().toString());
+  };
+
 
   // Auto-clear success messages after 4 seconds
   useEffect(() => {
@@ -3058,7 +3108,7 @@ await updateDoc(convRef, {
       console.log("Message received:", payload);
       
       // Only show notification if we have permission and app is in foreground
-      if (Notification.permission === "granted") {
+      if ("Notification" in window && Notification.permission === "granted") {
         try {
           new Notification(payload.notification?.title || "Kampasika", {
             body: payload.notification?.body || "You have a new message",
@@ -4459,24 +4509,87 @@ return (
   display:'flex',
   flexDirection:'column'
 }}>
-      {isOffline && (
+      {isOffline && !offlineBannerDismissed && (
         <div
           style={{
             margin: '10px 12px 0',
             background: '#ecfdf5',
             color: '#065f46',
             border: '1px solid #a7f3d0',
-            padding: '10px 12px',
+            padding: '10px 38px 10px 12px',
             borderRadius: '8px',
             fontSize: '13px',
             lineHeight: 1.35,
             flexShrink: 0,
             zIndex: 80,
-            boxShadow: '0 8px 20px rgba(6, 95, 70, 0.08)'
+            boxShadow: '0 8px 20px rgba(6, 95, 70, 0.08)',
+            position: 'relative'
           }}
         >
           <strong style={{ display: 'block', marginBottom: '2px' }}>Offline mode</strong>
           Showing saved group data on this device. New updates, messages, and submissions will sync when internet returns.
+          <button
+            type="button"
+            aria-label="Dismiss offline message"
+            onClick={() => setOfflineBannerDismissed(true)}
+            style={{
+              position:'absolute',
+              top:'7px',
+              right:'8px',
+              width:'24px',
+              height:'24px',
+              border:'none',
+              borderRadius:'50%',
+              background:'rgba(6,95,70,0.1)',
+              color:'#065f46',
+              fontSize:'16px',
+              lineHeight:1,
+              cursor:'pointer'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {showNotificationBanner && !isOffline && (
+        <div
+          style={{
+            margin: '10px 12px 0',
+            background: '#fff',
+            color: '#0f1b2d',
+            border: '1px solid #dbe8e7',
+            padding: '11px 12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            lineHeight: 1.35,
+            flexShrink: 0,
+            zIndex: 80,
+            boxShadow: '0 10px 24px rgba(15, 27, 45, 0.1)',
+            display:'flex',
+            alignItems:'center',
+            gap:'10px'
+          }}
+        >
+          <div style={{minWidth:0, flex:1}}>
+            <strong style={{ display: 'block', marginBottom: '2px' }}>Enable notifications</strong>
+            <span style={{color:'#486171'}}>Usipitwe na updates za group, messages, submissions na events.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => requestNotificationPermission(user)}
+            style={{border:'none',borderRadius:'8px',background:'#0d9488',color:'#fff',fontSize:'12px',fontWeight:'800',padding:'8px 10px',cursor:'pointer',whiteSpace:'nowrap'}}
+          >
+            Enable
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss notification prompt"
+            onClick={dismissNotificationBanner}
+            style={{border:'none',background:'transparent',color:'#667085',fontSize:'18px',lineHeight:1,cursor:'pointer',padding:'4px'}}
+          >
+            ×
+          </button>
         </div>
       )}
 
