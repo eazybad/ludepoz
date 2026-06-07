@@ -31,6 +31,7 @@ import { computePriceSignal, PriceSignalBadge } from './priceSignal';
 import { CreateGroupModal, GroupListPage } from './groups/GroupListPage';
 import { GroupDetailPage } from './groups/GroupDetailPage';
 import {
+  addGroupResource,
   createUniversityGroup,
   archiveUniversityGroup,
   joinUniversityGroup,
@@ -185,6 +186,18 @@ const SHOW_PRICE_SIGNAL = false;
 // Read by an isAdmin check in the App component; never used for security gates
 // at the data layer (Firestore rules still enforce real permissions).
 const ADMIN_UIDS = ["LTrwUHH6utQJGiw4lcsKflzXvPR2"];
+
+const QS_DRIVE_ROOT_URL = "https://drive.google.com/drive/folders/1OZjhlt-B9RI9tM8fjxEksoeRX__ZcuPs";
+const QS_RESOURCE_FOLDERS = [
+  "BUILDING CONSTRUCTION 2",
+  "COMMUNICATION SKILLS",
+  "COMPUTER DESIGNS",
+  "FINANCIAL LITERACY",
+  "MATERIAL FOR CONSTRUCTION 2",
+  "MECHANICS OF MATERIALS",
+  "STATISTICS AND PROBABILITY",
+  "TOPOGRAPHICAL SURVEYING",
+];
 
 // Resilient compression wrapper. If compression fails (HEIC images, very large
 // files, browser memory limits), fall back to the ORIGINAL file so the upload
@@ -345,6 +358,7 @@ function App() {
   const [newAnnouncement, setNewAnnouncement] = useState("");
   const [postingAnnouncement, setPostingAnnouncement] = useState(false);
   const [seedingDemoGroups, setSeedingDemoGroups] = useState(false);
+  const [seedingQsGroup, setSeedingQsGroup] = useState(false);
   const unsubGroupAnnouncements = useRef(null);
   const unsubGroupMembers = useRef(null);
   const [scanResult, setScanResult] = useState(null); // { order, studentName, paid, collectionTitle }
@@ -358,7 +372,7 @@ function App() {
   const [showAboutBanner, setShowAboutBanner] = useState(false);
   const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
   const [showGetVerifiedBanner, setShowGetVerifiedBanner] = useState(false);
-  const [showSafetyMessage, setShowSafetyMessage] = useState(true);
+  const [showSafetyMessage, setShowSafetyMessage] = useState(() => localStorage.getItem("safetyMessageDismissed") !== "true");
   const [showChatTip, setShowChatTip] = useState(true);
   // Services state
   const [services, setServices] = useState([]);
@@ -2903,6 +2917,79 @@ await updateDoc(convRef, {
       setError("Failed to add demo groups: " + e.message);
     } finally {
       setSeedingDemoGroups(false);
+    }
+  };
+
+  const handleSeedQuantitySurveyGroup = async () => {
+    setSeedingQsGroup(true);
+    try {
+      if (!user || !ADMIN_UIDS.includes(user.uid)) {
+        requireAuth("add QS group", () => {});
+        if (user) setError("Only admins can add the QS group.");
+        return;
+      }
+
+      const existingSnap = await getDocs(query(collection(db, "groups"), where("name", "==", "QUANTITY SURVEY YR1")));
+      if (!existingSnap.empty) {
+        const existingGroup = { id: existingSnap.docs[0].id, ...existingSnap.docs[0].data() };
+        await updateDoc(doc(db, "groups", existingGroup.id), {
+          visibility: "inviteOnly",
+          joinPolicy: "inviteOnly",
+          updatedAt: serverTimestamp(),
+        });
+        const updatedGroup = { ...existingGroup, visibility: "inviteOnly", joinPolicy: "inviteOnly" };
+        setSuccess("QUANTITY SURVEY YR1 already exists. Invite-only mode applied.");
+        await loadGroups();
+        openGroup(updatedGroup, { tab: "resources" });
+        return;
+      }
+
+      const newGroup = await createUniversityGroup(db, {
+        data: {
+          name: "QUANTITY SURVEY YR1",
+          desc: "Year 1 Quantity Survey resources, updates, work groups, submissions, and class coordination.",
+          type: "class",
+          visibility: "inviteOnly",
+        },
+        user,
+        profile: { name: userName, avatarUrl: userAvatar },
+        selectedUni,
+      });
+
+      const resourceProfile = { name: userName, avatarUrl: userAvatar };
+      await addGroupResource(db, {
+        groupId: newGroup.id,
+        user,
+        profile: resourceProfile,
+        title: "QS NOTES full Drive package",
+        url: QS_DRIVE_ROOT_URL,
+        subject: "General",
+        topic: "Main Drive package",
+        resourceType: "Drive folder",
+        description: "Main Google Drive package for QS Year 1. Groups and Moments can be added later inside Kampasika.",
+      });
+
+      for (const folderName of QS_RESOURCE_FOLDERS) {
+        await addGroupResource(db, {
+          groupId: newGroup.id,
+          user,
+          profile: resourceProfile,
+          title: folderName,
+          url: QS_DRIVE_ROOT_URL,
+          subject: folderName,
+          topic: "Drive folder",
+          resourceType: "Drive folder",
+          description: `Open the main QS Drive package and choose ${folderName}. More files can be uploaded directly into this Kampasika folder later.`,
+        });
+      }
+
+      await loadGroups();
+      setSuccess("QUANTITY SURVEY YR1 created with QS resources.");
+      openGroup(newGroup, { tab: "resources" });
+    } catch (e) {
+      setError("Failed to add QS group: " + e.message);
+    } finally {
+      setSeedingQsGroup(false);
     }
   };
 
@@ -5797,7 +5884,7 @@ return (
           {showSafetyMessage && (
             <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
               <span>⚠️ <strong>Safety First:</strong> Meet in public campus places. Never send money before inspecting items.</span>
-              <button onClick={()=>setShowSafetyMessage(false)} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer',flexShrink:0}}>×</button>
+              <button onClick={() => { setShowSafetyMessage(false); localStorage.setItem("safetyMessageDismissed", "true"); }} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer',flexShrink:0}}>×</button>
             </div>
           )}
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Messages {unreadCount>0&&`(${unreadCount})`}</h2>
@@ -6526,6 +6613,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
             onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
             onSeedDemoGroups={handleSeedDemoGroups}
+            onSeedQuantitySurveyGroup={handleSeedQuantitySurveyGroup}
             canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
             groupReadAt={groupReadAt}
             currentUserId={user?.uid || ""}
@@ -6540,6 +6628,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             }}
             isGroupAdmin={isGroupAdmin}
             seedingDemo={seedingDemoGroups}
+            seedingQsGroup={seedingQsGroup}
           />
           {showCreateGroup && (
             <CreateGroupModal

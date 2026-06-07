@@ -1,5 +1,5 @@
 // Kampasika Service Worker - required for PWA install & Play Store
-const CACHE_NAME = 'kampasika-v2';
+const CACHE_NAME = 'kampasika-v3';
 
 const PRECACHE_URLS = [
   '/',

@@ -246,6 +246,7 @@ export function GroupDetailPage({
   const [showTrackerForm, setShowTrackerForm] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [editingResourceId, setEditingResourceId] = useState("");
+  const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
   const [showWorkGroupForm, setShowWorkGroupForm] = useState(false);
   const [editingWorkGroupId, setEditingWorkGroupId] = useState("");
   const [submittingWorkGroupId, setSubmittingWorkGroupId] = useState("");
@@ -260,17 +261,21 @@ export function GroupDetailPage({
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
+  const [showGroupAbout, setShowGroupAbout] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showGroupQr, setShowGroupQr] = useState(false);
   const [notificationPrefsDraft, setNotificationPrefsDraft] = useState(DEFAULT_GROUP_NOTIFICATION_PREFS);
   const [savedOfflineResources, setSavedOfflineResources] = useState({});
   // eslint-disable-next-line no-unused-vars
   const [savingOfflineResourceId, setSavingOfflineResourceId] = useState("");
+  // eslint-disable-next-line no-unused-vars
+  const [resourcePreview, setResourcePreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
   const messageHoldTimer = useRef(null);
+  const folderResourceInputRef = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
 
@@ -345,6 +350,8 @@ export function GroupDetailPage({
     acc[key].push(resource);
     return acc;
   }, {}), [sortedResources]);
+  const resourceSubjectEntries = useMemo(() => Object.entries(groupedResources), [groupedResources]);
+  const selectedResourceItems = selectedResourceSubject ? (groupedResources[selectedResourceSubject] || []) : [];
 
   useEffect(() => {
     setSavedOfflineResources(readOfflineResourceStore(group.id));
@@ -681,9 +688,31 @@ export function GroupDetailPage({
     }
   };
 
-  const openCreateResourceForm = () => {
+  const handlePinMessageUpdate = async (message) => {
+    if (!memberCanManage || !user || !message?.text) return;
+    setBusy(true);
+    try {
+      const nextAction = {
+        ...(currentAction || {}),
+        type: "message",
+        title: "Pinned update",
+        description: message.text.trim(),
+        targetId: message.id,
+      };
+      await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
+      onGroupUpdated?.({ ...group, currentAction: nextAction });
+      setActiveMessageActions(null);
+      onSuccess("Message pinned as update.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openCreateResourceForm = (subject = selectedResourceSubject) => {
     setEditingResourceId("");
-    setResourceData(emptyResource);
+    setResourceData({ ...emptyResource, subject: subject || "" });
     setShowResourceForm(true);
   };
 
@@ -829,6 +858,61 @@ export function GroupDetailPage({
       setTimeout(() => URL.revokeObjectURL(savedUrl), 60000);
     } catch (err) {
       onError(new Error("Could not open the saved copy. Try opening the original link when online."));
+    }
+  };
+
+  const getPreviewUrl = (url) => {
+    if (!url) return "";
+    const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+    if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
+    return url;
+  };
+
+  const handleOpenResourceInApp = (resource) => {
+    if (!resource.url) return;
+    if (resource.url.includes("drive.google.com/drive/folders/")) {
+      window.open(resource.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setResourcePreview({
+      title: resource.title || resource.text || "Resource",
+      url: resource.url,
+      previewUrl: getPreviewUrl(resource.url),
+      type: resource.resourceType || inferResourceType(resource.url || resource.title || ""),
+    });
+  };
+
+  const handleUploadFolderResourceFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !memberCanManage || !storage || !group?.id || !selectedResourceSubject) return;
+    if (file.size > 12 * 1024 * 1024) {
+      onError(new Error("File is too large. Maximum size is 12MB."));
+      return;
+    }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+    const filePath = `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`;
+    setBusy(true);
+    try {
+      const snap = await uploadBytes(ref(storage, filePath), file);
+      const url = await getDownloadURL(snap.ref);
+      await addGroupResource(db, {
+        groupId: group.id,
+        user,
+        profile,
+        title: file.name.replace(/\.[^.]+$/, "") || file.name,
+        url,
+        subject: selectedResourceSubject,
+        topic: file.name,
+        resourceType: inferResourceType(file.name) || "File",
+        fileName: file.name,
+      });
+      markCurrentGroupRead();
+      onSuccess(`Added to ${selectedResourceSubject}.`);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1323,15 +1407,13 @@ export function GroupDetailPage({
 
   const handleEditPinnedUpdate = async () => {
     if (!memberCanManage || !user) return;
-    const nextTitleInput = window.prompt("Pinned update title", currentAction?.title || "Pinned update");
-    if (nextTitleInput === null) return;
     const nextDescription = window.prompt("Pinned update message", currentAction?.description || group.desc || "");
     if (nextDescription === null) return;
     setBusy(true);
     try {
       const nextAction = {
         ...(currentAction || {}),
-        title: nextTitleInput.trim() || "Pinned update",
+        title: "Pinned update",
         description: nextDescription.trim(),
       };
       await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
@@ -1406,13 +1488,13 @@ export function GroupDetailPage({
           >
             {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
           </div>
-          <div className="group-header-title">
+          <button type="button" className="group-header-title" onClick={() => setShowGroupAbout(true)}>
             <h2>{group.name}</h2>
             <div>
               {(members.length || group.memberCount || 0).toLocaleString()} members
               {currentMember?.role ? ` - ${currentMember.role}` : ""}
             </div>
-          </div>
+          </button>
           <button type="button" className="group-icon-btn" aria-label="Share group" onClick={onShareGroup}><MenuIcon name="share" /></button>
           <div className="group-menu-wrap">
             <button type="button" className="group-icon-btn" aria-label="Open group menu" onClick={() => setMenuOpen(value => !value)}><MenuIcon name="more" /></button>
@@ -1568,14 +1650,14 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "chats" && (
         <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
-          {(currentAction || group.desc) && (
+          {currentAction?.description && (
             <button
               type="button"
               className="group-pin-float"
               onClick={() => setShowPinnedFocus(true)}
             >
-              <strong>{currentAction?.title || "Pinned update"}:</strong>{" "}
-              <span>{currentAction?.description || group.desc}</span>
+              <strong>Pinned update:</strong>{" "}
+              <span>{currentAction.description}</span>
             </button>
           )}
           {messages.length === 0 ? (
@@ -1651,6 +1733,7 @@ export function GroupDetailPage({
                       ))}
                     </div>
                     <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setShowChatComposer(true); setActiveMessageActions(null); }}>Reply</button>
+                    {memberCanManage && <button type="button" className="message-action-row" disabled={busy} onClick={() => handlePinMessageUpdate(activeMessageActions)}>Pin update</button>}
                     {memberCanManage && <button type="button" className="message-action-row" onClick={() => { setMessageText(activeMessageActions.text || ""); setActiveMessageActions(null); }}>Copy to composer</button>}
                     {(activeMessageActions.authorUid === user?.uid || memberCanManage) && (
                       <button type="button" className="message-action-row danger" disabled={busy} onClick={() => handleDeleteMessage(activeMessageActions)}>
@@ -2242,6 +2325,12 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "resources" && (
         <div className="group-panel">
+          <input
+            ref={folderResourceInputRef}
+            type="file"
+            style={{ display: "none" }}
+            onChange={handleUploadFolderResourceFile}
+          />
           <div className="class-board-header">
             <div>
               <strong>Group Board</strong>
@@ -2257,19 +2346,30 @@ export function GroupDetailPage({
             <div className="class-board-latest">
               <div className="group-section-title">Latest updates</div>
               {sortedResources.slice(0, 3).map(resource => (
-                <a key={resource.id} className="class-board-update" href={resource.url || undefined} target={resource.url ? "_blank" : undefined} rel="noreferrer">
+                <button key={resource.id} type="button" className="class-board-update" onClick={() => setSelectedResourceSubject((resource.subject || "General").trim() || "General")}>
                   <strong>{resource.title || resource.text}</strong>
                   <span>{resource.subject || "General"}{resource.topic ? ` - ${resource.topic}` : ""}</span>
-                </a>
+                </button>
               ))}
             </div>
           )}
           {sortedResources.length === 0 ? (
             <div className="resource-box">No resources yet. Add Drive links, files, notes, programs, deadlines, or important updates here.</div>
-          ) : Object.entries(groupedResources).map(([subject, items]) => (
-            <div key={subject} className="class-board-subject">
-              <div className="class-board-subject-title">{subject}</div>
-              {items.map(resource => (
+          ) : selectedResourceSubject ? (
+            <div className="class-board-subject">
+              <div className="class-board-folder-header">
+                <button type="button" className="group-btn ghost compact" onClick={() => setSelectedResourceSubject("")}>Back</button>
+                <div>
+                  <strong>{selectedResourceSubject}</strong>
+                  <span>{selectedResourceItems.length} {selectedResourceItems.length === 1 ? "resource" : "resources"}</span>
+                </div>
+                {memberCanManage && (
+                  <button type="button" className="group-btn primary compact" disabled={busy} onClick={() => folderResourceInputRef.current?.click()}>
+                    + Add
+                  </button>
+                )}
+              </div>
+              {selectedResourceItems.map(resource => (
                 <div key={resource.id} className="resource-box class-board-resource">
                   <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</div>
                   {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
@@ -2282,7 +2382,7 @@ export function GroupDetailPage({
                     {resource.createdAt && <span>Added {formatDate(resource.createdAt)}</span>}
                   </div>
                   <div className="group-inline-actions">
-                    {resource.url && <a className="group-btn secondary group-link-btn" href={resource.url} target="_blank" rel="noreferrer">Open file / resource</a>}
+                    {resource.url && <button className="group-btn secondary group-link-btn" type="button" onClick={() => handleOpenResourceInApp(resource)}>Open</button>}
                     {resource.url && !savedOfflineResources[resource.id] && (
                       <button
                         className="group-btn ghost"
@@ -2308,7 +2408,21 @@ export function GroupDetailPage({
                 </div>
               ))}
             </div>
-          ))}
+          ) : (
+            <div className="class-board-folder-grid">
+              {resourceSubjectEntries.map(([subject, items]) => {
+                const latest = items[0];
+                return (
+                  <button key={subject} type="button" className="class-board-folder-card" onClick={() => setSelectedResourceSubject(subject)}>
+                    <div className="class-board-folder-icon">+</div>
+                    <strong>{subject}</strong>
+                    <span>{items.length} {items.length === 1 ? "resource" : "resources"}</span>
+                    {latest && <small>Latest: {latest.title || latest.text}</small>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -2455,10 +2569,9 @@ export function GroupDetailPage({
       {showPinnedFocus && (
         <div className="group-modal-backdrop" onClick={() => setShowPinnedFocus(false)}>
           <div className="group-modal pinned-focus-modal" onClick={event => event.stopPropagation()}>
-            <h3>{currentAction?.title || "Pinned update"}</h3>
-            <p>{currentAction?.description || group.desc}</p>
+            <h3>Pinned update</h3>
+            <p>{currentAction?.description || "No pinned update yet."}</p>
             {currentAction?.amount ? <div className="pinned-focus-amount">{Number(currentAction.amount).toLocaleString()} TSh</div> : null}
-            {group.desc && currentAction ? <small>{group.desc}</small> : null}
             <div className="group-inline-actions">
               {memberCanManage && (
                 <button className="group-btn primary" type="button" onClick={() => { setShowPinnedFocus(false); handleEditPinnedUpdate(); }}>
@@ -2466,6 +2579,30 @@ export function GroupDetailPage({
                 </button>
               )}
               <button className="group-btn ghost" type="button" onClick={() => setShowPinnedFocus(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGroupAbout && (
+        <div className="group-modal-backdrop" onClick={() => setShowGroupAbout(false)}>
+          <div className="group-modal" onClick={event => event.stopPropagation()}>
+            <h3>{group.name}</h3>
+            <p className="group-about-text">{group.desc || "No group description yet."}</p>
+            <div className="class-board-meta">
+              <span>{(members.length || group.memberCount || 0).toLocaleString()} members</span>
+              <span>{group.joinPolicy === "inviteOnly" || group.visibility === "inviteOnly" ? "Invite link only" : group.joinPolicy === "approvalRequired" ? "Approval required" : "Public"}</span>
+              {currentMember?.role && <span>{currentMember.role}</span>}
+            </div>
+            <div className="group-inline-actions">
+              {memberCanEditGroup && (
+                <button className="group-btn primary" type="button" onClick={() => { setShowGroupAbout(false); openEditGroup(); }}>
+                  Edit description
+                </button>
+              )}
+              <button className="group-btn ghost" type="button" onClick={() => setShowGroupAbout(false)}>
                 Close
               </button>
             </div>
@@ -2546,6 +2683,25 @@ export function GroupDetailPage({
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowNotificationSettings(false)}>
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resourcePreview && (
+        <div className="group-modal-backdrop" onClick={() => setResourcePreview(null)}>
+          <div className="group-modal resource-preview-modal" onClick={event => event.stopPropagation()}>
+            <div className="resource-preview-header">
+              <h3>{resourcePreview.title}</h3>
+              <button className="group-btn ghost compact" type="button" onClick={() => setResourcePreview(null)}>Close</button>
+            </div>
+            {String(resourcePreview.type || "").toLowerCase().includes("image") ? (
+              <img className="resource-preview-image" src={resourcePreview.previewUrl} alt={resourcePreview.title} />
+            ) : (
+              <iframe className="resource-preview-frame" src={resourcePreview.previewUrl} title={resourcePreview.title} />
+            )}
+            <div className="group-inline-actions">
+              <a className="group-btn ghost group-link-btn" href={resourcePreview.url} target="_blank" rel="noreferrer">Open original</a>
             </div>
           </div>
         </div>

@@ -1023,7 +1023,7 @@ export async function updateGroupCurrentAction(db, { groupId, currentAction, use
   await updateDoc(doc(db, "groups", groupId), {
     currentAction: {
       type: currentAction.type || "announcement",
-      title: (currentAction.title || "Pinned update").trim(),
+      title: "Pinned update",
       description: (currentAction.description || "").trim(),
       amount: Number(currentAction.amount || 0),
       targetId: currentAction.targetId || "",

@@ -22,11 +22,13 @@ export function GroupListPage({
   onCreateCollection,
   onOpenScanner,
   onSeedDemoGroups,
+  onSeedQuantitySurveyGroup,
   onOpenLegacyCommunity,
   onOpenPublicEvent,
   isGroupAdmin,
   canSeedDemoGroups,
   seedingDemo,
+  seedingQsGroup,
   groupReadAt = {},
   currentUserId = "",
 }) {
@@ -119,6 +121,11 @@ export function GroupListPage({
           {canSeedDemoGroups && (
             <button className="group-btn ghost" type="button" disabled={seedingDemo} onClick={onSeedDemoGroups}>
               {seedingDemo ? "Adding..." : "Add demo groups"}
+            </button>
+          )}
+          {canSeedDemoGroups && (
+            <button className="group-btn secondary" type="button" disabled={seedingQsGroup} onClick={onSeedQuantitySurveyGroup}>
+              {seedingQsGroup ? "Adding QS..." : "Add QS Yr1 group"}
             </button>
           )}
         </div>
