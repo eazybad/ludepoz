@@ -168,6 +168,10 @@ function MenuIcon({ name }) {
     send: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7Z" /></>,
     down: <><path d="M12 5v14" /><path d="M19 12l-7 7-7-7" /></>,
     plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></>,
+    file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>,
+    folder: <><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
+    link: <><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" /><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1" /></>,
     close: <><path d="M18 6L6 18" /><path d="M6 6l12 12" /></>,
     share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.7l6.8-4.4" /><path d="M8.6 13.3l6.8 4.4" /></>,
     more: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
@@ -303,6 +307,9 @@ export function GroupDetailPage({
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
+  const chatPhotoInputRef = useRef(null);
+  const chatFileInputRef = useRef(null);
+  const resourceQuickFileInputRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
@@ -764,6 +771,12 @@ export function GroupDetailPage({
     setShowChatTools(false);
   };
 
+  const openChatPicker = (kind = "file") => {
+    setShowChatComposer(true);
+    if (kind === "photo") chatPhotoInputRef.current?.click();
+    else chatFileInputRef.current?.click();
+  };
+
   const removeChatAttachment = (index) => {
     setChatAttachments(prev => prev.filter((_, itemIndex) => itemIndex !== index));
   };
@@ -828,6 +841,61 @@ export function GroupDetailPage({
     });
     setShowResourceAddMenu(false);
     setShowSimpleResourceForm(true);
+  };
+
+  const openResourceQuickFilePicker = () => {
+    if (!memberCanManage || busy) return;
+    resourceQuickFileInputRef.current?.click();
+  };
+
+  const handleSelectSimpleResourceFiles = (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    setSimpleResourceData(prev => ({
+      ...prev,
+      mode: "files",
+      subject: prev.subject || selectedResourceSubject || "",
+      files,
+    }));
+    setShowResourceAddMenu(false);
+    setShowSimpleResourceForm(true);
+  };
+
+  const removeSimpleResourceFile = (index) => {
+    setSimpleResourceData(prev => ({
+      ...prev,
+      files: prev.files.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
+
+  const selectResourceDataFiles = (files) => {
+    const file = files[0] || null;
+    if (!file || files.length === 0) {
+      setResourceData(prev => ({ ...prev, file: null, files: [], fileName: "" }));
+      return;
+    }
+    setResourceData(prev => ({
+      ...prev,
+      file,
+      files,
+      fileName: file.name,
+      title: prev.title || file.name.replace(/\.[^.]+$/, ""),
+      resourceType: prev.resourceType || inferResourceType(file.name) || "File",
+    }));
+  };
+
+  const removeResourceDataFile = (index) => {
+    setResourceData(prev => {
+      const files = (prev.files || []).filter((_, itemIndex) => itemIndex !== index);
+      const file = files[0] || null;
+      return {
+        ...prev,
+        file,
+        files,
+        fileName: file?.name || "",
+      };
+    });
   };
 
   const openCreateResourceForm = (subject = selectedResourceSubject) => {
@@ -2040,6 +2108,23 @@ export function GroupDetailPage({
                     onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); setChatAttachments([]); }}
                   />
                   <div className="chat-input-bar">
+                    <input
+                      ref={chatPhotoInputRef}
+                      className="visually-hidden-file"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleSelectChatAttachments}
+                      disabled={posting || busy}
+                    />
+                    <input
+                      ref={chatFileInputRef}
+                      className="visually-hidden-file"
+                      type="file"
+                      multiple
+                      onChange={handleSelectChatAttachments}
+                      disabled={posting || busy}
+                    />
                     {replyToMessage && (
                       <div className="chat-replying">
                         <span>Replying to {replyToMessage.authorName || "Member"}</span>
@@ -2048,21 +2133,32 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        <div className="chat-upload-field">
-                          <label>Attach file</label>
-                          <input type="file" multiple onChange={handleSelectChatAttachments} disabled={posting || busy} />
-                          <small>Any file type, up to {MAX_UPLOAD_FILE_MB}MB each.</small>
-                        </div>
+                        <button type="button" className="chat-tool-action" onClick={() => openChatPicker("photo")} disabled={posting || busy}>
+                          <MenuIcon name="image" />
+                          <span>Photo</span>
+                        </button>
+                        <button type="button" className="chat-tool-action" onClick={() => openChatPicker("file")} disabled={posting || busy}>
+                          <MenuIcon name="file" />
+                          <span>Document</span>
+                        </button>
                         {memberCanManage && (
                           <>
-                            <button type="button" onClick={openResourceAddMenu}>Organize board</button>
-                            <div className="chat-upload-field">
-                              <label>Save to board</label>
+                            <button type="button" className="chat-tool-action" onClick={openResourceAddMenu} disabled={busy}>
+                              <MenuIcon name="folder" />
+                              <span>Board</span>
+                            </button>
+                            <label className="chat-tool-action">
+                              <MenuIcon name="file" />
+                              <span>Save to board</span>
                               <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
-                            </div>
-                            <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin announcement</button>
+                            </label>
+                            <button type="button" className="chat-tool-action" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>
+                              <MenuIcon name="plus" />
+                              <span>Pin</span>
+                            </button>
                           </>
                         )}
+                        <small>Files up to {MAX_UPLOAD_FILE_MB}MB each.</small>
                       </div>
                     )}
                     {chatAttachments.length > 0 && (
@@ -2769,20 +2865,32 @@ export function GroupDetailPage({
         <div className="group-modal-backdrop" onClick={() => setShowResourceAddMenu(false)}>
           <div className="group-modal resource-add-menu" onClick={event => event.stopPropagation()}>
             <h3>Add to Group Board</h3>
+            <input
+              ref={resourceQuickFileInputRef}
+              className="visually-hidden-file"
+              type="file"
+              multiple
+              onChange={handleSelectSimpleResourceFiles}
+              disabled={busy}
+            />
             <div className="resource-add-grid">
               <button type="button" onClick={handleCreateResourceFolder} disabled={busy}>
+                <MenuIcon name="folder" />
                 <strong>Create folder</strong>
                 <span>Start a new category such as Topographical Surveying.</span>
               </button>
-              <button type="button" onClick={() => openSimpleResourceForm("files")} disabled={busy}>
+              <button type="button" onClick={openResourceQuickFilePicker} disabled={busy}>
+                <MenuIcon name="file" />
                 <strong>Add files</strong>
-                <span>Select one or many files from this device.</span>
+                <span>Select one or many files from this device now.</span>
               </button>
               <button type="button" onClick={() => openSimpleResourceForm("link")} disabled={busy}>
+                <MenuIcon name="link" />
                 <strong>Add link</strong>
                 <span>Use this for exact Drive links or large files.</span>
               </button>
               <button type="button" onClick={() => openCreateResourceForm(selectedResourceSubject)} disabled={busy}>
+                <MenuIcon name="plus" />
                 <strong>Advanced</strong>
                 <span>Add title, topic, type, deadline, and description.</span>
               </button>
@@ -2820,16 +2928,23 @@ export function GroupDetailPage({
             ) : (
               <div className="group-field">
                 <label>Files</label>
-                <input
-                  type="file"
-                  multiple
-                  onChange={event => setSimpleResourceData(prev => ({ ...prev, files: Array.from(event.target.files || []) }))}
-                />
+                <label className="upload-drop-btn">
+                  <MenuIcon name="file" />
+                  <span>{simpleResourceData.files.length > 0 ? "Choose different files" : "Choose files"}</span>
+                  <input type="file" multiple onChange={handleSelectSimpleResourceFiles} />
+                </label>
                 <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
                 {simpleResourceData.files.length > 0 && (
-                  <small className="field-hint">
-                    Selected: {simpleResourceData.files.map(file => file.name).join(", ")}
-                  </small>
+                  <div className="selected-file-list">
+                    {simpleResourceData.files.map((file, index) => (
+                      <span key={`${file.name}-${index}`}>
+                        {file.name}
+                        <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeSimpleResourceFile(index)}>
+                          <MenuIcon name="close" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -2870,27 +2985,25 @@ export function GroupDetailPage({
             </div>
             <div className="group-field">
               <label>Upload file</label>
-              <input type="file" multiple={!editingResourceId} onChange={event => {
-                const files = Array.from(event.target.files || []);
-                const file = files[0] || null;
-                if (!file || files.length === 0) {
-                  setResourceData(prev => ({ ...prev, file: null, files: [], fileName: "" }));
-                  return;
-                }
-                setResourceData(prev => ({
-                  ...prev,
-                  file,
-                  files,
-                  fileName: file.name,
-                  title: prev.title || file.name.replace(/\.[^.]+$/, ""),
-                  resourceType: prev.resourceType || inferResourceType(file.name) || "File",
-                }));
-              }} />
+              <label className="upload-drop-btn">
+                <MenuIcon name="file" />
+                <span>{resourceData.files?.length || resourceData.fileName ? "Choose different file" : "Choose file"}</span>
+                <input type="file" multiple={!editingResourceId} onChange={event => selectResourceDataFiles(Array.from(event.target.files || []))} />
+              </label>
               <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
               {(resourceData.files?.length || resourceData.fileName) && (
-                <small className="field-hint">
-                  Selected: {resourceData.files?.length > 1 ? resourceData.files.map(file => file.name).join(", ") : resourceData.fileName}
-                </small>
+                <div className="selected-file-list">
+                  {(resourceData.files?.length ? resourceData.files : [{ name: resourceData.fileName }]).map((file, index) => (
+                    <span key={`${file.name}-${index}`}>
+                      {file.name}
+                      {resourceData.files?.length > 0 && (
+                        <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeResourceDataFile(index)}>
+                          <MenuIcon name="close" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
             <div className="group-field">
