@@ -2344,3 +2344,49 @@
 .resource-preview-image {
   object-fit: contain;
 }
+
+.resource-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.resource-add-grid button {
+  min-height: 104px;
+  border: 1px solid #dbe8e7;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resource-add-grid button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.resource-add-grid strong,
+.resource-add-grid span {
+  display: block;
+}
+
+.resource-add-grid strong {
+  color: #0f1b2d;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.resource-add-grid span {
+  margin-top: 6px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+@media (max-width: 420px) {
+  .resource-add-grid {
+    grid-template-columns: 1fr;
+  }
+}

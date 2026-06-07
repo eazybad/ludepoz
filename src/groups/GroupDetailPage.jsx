@@ -246,6 +246,7 @@ export function GroupDetailPage({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
+  const [showResourceAddMenu, setShowResourceAddMenu] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [editingResourceId, setEditingResourceId] = useState("");
   const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
@@ -279,6 +280,8 @@ export function GroupDetailPage({
   const messageListRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const folderResourceInputRef = useRef(null);
+  const addMenuResourceInputRef = useRef(null);
+  const pendingUploadSubjectRef = useRef("");
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
 
@@ -418,6 +421,10 @@ export function GroupDetailPage({
       setShowTrackerForm(false);
       return true;
     }
+    if (showResourceAddMenu) {
+      setShowResourceAddMenu(false);
+      return true;
+    }
     if (showResourceForm) {
       setShowResourceForm(false);
       setEditingResourceId("");
@@ -462,7 +469,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showPaymentForm, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showPaymentForm, showResourceAddMenu, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -475,6 +482,7 @@ export function GroupDetailPage({
     setShowPaymentForm(false);
     setShowTrackerForm(false);
     setShowWorkGroupForm(false);
+    setShowResourceAddMenu(false);
     setShowResourceForm(false);
     setSelectedResourceSubject("");
     setResourcePreview(null);
@@ -737,9 +745,15 @@ export function GroupDetailPage({
     }
   };
 
+  const openResourceAddMenu = () => {
+    setShowResourceAddMenu(true);
+    setShowChatTools(false);
+  };
+
   const openCreateResourceForm = (subject = selectedResourceSubject) => {
     setEditingResourceId("");
     setResourceData({ ...emptyResource, subject: subject || "" });
+    setShowResourceAddMenu(false);
     setShowResourceForm(true);
   };
 
@@ -769,9 +783,10 @@ export function GroupDetailPage({
       let resourceUrl = resourceData.url.trim();
       let fileName = resourceData.fileName || "";
       if (storage && resourceData.file) {
-        const safeName = resourceData.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+        const uploadFile = await prepareResourceUploadFile(resourceData.file);
+        const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
         const fileRef = ref(storage, `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`);
-        const snap = await uploadBytes(fileRef, resourceData.file);
+        const snap = await uploadBytes(fileRef, uploadFile);
         resourceUrl = await getDownloadURL(snap.ref);
         fileName = resourceData.file.name;
       }
@@ -809,6 +824,71 @@ export function GroupDetailPage({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleCreateResourceFolder = async () => {
+    if (!memberCanManage || !user) return;
+    const folderName = window.prompt("Folder name", selectedResourceSubject || "");
+    const cleanFolder = folderName?.trim();
+    if (!cleanFolder) return;
+    setBusy(true);
+    try {
+      await addGroupResource(db, {
+        groupId: group.id,
+        user,
+        profile,
+        title: `${cleanFolder} folder`,
+        subject: cleanFolder,
+        topic: "Folder",
+        resourceType: "Folder",
+        description: "Add files or links inside this folder.",
+      });
+      setSelectedResourceSubject(cleanFolder);
+      setShowResourceAddMenu(false);
+      onSuccess("Folder created.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddResourceLink = async () => {
+    if (!memberCanManage || !user) return;
+    const folderName = window.prompt("Folder / category", selectedResourceSubject || "General");
+    const subject = folderName?.trim() || "General";
+    const url = window.prompt("Paste the exact file link or large-file Drive link");
+    const cleanUrl = url?.trim();
+    if (!cleanUrl) return;
+    const title = window.prompt("Title", cleanUrl) || cleanUrl;
+    setBusy(true);
+    try {
+      await addGroupResource(db, {
+        groupId: group.id,
+        user,
+        profile,
+        title,
+        url: cleanUrl,
+        subject,
+        topic: "Link",
+        resourceType: inferResourceType(cleanUrl) || "Link",
+      });
+      setSelectedResourceSubject(subject);
+      setShowResourceAddMenu(false);
+      onSuccess("Link added.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePickFilesFromAddMenu = () => {
+    const folderName = window.prompt("Folder / category", selectedResourceSubject || "General");
+    const subject = folderName?.trim();
+    if (!subject) return;
+    pendingUploadSubjectRef.current = subject;
+    addMenuResourceInputRef.current?.click();
   };
 
   const handleDeleteResource = async (resource) => {
@@ -958,6 +1038,28 @@ export function GroupDetailPage({
       }
       markCurrentGroupRead();
       onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} added to ${selectedResourceSubject}.`);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUploadAddMenuResourceFiles = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    const subject = pendingUploadSubjectRef.current || "General";
+    pendingUploadSubjectRef.current = "";
+    if (files.length === 0 || !memberCanManage || !storage || !group?.id) return;
+    setBusy(true);
+    try {
+      for (const file of files) {
+        await uploadResourceFileToFolder(file, subject);
+      }
+      setSelectedResourceSubject(subject);
+      setShowResourceAddMenu(false);
+      markCurrentGroupRead();
+      onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} added to ${subject}.`);
     } catch (err) {
       onError(err);
     } finally {
@@ -1805,7 +1907,7 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        {memberCanManage && <button type="button" onClick={openCreateResourceForm}>Organize resource</button>}
+                        {memberCanManage && <button type="button" onClick={openResourceAddMenu}>Add resource</button>}
                         {memberCanManage && (
                           <label className="chat-tool-file">
                             Quick upload
@@ -2367,13 +2469,20 @@ export function GroupDetailPage({
             style={{ display: "none" }}
             onChange={handleUploadFolderResourceFile}
           />
+          <input
+            ref={addMenuResourceInputRef}
+            type="file"
+            multiple
+            style={{ display: "none" }}
+            onChange={handleUploadAddMenuResourceFiles}
+          />
           <div className="class-board-header">
             <div>
               <strong>Group Board</strong>
               <span>Organized links, resources, deadlines, and files for this group.</span>
             </div>
             {memberCanManage && (
-              <button type="button" className="group-btn primary compact" onClick={openCreateResourceForm}>
+              <button type="button" className="group-btn primary compact" onClick={openResourceAddMenu}>
                 Add
               </button>
             )}
@@ -2466,10 +2575,41 @@ export function GroupDetailPage({
         </div>
       )}
 
+      {showResourceAddMenu && (
+        <div className="group-modal-backdrop" onClick={() => setShowResourceAddMenu(false)}>
+          <div className="group-modal resource-add-menu" onClick={event => event.stopPropagation()}>
+            <h3>Add to Group Board</h3>
+            <div className="resource-add-grid">
+              <button type="button" onClick={handleCreateResourceFolder} disabled={busy}>
+                <strong>Create folder</strong>
+                <span>Start a new category such as Topographical Surveying.</span>
+              </button>
+              <button type="button" onClick={handlePickFilesFromAddMenu} disabled={busy}>
+                <strong>Add files</strong>
+                <span>Select one or many files from this device.</span>
+              </button>
+              <button type="button" onClick={handleAddResourceLink} disabled={busy}>
+                <strong>Add link</strong>
+                <span>Use this for exact Drive links or large files.</span>
+              </button>
+              <button type="button" onClick={() => openCreateResourceForm(selectedResourceSubject)} disabled={busy}>
+                <strong>Advanced</strong>
+                <span>Add title, topic, type, deadline, and description.</span>
+              </button>
+            </div>
+            <div className="group-inline-actions">
+              <button className="group-btn ghost" type="button" onClick={() => setShowResourceAddMenu(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showResourceForm && (
         <div className="group-modal-backdrop" onClick={() => setShowResourceForm(false)}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
-            <h3>{editingResourceId ? "Edit Board Resource" : "Organize Board Resource"}</h3>
+            <h3>{editingResourceId ? "Edit Board Resource" : "Advanced Resource"}</h3>
             <div className="group-field">
               <label>Title</label>
               <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection notes, Sunday program, or meeting file" />
