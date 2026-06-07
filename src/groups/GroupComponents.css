@@ -1303,6 +1303,31 @@
   gap: 7px;
 }
 
+.chat-upload-field {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.chat-upload-field label {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.chat-upload-field input[type="file"] {
+  width: 100%;
+  color: #0f1b2d;
+  font-size: 12px;
+}
+
+.chat-upload-field small {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .chat-tools-menu button,
 .chat-tool-file {
   border: none;

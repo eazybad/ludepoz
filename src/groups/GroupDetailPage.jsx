@@ -304,9 +304,6 @@ export function GroupDetailPage({
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
   const messageHoldTimer = useRef(null);
-  const folderResourceInputRef = useRef(null);
-  const addMenuResourceInputRef = useRef(null);
-  const pendingUploadSubjectRef = useRef("");
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
 
@@ -1129,46 +1126,6 @@ export function GroupDetailPage({
       resourceType: inferResourceType(uploadFile.name || file.name) || "File",
       fileName: file.name,
     });
-  };
-
-  const handleUploadFolderResourceFile = async (event) => {
-    const files = Array.from(event.target.files || []);
-    event.target.value = "";
-    if (files.length === 0 || !memberCanManage || !storage || !group?.id || !selectedResourceSubject) return;
-    setBusy(true);
-    try {
-      for (const file of files) {
-        await uploadResourceFileToFolder(file, selectedResourceSubject);
-      }
-      markCurrentGroupRead();
-      onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} added to ${selectedResourceSubject}.`);
-    } catch (err) {
-      onError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleUploadAddMenuResourceFiles = async (event) => {
-    const files = Array.from(event.target.files || []);
-    event.target.value = "";
-    const subject = pendingUploadSubjectRef.current || "General";
-    pendingUploadSubjectRef.current = "";
-    if (files.length === 0 || !memberCanManage || !storage || !group?.id) return;
-    setBusy(true);
-    try {
-      for (const file of files) {
-        await uploadResourceFileToFolder(file, subject);
-      }
-      setSelectedResourceSubject(subject);
-      setShowResourceAddMenu(false);
-      markCurrentGroupRead();
-      onSuccess(`${files.length} ${files.length === 1 ? "file" : "files"} added to ${subject}.`);
-    } catch (err) {
-      onError(err);
-    } finally {
-      setBusy(false);
-    }
   };
 
   const toggleWorkGroupMember = (uid) => {
@@ -2091,17 +2048,18 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        <label className="chat-tool-file">
-                          Attach file
+                        <div className="chat-upload-field">
+                          <label>Attach file</label>
                           <input type="file" multiple onChange={handleSelectChatAttachments} disabled={posting || busy} />
-                        </label>
+                          <small>Any file type, up to {MAX_UPLOAD_FILE_MB}MB each.</small>
+                        </div>
                         {memberCanManage && (
                           <>
                             <button type="button" onClick={openResourceAddMenu}>Organize board</button>
-                            <label className="chat-tool-file">
-                              Save to board
+                            <div className="chat-upload-field">
+                              <label>Save to board</label>
                               <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
-                            </label>
+                            </div>
                             <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin announcement</button>
                           </>
                         )}
@@ -2708,20 +2666,6 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "resources" && (
         <div className="group-panel">
-          <input
-            ref={folderResourceInputRef}
-            type="file"
-            multiple
-            style={{ display: "none" }}
-            onChange={handleUploadFolderResourceFile}
-          />
-          <input
-            ref={addMenuResourceInputRef}
-            type="file"
-            multiple
-            style={{ display: "none" }}
-            onChange={handleUploadAddMenuResourceFiles}
-          />
           <div className="class-board-header">
             <div>
               <strong>Group Board</strong>
@@ -2759,7 +2703,7 @@ export function GroupDetailPage({
                   <button type="button" className={resourceSortMode === "alpha" ? "active" : ""} onClick={() => setResourceSortMode("alpha")}>A-Z</button>
                 </div>
                 {memberCanManage && (
-                  <button type="button" className="group-btn primary compact" disabled={busy} onClick={() => folderResourceInputRef.current?.click()}>
+                  <button type="button" className="group-btn primary compact" disabled={busy} onClick={() => openSimpleResourceForm("files")}>
                     + Add
                   </button>
                 )}
@@ -3096,8 +3040,7 @@ export function GroupDetailPage({
         <div className="group-modal-backdrop" onClick={() => setShowEditGroup(false)}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
             <h3>Edit Group</h3>
-            <input id="group-avatar-upload" type="file" accept="image/*" style={{ display: "none" }} onChange={handleGroupAvatarSelect} />
-            <label htmlFor="group-avatar-upload" className="group-avatar-editor">
+            <div className="group-avatar-editor">
               <div
                 className="group-avatar group-avatar-large"
                 style={{
@@ -3109,7 +3052,11 @@ export function GroupDetailPage({
                 {!editGroupData.avatarPreview && groupAvatarText(editGroupData.name || group.name)}
               </div>
               <span>Change group photo</span>
-            </label>
+            </div>
+            <div className="group-field">
+              <label>Group photo</label>
+              <input id="group-avatar-upload" type="file" accept="image/*" onChange={handleGroupAvatarSelect} />
+            </div>
             <div className="group-field">
               <label>Group name</label>
               <input value={editGroupData.name} onChange={event => setEditGroupData({ ...editGroupData, name: event.target.value })} placeholder="TUCASA ARU Family" />
