@@ -1524,7 +1524,7 @@ export function GroupDetailPage({
                 </div>
                 {sortedResources.length > 0 && (
                   <div className="group-preview-section">
-                    <strong>Latest class board</strong>
+                    <strong>Latest group board</strong>
                     {sortedResources.slice(0, 3).map(resource => (
                       <div key={resource.id} className="group-preview-row">
                         <span>{resource.title || resource.text}</span>
@@ -1930,7 +1930,7 @@ export function GroupDetailPage({
           <div className="class-board-header">
             <div>
               <strong>Work Groups</strong>
-              <span>Create class groups, assign tasks, and receive submissions from each group.</span>
+              <span>Create teams, assign tasks, and receive submissions from each group.</span>
             </div>
             {memberCanManage && (
               <button type="button" className="group-btn primary compact" onClick={openCreateWorkGroupForm}>
@@ -2244,8 +2244,8 @@ export function GroupDetailPage({
         <div className="group-panel">
           <div className="class-board-header">
             <div>
-              <strong>Class Board</strong>
-              <span>Organized links, notes, deadlines, and files for this group.</span>
+              <strong>Group Board</strong>
+              <span>Organized links, resources, deadlines, and files for this group.</span>
             </div>
             {memberCanManage && (
               <button type="button" className="group-btn primary compact" onClick={openCreateResourceForm}>
@@ -2265,7 +2265,7 @@ export function GroupDetailPage({
             </div>
           )}
           {sortedResources.length === 0 ? (
-            <div className="resource-box">No resources yet. Add Drive links, notes, past papers, deadlines, or class files here.</div>
+            <div className="resource-box">No resources yet. Add Drive links, files, notes, programs, deadlines, or important updates here.</div>
           ) : Object.entries(groupedResources).map(([subject, items]) => (
             <div key={subject} className="class-board-subject">
               <div className="class-board-subject-title">{subject}</div>
@@ -2318,15 +2318,15 @@ export function GroupDetailPage({
             <h3>{editingResourceId ? "Edit Board Resource" : "Organize Board Resource"}</h3>
             <div className="group-field">
               <label>Title</label>
-              <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection and Intersection notes" />
+              <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection notes, Sunday program, or meeting file" />
             </div>
             <div className="group-field">
-              <label>Subject / folder</label>
-              <input value={resourceData.subject} onChange={event => setResourceData({ ...resourceData, subject: event.target.value })} placeholder="Topographical Surveying" />
+              <label>Category / folder</label>
+              <input value={resourceData.subject} onChange={event => setResourceData({ ...resourceData, subject: event.target.value })} placeholder="Topographical Surveying, Choir, Events" />
             </div>
             <div className="group-field">
-              <label>Topic</label>
-              <input value={resourceData.topic} onChange={event => setResourceData({ ...resourceData, topic: event.target.value })} placeholder="Week 4 - Resection / Intersection" />
+              <label>Topic / item</label>
+              <input value={resourceData.topic} onChange={event => setResourceData({ ...resourceData, topic: event.target.value })} placeholder="Week 4, Sunday service, or meeting agenda" />
             </div>
             <div className="group-field">
               <label>Link</label>

@@ -4476,7 +4476,7 @@ return (
           }}
         >
           <strong style={{ display: 'block', marginBottom: '2px' }}>Offline mode</strong>
-          Showing saved class data on this device. New updates, messages, and submissions will sync when internet returns.
+          Showing saved group data on this device. New updates, messages, and submissions will sync when internet returns.
         </div>
       )}
 

@@ -93,9 +93,9 @@ const OFFLINE_PAGE = `<!doctype html>
     <main>
       <div class="mark">K</div>
       <h1>You are offline</h1>
-      <p>Kampasika can still show class data that was saved on this device. New notes, chats, and submissions will sync when your connection returns.</p>
+      <p>Kampasika can still show group data that was saved on this device. New resources, chats, and submissions will sync when your connection returns.</p>
       <ul>
-        <li>Open the app again to view saved class boards and groups.</li>
+        <li>Open the app again to view saved group boards and updates.</li>
         <li>Previously loaded updates can appear from cache.</li>
         <li>Files open offline only after they have been saved or cached.</li>
       </ul>
