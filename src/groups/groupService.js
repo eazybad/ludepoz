@@ -1145,6 +1145,75 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
   return docRef;
 }
 
+export async function updateGroupCollection(db, { groupId, collectionId, user, data, storage = null }) {
+  const amount = Number(data.amount || 0);
+  const collectionRef = doc(db, "groups", groupId, "collections", collectionId);
+  const currentSnap = await getDoc(collectionRef);
+  let photoUrl = currentSnap.exists() ? (currentSnap.data().photoUrl || "") : "";
+  if (storage && data.photoFile) {
+    photoUrl = await uploadCollectionPhoto(storage, {
+      groupId,
+      collectionId,
+      uid: user.uid,
+      file: data.photoFile,
+    });
+  }
+
+  await updateDoc(collectionRef, {
+    title: data.title.trim(),
+    description: data.description.trim(),
+    collectionType: data.collectionType || "contribution",
+    amount,
+    expectedPeople: Number(data.expectedPeople || 0),
+    paymentMethods: data.paymentMethods,
+    deadline: data.deadline || null,
+    photoUrl,
+    visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
+    updatedByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, "groups", groupId), {
+    currentAction: {
+      type: data.collectionType === "event" ? "event" : "payment",
+      title: "Pinned update",
+      description: data.description.trim() || data.title.trim(),
+      targetId: collectionId,
+      amount,
+      deadline: data.deadline || null,
+      ctaLabel: data.collectionType === "event" ? "Register" : "Contribute",
+    },
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function addManualGroupPayment(db, { groupId, collectionItem, data, recorder }) {
+  const paymentId = `manual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const paymentRef = doc(db, "groups", groupId, "collections", collectionItem.id, "payments", paymentId);
+  await setDoc(paymentRef, {
+    uid: "",
+    studentName: (data.studentName || "").trim() || "Student",
+    phone: (data.phone || "").trim(),
+    payerName: (data.payerName || "").trim(),
+    paymentRef: (data.paymentRef || "").trim(),
+    amountDue: Number(collectionItem.amount || 0),
+    amountPaid: Number(data.amountPaid || collectionItem.amount || 0),
+    status: "paid",
+    manual: true,
+    recordedByUid: recorder.uid,
+    recordedByName: recorder.name || recorder.email || "Leader",
+    verifiedByUid: recorder.uid,
+    verifiedByName: recorder.name || recorder.email || "Leader",
+    verifiedAt: serverTimestamp(),
+    submittedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return paymentRef;
+}
+
 export function subscribePublicGroupEvents(db, onNext, onError = console.error) {
   const q = query(
     collectionGroup(db, "collections"),
