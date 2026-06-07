@@ -77,8 +77,16 @@ const emptyResource = {
   description: "",
   url: "",
   file: null,
+  files: [],
   fileName: "",
   deadline: "",
+};
+
+const emptySimpleResource = {
+  mode: "files",
+  subject: "",
+  url: "",
+  files: [],
 };
 
 const emptyWorkGroup = {
@@ -247,6 +255,7 @@ export function GroupDetailPage({
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
   const [showResourceAddMenu, setShowResourceAddMenu] = useState(false);
+  const [showSimpleResourceForm, setShowSimpleResourceForm] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [editingResourceId, setEditingResourceId] = useState("");
   const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
@@ -256,6 +265,7 @@ export function GroupDetailPage({
   const [submittingWorkGroupId, setSubmittingWorkGroupId] = useState("");
   const [trackerData, setTrackerData] = useState(emptyTracker);
   const [resourceData, setResourceData] = useState(emptyResource);
+  const [simpleResourceData, setSimpleResourceData] = useState(emptySimpleResource);
   const [workGroupData, setWorkGroupData] = useState(emptyWorkGroup);
   const [workSubmissionData, setWorkSubmissionData] = useState(emptyWorkSubmission);
   const [paymentData, setPaymentData] = useState(emptyPayment);
@@ -425,6 +435,10 @@ export function GroupDetailPage({
       setShowResourceAddMenu(false);
       return true;
     }
+    if (showSimpleResourceForm) {
+      setShowSimpleResourceForm(false);
+      return true;
+    }
     if (showResourceForm) {
       setShowResourceForm(false);
       setEditingResourceId("");
@@ -469,7 +483,7 @@ export function GroupDetailPage({
     }
 
     return false;
-  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showPaymentForm, showResourceAddMenu, showResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
+  }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showPaymentForm, showResourceAddMenu, showResourceForm, showSimpleResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -483,6 +497,7 @@ export function GroupDetailPage({
     setShowTrackerForm(false);
     setShowWorkGroupForm(false);
     setShowResourceAddMenu(false);
+    setShowSimpleResourceForm(false);
     setShowResourceForm(false);
     setSelectedResourceSubject("");
     setResourcePreview(null);
@@ -750,6 +765,16 @@ export function GroupDetailPage({
     setShowChatTools(false);
   };
 
+  const openSimpleResourceForm = (mode = "files") => {
+    setSimpleResourceData({
+      ...emptySimpleResource,
+      mode,
+      subject: selectedResourceSubject || "",
+    });
+    setShowResourceAddMenu(false);
+    setShowSimpleResourceForm(true);
+  };
+
   const openCreateResourceForm = (subject = selectedResourceSubject) => {
     setEditingResourceId("");
     setResourceData({ ...emptyResource, subject: subject || "" });
@@ -767,6 +792,7 @@ export function GroupDetailPage({
       description: resource.description || (resource.text && resource.text !== resource.title ? resource.text : ""),
       url: resource.url || "",
       file: null,
+      files: [],
       fileName: resource.fileName || "",
       deadline: resource.deadline || "",
     });
@@ -774,12 +800,24 @@ export function GroupDetailPage({
   };
 
   const handleSaveResource = async () => {
-    if (!resourceData.title.trim() && !resourceData.url.trim() && !resourceData.file) {
+    if (!resourceData.title.trim() && !resourceData.url.trim() && !resourceData.file && (!resourceData.files || resourceData.files.length === 0)) {
       onError(new Error("Add a resource title, link, or file."));
       return;
     }
     setBusy(true);
     try {
+      if (!editingResourceId && resourceData.files?.length > 1) {
+        const subject = resourceData.subject?.trim() || selectedResourceSubject || "General";
+        for (const file of resourceData.files) {
+          await uploadResourceFileToFolder(file, subject);
+        }
+        setResourceData(emptyResource);
+        setShowResourceForm(false);
+        setShowChatTools(false);
+        setSelectedResourceSubject(subject);
+        onSuccess(`${resourceData.files.length} files shared.`);
+        return;
+      }
       let resourceUrl = resourceData.url.trim();
       let fileName = resourceData.fileName || "";
       if (storage && resourceData.file) {
@@ -853,42 +891,50 @@ export function GroupDetailPage({
     }
   };
 
-  const handleAddResourceLink = async () => {
+  const handleSaveSimpleResource = async () => {
     if (!memberCanManage || !user) return;
-    const folderName = window.prompt("Folder / category", selectedResourceSubject || "General");
-    const subject = folderName?.trim() || "General";
-    const url = window.prompt("Paste the exact file link or large-file Drive link");
-    const cleanUrl = url?.trim();
-    if (!cleanUrl) return;
-    const title = window.prompt("Title", cleanUrl) || cleanUrl;
+    const subject = simpleResourceData.subject.trim();
+    if (!subject) {
+      onError(new Error("Add a folder name."));
+      return;
+    }
+    if (simpleResourceData.mode === "link" && !simpleResourceData.url.trim()) {
+      onError(new Error("Paste a file or Drive link."));
+      return;
+    }
+    if (simpleResourceData.mode === "files" && simpleResourceData.files.length === 0) {
+      onError(new Error("Choose at least one file."));
+      return;
+    }
     setBusy(true);
     try {
-      await addGroupResource(db, {
-        groupId: group.id,
-        user,
-        profile,
-        title,
-        url: cleanUrl,
-        subject,
-        topic: "Link",
-        resourceType: inferResourceType(cleanUrl) || "Link",
-      });
+      if (simpleResourceData.mode === "link") {
+        const cleanUrl = simpleResourceData.url.trim();
+        await addGroupResource(db, {
+          groupId: group.id,
+          user,
+          profile,
+          title: cleanUrl,
+          url: cleanUrl,
+          subject,
+          topic: "Link",
+          resourceType: inferResourceType(cleanUrl) || "Link",
+        });
+      } else {
+        for (const file of simpleResourceData.files) {
+          await uploadResourceFileToFolder(file, subject);
+        }
+      }
       setSelectedResourceSubject(subject);
-      setShowResourceAddMenu(false);
-      onSuccess("Link added.");
+      setShowSimpleResourceForm(false);
+      setSimpleResourceData(emptySimpleResource);
+      markCurrentGroupRead();
+      onSuccess(simpleResourceData.mode === "link" ? "Link added." : `${simpleResourceData.files.length} ${simpleResourceData.files.length === 1 ? "file" : "files"} added.`);
     } catch (err) {
       onError(err);
     } finally {
       setBusy(false);
     }
-  };
-
-  const handlePickFilesFromAddMenu = () => {
-    const folderName = window.prompt("Folder / category", selectedResourceSubject || "General");
-    const subject = folderName?.trim();
-    if (!subject) return;
-    pendingUploadSubjectRef.current = subject;
-    addMenuResourceInputRef.current?.click();
   };
 
   const handleDeleteResource = async (resource) => {
@@ -2584,11 +2630,11 @@ export function GroupDetailPage({
                 <strong>Create folder</strong>
                 <span>Start a new category such as Topographical Surveying.</span>
               </button>
-              <button type="button" onClick={handlePickFilesFromAddMenu} disabled={busy}>
+              <button type="button" onClick={() => openSimpleResourceForm("files")} disabled={busy}>
                 <strong>Add files</strong>
                 <span>Select one or many files from this device.</span>
               </button>
-              <button type="button" onClick={handleAddResourceLink} disabled={busy}>
+              <button type="button" onClick={() => openSimpleResourceForm("link")} disabled={busy}>
                 <strong>Add link</strong>
                 <span>Use this for exact Drive links or large files.</span>
               </button>
@@ -2599,6 +2645,54 @@ export function GroupDetailPage({
             </div>
             <div className="group-inline-actions">
               <button className="group-btn ghost" type="button" onClick={() => setShowResourceAddMenu(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSimpleResourceForm && (
+        <div className="group-modal-backdrop" onClick={() => setShowSimpleResourceForm(false)}>
+          <div className="group-modal" onClick={event => event.stopPropagation()}>
+            <h3>{simpleResourceData.mode === "link" ? "Add link" : "Add files"}</h3>
+            <div className="group-field">
+              <label>Folder name</label>
+              <input
+                value={simpleResourceData.subject}
+                onChange={event => setSimpleResourceData(prev => ({ ...prev, subject: event.target.value }))}
+                placeholder="Topographical Surveying"
+              />
+            </div>
+            {simpleResourceData.mode === "link" ? (
+              <div className="group-field">
+                <label>File / Drive link</label>
+                <input
+                  value={simpleResourceData.url}
+                  onChange={event => setSimpleResourceData(prev => ({ ...prev, url: event.target.value }))}
+                  placeholder="Paste exact file link or large-file Drive link"
+                />
+              </div>
+            ) : (
+              <div className="group-field">
+                <label>Files</label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={event => setSimpleResourceData(prev => ({ ...prev, files: Array.from(event.target.files || []) }))}
+                />
+                {simpleResourceData.files.length > 0 && (
+                  <small className="field-hint">
+                    Selected: {simpleResourceData.files.map(file => file.name).join(", ")}
+                  </small>
+                )}
+              </div>
+            )}
+            <div className="group-inline-actions">
+              <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveSimpleResource}>
+                {busy ? "Saving..." : simpleResourceData.mode === "link" ? "Add link" : "Add files"}
+              </button>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowSimpleResourceForm(false)}>
                 Cancel
               </button>
             </div>
@@ -2631,21 +2725,27 @@ export function GroupDetailPage({
             </div>
             <div className="group-field">
               <label>Upload file</label>
-              <input type="file" onChange={event => {
-                const file = event.target.files?.[0] || null;
-                if (!file) {
-                  setResourceData(prev => ({ ...prev, file: null, fileName: "" }));
+              <input type="file" multiple={!editingResourceId} onChange={event => {
+                const files = Array.from(event.target.files || []);
+                const file = files[0] || null;
+                if (!file || files.length === 0) {
+                  setResourceData(prev => ({ ...prev, file: null, files: [], fileName: "" }));
                   return;
                 }
                 setResourceData(prev => ({
                   ...prev,
                   file,
+                  files,
                   fileName: file.name,
                   title: prev.title || file.name.replace(/\.[^.]+$/, ""),
                   resourceType: prev.resourceType || inferResourceType(file.name) || "File",
                 }));
               }} />
-              {resourceData.fileName && <small className="field-hint">Selected: {resourceData.fileName}</small>}
+              {(resourceData.files?.length || resourceData.fileName) && (
+                <small className="field-hint">
+                  Selected: {resourceData.files?.length > 1 ? resourceData.files.map(file => file.name).join(", ") : resourceData.fileName}
+                </small>
+              )}
             </div>
             <div className="group-field">
               <label>Type</label>
