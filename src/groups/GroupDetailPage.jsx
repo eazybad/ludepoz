@@ -12,6 +12,7 @@ import {
   createGroupCollection,
   createGroupWorkGroup,
   deleteGroupMessage,
+  deleteGroupCollection,
   deleteGroupResource,
   deleteGroupWorkGroup,
   groupAvatarText,
@@ -266,7 +267,6 @@ export function GroupDetailPage({
   const [showChatTools, setShowChatTools] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [activeMessageActions, setActiveMessageActions] = useState(null);
-  const [showPinnedFocus, setShowPinnedFocus] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [posting, setPosting] = useState(false);
   const [showTrackerForm, setShowTrackerForm] = useState(false);
@@ -309,7 +309,6 @@ export function GroupDetailPage({
   const messageListRef = useRef(null);
   const chatPhotoInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
-  const resourceQuickFileInputRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
@@ -362,12 +361,7 @@ export function GroupDetailPage({
     return acc;
   }, {}), [activeMembers]);
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
-  const pinnedMessage = messages.find(message => message.pinned || message.kind === "announcement");
-  const currentAction = group.currentAction || (pinnedMessage ? {
-    type: pinnedMessage.kind === "announcement" ? "announcement" : "message",
-    title: "Pinned update",
-    description: pinnedMessage.text,
-  } : null);
+  const currentAction = group.currentAction || null;
   const chatMessages = useMemo(() => [...messages].sort((a, b) => (
     (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0)
   )), [messages]);
@@ -536,7 +530,6 @@ export function GroupDetailPage({
     setShowChatTools(false);
     setReplyToMessage(null);
     setActiveMessageActions(null);
-    setShowPinnedFocus(false);
     setExpandedProofUrl("");
     setShowGroupQr(false);
   }, [group?.id, user?.uid, initialTab, initialCollectionId, initialCollection]);
@@ -736,7 +729,7 @@ export function GroupDetailPage({
           resourceType: inferResourceType(uploadFile.name || file.name) || "File",
         });
       }
-      await sendGroupMessage(db, {
+      const messageRef = await sendGroupMessage(db, {
         groupId: group.id,
         channelId: "chats",
         text: messageText,
@@ -749,6 +742,16 @@ export function GroupDetailPage({
         replyTo: replyToMessage,
         attachments,
       });
+      if (kind === "announcement" && memberCanManage) {
+        const nextAction = {
+          type: "announcement",
+          title: "Pinned update",
+          description: messageText.trim(),
+          targetId: messageRef.id,
+        };
+        await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
+        onGroupUpdated?.({ ...group, currentAction: nextAction });
+      }
       setMessageText("");
       setChatAttachments([]);
       setShowChatComposer(false);
@@ -843,11 +846,6 @@ export function GroupDetailPage({
     setShowSimpleResourceForm(true);
   };
 
-  const openResourceQuickFilePicker = () => {
-    if (!memberCanManage || busy) return;
-    resourceQuickFileInputRef.current?.click();
-  };
-
   const handleSelectSimpleResourceFiles = (event) => {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
@@ -855,7 +853,7 @@ export function GroupDetailPage({
     setSimpleResourceData(prev => ({
       ...prev,
       mode: "files",
-      subject: prev.subject || selectedResourceSubject || "",
+      subject: prev.subject || selectedResourceSubject || "Files",
       files,
     }));
     setShowResourceAddMenu(false);
@@ -1016,7 +1014,9 @@ export function GroupDetailPage({
 
   const handleSaveSimpleResource = async () => {
     if (!memberCanManage || !user) return;
-    const subject = simpleResourceData.subject.trim();
+    const subject = simpleResourceData.mode === "files"
+      ? (simpleResourceData.subject.trim() || selectedResourceSubject || "Files")
+      : simpleResourceData.subject.trim();
     if (!subject) {
       onError(new Error("Add a folder name."));
       return;
@@ -1382,6 +1382,30 @@ export function GroupDetailPage({
     }
   };
 
+  const handleDeleteTracker = async (item = selectedCollection) => {
+    if (!item || !memberCanManage || !user) return;
+    const label = item.collectionType === "event" ? "event" : "payment tracker";
+    if (!window.confirm(`Delete "${item.title || label}"? This will remove its registrations/payment records from this group.`)) return;
+    setBusy(true);
+    try {
+      await deleteGroupCollection(db, { groupId: group.id, collectionId: item.id, user });
+      setSelectedCollectionId("");
+      setPayments([]);
+      setShowPaymentForm(false);
+      setShowManualPaymentForm(false);
+      if (group.currentAction?.targetId === item.id) {
+        await updateGroupCurrentAction(db, { groupId: group.id, currentAction: null, user });
+        onGroupUpdated?.({ ...group, currentAction: null });
+      }
+      markCurrentGroupRead();
+      onSuccess(item.collectionType === "event" ? "Event deleted." : "Payment tracker deleted.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openEditTrackerForm = (item) => {
     setEditingTrackerId(item.id);
     setTrackerData({
@@ -1725,27 +1749,6 @@ export function GroupDetailPage({
     }
   };
 
-  const handleEditPinnedUpdate = async () => {
-    if (!memberCanManage || !user) return;
-    const nextDescription = window.prompt("Pinned update message", currentAction?.description || group.desc || "");
-    if (nextDescription === null) return;
-    setBusy(true);
-    try {
-      const nextAction = {
-        ...(currentAction || {}),
-        title: "Pinned update",
-        description: nextDescription.trim(),
-      };
-      await updateGroupCurrentAction(db, { groupId: group.id, currentAction: nextAction, user });
-      onGroupUpdated?.({ ...group, currentAction: nextAction });
-      onSuccess("Pinned update changed.");
-    } catch (err) {
-      onError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleLeaveGroup = async () => {
     if (!currentMember || !user) return;
     if (!window.confirm(`Leave ${group.name}?`)) return;
@@ -1973,14 +1976,10 @@ export function GroupDetailPage({
       {canViewGroupContent && activeTab === "chats" && (
         <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
           {currentAction?.description && (
-            <button
-              type="button"
-              className="group-pin-float"
-              onClick={() => setShowPinnedFocus(true)}
-            >
+            <div className="group-pin-float" aria-label="Pinned update">
               <strong>Pinned update:</strong>{" "}
               <span>{currentAction.description}</span>
-            </button>
+            </div>
           )}
           {messages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
@@ -2295,6 +2294,9 @@ export function GroupDetailPage({
                       <button className="group-btn ghost" type="button" disabled={busy} onClick={() => openEditTrackerForm(selectedCollection)}>
                         Edit
                       </button>
+                      <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteTracker(selectedCollection)}>
+                        Delete
+                      </button>
                       {memberCanVerify && (
                         <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowManualPaymentForm(value => !value)}>
                           Add paid person
@@ -2561,6 +2563,9 @@ export function GroupDetailPage({
                     )}
                     <button className="group-btn ghost" type="button" disabled={busy} onClick={() => openEditTrackerForm(selectedCollection)}>
                       Edit
+                    </button>
+                    <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteTracker(selectedCollection)}>
+                      Delete
                     </button>
                     {memberCanVerify && selectedNeedsPayment && (
                       <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowManualPaymentForm(value => !value)}>
@@ -2865,25 +2870,24 @@ export function GroupDetailPage({
         <div className="group-modal-backdrop" onClick={() => setShowResourceAddMenu(false)}>
           <div className="group-modal resource-add-menu" onClick={event => event.stopPropagation()}>
             <h3>Add to Group Board</h3>
-            <input
-              ref={resourceQuickFileInputRef}
-              className="visually-hidden-file"
-              type="file"
-              multiple
-              onChange={handleSelectSimpleResourceFiles}
-              disabled={busy}
-            />
             <div className="resource-add-grid">
               <button type="button" onClick={handleCreateResourceFolder} disabled={busy}>
                 <MenuIcon name="folder" />
                 <strong>Create folder</strong>
                 <span>Start a new category such as Topographical Surveying.</span>
               </button>
-              <button type="button" onClick={openResourceQuickFilePicker} disabled={busy}>
+              <label className={busy ? "disabled" : ""}>
                 <MenuIcon name="file" />
                 <strong>Add files</strong>
-                <span>Select one or many files from this device now.</span>
-              </button>
+                <span>Choose PDFs, docs, slides, sheets, images, or zip files.</span>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
+                  onChange={handleSelectSimpleResourceFiles}
+                  disabled={busy}
+                />
+              </label>
               <button type="button" onClick={() => openSimpleResourceForm("link")} disabled={busy}>
                 <MenuIcon name="link" />
                 <strong>Add link</strong>
@@ -2931,7 +2935,12 @@ export function GroupDetailPage({
                 <label className="upload-drop-btn">
                   <MenuIcon name="file" />
                   <span>{simpleResourceData.files.length > 0 ? "Choose different files" : "Choose files"}</span>
-                  <input type="file" multiple onChange={handleSelectSimpleResourceFiles} />
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
+                    onChange={handleSelectSimpleResourceFiles}
+                  />
                 </label>
                 <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
                 {simpleResourceData.files.length > 0 && (
@@ -3099,26 +3108,6 @@ export function GroupDetailPage({
               </button>
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); }}>
                 Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPinnedFocus && (
-        <div className="group-modal-backdrop" onClick={() => setShowPinnedFocus(false)}>
-          <div className="group-modal pinned-focus-modal" onClick={event => event.stopPropagation()}>
-            <h3>Pinned update</h3>
-            <p>{currentAction?.description || "No pinned update yet."}</p>
-            {currentAction?.amount ? <div className="pinned-focus-amount">{Number(currentAction.amount).toLocaleString()} TSh</div> : null}
-            <div className="group-inline-actions">
-              {memberCanManage && (
-                <button className="group-btn primary" type="button" onClick={() => { setShowPinnedFocus(false); handleEditPinnedUpdate(); }}>
-                  Edit
-                </button>
-              )}
-              <button className="group-btn ghost" type="button" onClick={() => setShowPinnedFocus(false)}>
-                Close
               </button>
             </div>
           </div>

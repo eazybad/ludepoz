@@ -733,7 +733,7 @@
   line-height: 1.35;
   box-shadow: 0 8px 20px rgba(13, 148, 136, 0.11);
   backdrop-filter: blur(8px);
-  cursor: pointer;
+  pointer-events: none;
 }
 
 .group-pin-float strong {
@@ -2511,7 +2511,8 @@
   margin: 12px 0;
 }
 
-.resource-add-grid button {
+.resource-add-grid button,
+.resource-add-grid label {
   min-height: 104px;
   border: 1px solid #dbe8e7;
   border-radius: 8px;
@@ -2521,14 +2522,20 @@
   cursor: pointer;
 }
 
-.resource-add-grid button svg {
+.resource-add-grid button svg,
+.resource-add-grid label svg {
   width: 24px;
   height: 24px;
   margin-bottom: 9px;
   color: #0d9488;
 }
 
-.resource-add-grid button:disabled {
+.resource-add-grid label input {
+  display: none;
+}
+
+.resource-add-grid button:disabled,
+.resource-add-grid label.disabled {
   opacity: 0.55;
   cursor: wait;
 }

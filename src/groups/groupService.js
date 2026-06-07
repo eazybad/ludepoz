@@ -899,6 +899,7 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text 
   }
 
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
+  return messageRef;
 }
 
 export async function deleteGroupMessage(db, { groupId, channelId = "chats", messageId, user }) {
@@ -1021,6 +1022,13 @@ export async function updateUniversityGroupProfile(db, storage, { group, data, u
 }
 
 export async function updateGroupCurrentAction(db, { groupId, currentAction, user }) {
+  if (!currentAction) {
+    await updateDoc(doc(db, "groups", groupId), {
+      currentAction: null,
+      updatedAt: serverTimestamp(),
+    });
+    return;
+  }
   await updateDoc(doc(db, "groups", groupId), {
     currentAction: {
       type: currentAction.type || "announcement",
@@ -1108,15 +1116,6 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     updatedAt: serverTimestamp(),
   });
   await updateDoc(doc(db, "groups", groupId), {
-    currentAction: {
-      type: data.collectionType === "event" ? "event" : "payment",
-      title: data.title.trim(),
-      description: data.description.trim(),
-      targetId: docRef.id,
-      amount,
-      deadline: data.deadline || null,
-      ctaLabel: data.collectionType === "event" ? "Register" : "Contribute",
-    },
     activityAt: serverTimestamp(),
     lastActivityByUid: user.uid,
     updatedAt: serverTimestamp(),
@@ -1175,19 +1174,23 @@ export async function updateGroupCollection(db, { groupId, collectionId, user, d
   });
 
   await updateDoc(doc(db, "groups", groupId), {
-    currentAction: {
-      type: data.collectionType === "event" ? "event" : "payment",
-      title: "Pinned update",
-      description: data.description.trim() || data.title.trim(),
-      targetId: collectionId,
-      amount,
-      deadline: data.deadline || null,
-      ctaLabel: data.collectionType === "event" ? "Register" : "Contribute",
-    },
     activityAt: serverTimestamp(),
     lastActivityByUid: user.uid,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function deleteGroupCollection(db, { groupId, collectionId, user }) {
+  const paymentsSnap = await getDocs(collection(db, "groups", groupId, "collections", collectionId, "payments"));
+  const batch = writeBatch(db);
+  paymentsSnap.docs.forEach(paymentDoc => batch.delete(paymentDoc.ref));
+  batch.delete(doc(db, "groups", groupId, "collections", collectionId));
+  batch.update(doc(db, "groups", groupId), {
+    activityAt: serverTimestamp(),
+    lastActivityByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 export async function addManualGroupPayment(db, { groupId, collectionItem, data, recorder }) {
