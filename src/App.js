@@ -230,6 +230,7 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [page, setPageRaw] = useState("communities");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
@@ -268,6 +269,19 @@ function App() {
       setPageRaw("communities");
     }
     setTimeout(() => { isGoingBack.current = false; }, 50);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
   const [homeTab, setHomeTab] = useState("goods");
   const [tabIconsVisible, setTabIconsVisible] = useState(false);
@@ -4445,6 +4459,27 @@ return (
   display:'flex',
   flexDirection:'column'
 }}>
+      {isOffline && (
+        <div
+          style={{
+            margin: '10px 12px 0',
+            background: '#ecfdf5',
+            color: '#065f46',
+            border: '1px solid #a7f3d0',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            lineHeight: 1.35,
+            flexShrink: 0,
+            zIndex: 80,
+            boxShadow: '0 8px 20px rgba(6, 95, 70, 0.08)'
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: '2px' }}>Offline mode</strong>
+          Showing saved class data on this device. New updates, messages, and submissions will sync when internet returns.
+        </div>
+      )}
+
        {error && (
   <div
     onClick={() => setError("")}
@@ -8456,7 +8491,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika
                   </div>
                   <p style={{fontSize:'12px',lineHeight:1.55,color:'#4a5568',margin:'0 0 10px'}}>
-                    Mtandao wa wanachuo kwa kununua, kuuza, kutoa huduma, kupata vyumba, na kuunda jamii za chuo.
+                    Mtandao wa wanachuo kwa kumanage group, kununua, kuuza, kutoa huduma, na kuunda jamii za chuo.
                   </p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
                     {['Goods', 'Services', 'Groups', 'Verified'].map(tag => (

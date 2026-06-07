@@ -156,6 +156,11 @@
   color: #344054;
 }
 
+.group-btn.saved-offline {
+  background: #dcfce7;
+  color: #166534;
+}
+
 .group-btn.danger {
   background: #fee2e2;
   color: #991b1b;

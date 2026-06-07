@@ -1,7 +1,7 @@
 {
   "short_name": "Kampasika",
-  "name": "Kampasika - Student Marketplace",
-  "description": "Buy & sell within your campus. The student marketplace for UDSM, Ardhi & more.",
+  "name": "Kampasika - Campus Workspace",
+  "description": "Organize class notes, group work, updates, submissions, and campus activity in one student workspace.",
   "icons": [
     {
       "src": "favicon.ico",

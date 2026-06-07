@@ -98,6 +98,26 @@ const emptyWorkSubmission = {
   filePreview: "",
 };
 
+const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
+
+function offlineResourceStoreKey(groupId) {
+  return `kampasikaOfflineResources:${groupId || "unknown"}`;
+}
+
+function readOfflineResourceStore(groupId) {
+  try {
+    return JSON.parse(localStorage.getItem(offlineResourceStoreKey(groupId)) || "{}");
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeOfflineResourceStore(groupId, value) {
+  try {
+    localStorage.setItem(offlineResourceStoreKey(groupId), JSON.stringify(value));
+  } catch (_) {}
+}
+
 function MenuIcon({ name }) {
   const common = {
     width: "22",
@@ -243,6 +263,9 @@ export function GroupDetailPage({
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [showGroupQr, setShowGroupQr] = useState(false);
   const [notificationPrefsDraft, setNotificationPrefsDraft] = useState(DEFAULT_GROUP_NOTIFICATION_PREFS);
+  const [savedOfflineResources, setSavedOfflineResources] = useState({});
+  // eslint-disable-next-line no-unused-vars
+  const [savingOfflineResourceId, setSavingOfflineResourceId] = useState("");
   const [busy, setBusy] = useState(false);
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
@@ -322,6 +345,10 @@ export function GroupDetailPage({
     acc[key].push(resource);
     return acc;
   }, {}), [sortedResources]);
+
+  useEffect(() => {
+    setSavedOfflineResources(readOfflineResourceStore(group.id));
+  }, [group.id]);
 
   const pushGroupHistory = () => {
     try {
@@ -738,6 +765,70 @@ export function GroupDetailPage({
       onError(err);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  const handleSaveResourceOffline = async (resource) => {
+    if (!resource.url) {
+      onError(new Error("This resource does not have a file link to save."));
+      return;
+    }
+    if (!("caches" in window)) {
+      onError(new Error("This browser does not support offline file saving."));
+      return;
+    }
+
+    setSavingOfflineResourceId(resource.id);
+    try {
+      const response = await fetch(resource.url, { mode: "cors", credentials: "omit" });
+      if (!response.ok) {
+        throw new Error("The file could not be downloaded.");
+      }
+
+      const cache = await caches.open(OFFLINE_RESOURCE_CACHE);
+      await cache.put(resource.url, response.clone());
+
+      const nextSaved = {
+        ...savedOfflineResources,
+        [resource.id]: {
+          url: resource.url,
+          title: resource.title || resource.text || "Saved resource",
+          resourceType: resource.resourceType || "",
+          savedAt: Date.now(),
+        },
+      };
+      setSavedOfflineResources(nextSaved);
+      writeOfflineResourceStore(group.id, nextSaved);
+      onSuccess("Resource saved for offline use on this device.");
+    } catch (err) {
+      onError(new Error("This link could not be saved offline inside Kampasika. Uploaded files work best; Google Drive links may need Drive's own offline cache."));
+    } finally {
+      setSavingOfflineResourceId("");
+    }
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  const handleOpenSavedResource = async (resource) => {
+    if (!resource.url || !("caches" in window)) {
+      window.open(resource.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    try {
+      const cache = await caches.open(OFFLINE_RESOURCE_CACHE);
+      const response = await cache.match(resource.url);
+      if (!response) {
+        onError(new Error("This resource is not saved on this device yet."));
+        return;
+      }
+
+      const blob = await response.blob();
+      const savedUrl = URL.createObjectURL(blob);
+      window.open(savedUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(savedUrl), 60000);
+    } catch (err) {
+      onError(new Error("Could not open the saved copy. Try opening the original link when online."));
     }
   };
 
@@ -2192,6 +2283,25 @@ export function GroupDetailPage({
                   </div>
                   <div className="group-inline-actions">
                     {resource.url && <a className="group-btn secondary group-link-btn" href={resource.url} target="_blank" rel="noreferrer">Open file / resource</a>}
+                    {resource.url && !savedOfflineResources[resource.id] && (
+                      <button
+                        className="group-btn ghost"
+                        type="button"
+                        disabled={savingOfflineResourceId === resource.id}
+                        onClick={() => handleSaveResourceOffline(resource)}
+                      >
+                        {savingOfflineResourceId === resource.id ? "Saving..." : "Save offline"}
+                      </button>
+                    )}
+                    {resource.url && savedOfflineResources[resource.id] && (
+                      <button
+                        className="group-btn saved-offline"
+                        type="button"
+                        onClick={() => handleOpenSavedResource(resource)}
+                      >
+                        Open saved
+                      </button>
+                    )}
                     {memberCanManage && <button className="group-btn ghost" type="button" onClick={() => openEditResourceForm(resource)}>Edit</button>}
                     {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteResource(resource)}>Delete</button>}
                   </div>
