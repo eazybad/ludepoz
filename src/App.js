@@ -4362,15 +4362,7 @@ const loadSellerStats = useCallback(async (userId) => {
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
   const currentUniId = selectedUni?.id || "aru";
-  const isPubliclyDiscoverableGroup = (group) => (
-    group.visibility !== "inviteOnly"
-    && group.joinPolicy !== "inviteOnly"
-  );
-  const groupsForSelectedUni = groups.filter(group => (
-    group.active !== false
-    && (group.uniId || currentUniId) === currentUniId
-    && isPubliclyDiscoverableGroup(group)
-  ));
+  const groupsForSelectedUni = groups.filter(group => group.active !== false && (group.uniId || currentUniId) === currentUniId);
   const publicEventsForGroups = publicGroupEvents.filter(eventItem => (
     (eventItem.uniId || currentUniId) === currentUniId
     && groupsForSelectedUni.some(group => group.id === eventItem.groupId)

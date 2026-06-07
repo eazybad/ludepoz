@@ -76,17 +76,13 @@ export function GroupListPage({
     onOpenGroup(group);
   };
 
-  const publiclyVisibleGroups = groups.filter(group => (
-    group.visibility !== "inviteOnly"
-    && group.joinPolicy !== "inviteOnly"
-  ));
   const filteredGroups = normalizedSearch
-    ? publiclyVisibleGroups.filter(group => (
+    ? groups.filter(group => (
       group.name?.toLowerCase().includes(normalizedSearch)
       || group.desc?.toLowerCase().includes(normalizedSearch)
       || groupTypes[group.type]?.toLowerCase().includes(normalizedSearch)
     ))
-    : publiclyVisibleGroups;
+    : groups;
   const filteredPublicEvents = normalizedSearch
     ? publicEvents.filter(eventItem => (
       eventItem.title?.toLowerCase().includes(normalizedSearch)
