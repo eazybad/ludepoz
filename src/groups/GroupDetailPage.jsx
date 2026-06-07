@@ -119,6 +119,7 @@ const emptyWorkSubmission = {
 
 const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
 const MAX_RESOURCE_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_FILE_MB = Math.round(MAX_RESOURCE_FILE_BYTES / (1024 * 1024));
 
 function offlineResourceStoreKey(groupId) {
   return `kampasikaOfflineResources:${groupId || "unknown"}`;
@@ -256,6 +257,7 @@ export function GroupDetailPage({
   const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionId || "");
   const [payments, setPayments] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [chatAttachments, setChatAttachments] = useState([]);
   const [showChatComposer, setShowChatComposer] = useState(false);
   const [showChatTools, setShowChatTools] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState(null);
@@ -480,6 +482,7 @@ export function GroupDetailPage({
       setShowChatComposer(false);
       setShowChatTools(false);
       setReplyToMessage(null);
+      setChatAttachments([]);
       return true;
     }
     if (initialSource === "publicEvents" && activeTab === "events") {
@@ -702,7 +705,8 @@ export function GroupDetailPage({
   };
 
   const handlePost = async (kind = "message") => {
-    if (!messageText.trim() || !user || !group?.id) return;
+    if ((!messageText.trim() && chatAttachments.length === 0) || !user || !group?.id) return;
+    if (kind === "announcement" && !messageText.trim()) return;
     const hasMention = /(^|\s)@[a-zA-Z0-9._-]+/.test(messageText);
     if (hasMention && mentionPermission === "admins" && !memberCanManage) {
       onError(new Error("Only admins, owners, and treasurers can tag members in this group."));
@@ -710,6 +714,24 @@ export function GroupDetailPage({
     }
     setPosting(true);
     try {
+      if (chatAttachments.length > 0 && !storage) {
+        throw new Error("File upload is not ready. Try again in a moment.");
+      }
+      const attachments = [];
+      for (const file of chatAttachments) {
+        const uploadFile = await prepareResourceUploadFile(file);
+        const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "attachment";
+        const filePath = `groups/${group.id}/chat/${user.uid}_${Date.now()}_${safeName}`;
+        const snap = await uploadBytes(ref(storage, filePath), uploadFile);
+        const url = await getDownloadURL(snap.ref);
+        attachments.push({
+          name: file.name,
+          url,
+          size: uploadFile.size,
+          contentType: uploadFile.type || file.type || "",
+          resourceType: inferResourceType(uploadFile.name || file.name) || "File",
+        });
+      }
       await sendGroupMessage(db, {
         groupId: group.id,
         channelId: "chats",
@@ -721,8 +743,10 @@ export function GroupDetailPage({
         group,
         members,
         replyTo: replyToMessage,
+        attachments,
       });
       setMessageText("");
+      setChatAttachments([]);
       setShowChatComposer(false);
       setShowChatTools(false);
       setReplyToMessage(null);
@@ -732,6 +756,19 @@ export function GroupDetailPage({
     } finally {
       setPosting(false);
     }
+  };
+
+  const handleSelectChatAttachments = (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    setChatAttachments(prev => [...prev, ...files]);
+    setShowChatComposer(true);
+    setShowChatTools(false);
+  };
+
+  const removeChatAttachment = (index) => {
+    setChatAttachments(prev => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const handleReactToMessage = async (message, emoji) => {
@@ -1934,8 +1971,9 @@ export function GroupDetailPage({
                       {unreadChatMessages.length} unread {unreadChatMessages.length === 1 ? "message" : "messages"}
                     </div>
                   )}
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}
                     onMouseDown={() => startMessageHold(message)}
                     onMouseUp={clearMessageHold}
@@ -1952,7 +1990,30 @@ export function GroupDetailPage({
                         <span>{message.replyTo.text}</span>
                       </div>
                     )}
-                    <div className="message-text">{message.text}</div>
+                    {message.text && <div className="message-text">{message.text}</div>}
+                    {message.attachments?.length > 0 && (
+                      <div className="message-attachments">
+                        {message.attachments.map((attachment, attachmentIndex) => (
+                          <button
+                            key={`${attachment.url || attachment.name}-${attachmentIndex}`}
+                            type="button"
+                            className="message-attachment"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenResourceInApp({
+                                title: attachment.name,
+                                text: attachment.name,
+                                url: attachment.url,
+                                resourceType: attachment.resourceType || inferResourceType(attachment.name || attachment.url || ""),
+                              });
+                            }}
+                          >
+                            <strong>{attachment.name || "Attachment"}</strong>
+                            <span>{attachment.resourceType || inferResourceType(attachment.name || attachment.url || "") || "File"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {message.reactions && Object.keys(message.reactions).length > 0 && (
                       <div className="message-reactions">
                         {Object.entries(
@@ -1966,7 +2027,7 @@ export function GroupDetailPage({
                       </div>
                     )}
                     <div className="message-time">{formatDate(message.createdAt)}</div>
-                  </button>
+                  </div>
                 </div>
               ))}
               <div ref={chatBottomRef} />
@@ -1985,7 +2046,7 @@ export function GroupDetailPage({
                   <div className="message-action-sheet">
                     <div className="message-action-preview">
                       <span className="message-action-preview-author">{activeMessageActions.authorName || "Member"}</span>
-                      <span className="message-action-preview-text">{activeMessageActions.text?.slice(0, 80)}{(activeMessageActions.text?.length || 0) > 80 ? "…" : ""}</span>
+                      <span className="message-action-preview-text">{(activeMessageActions.text || activeMessageActions.attachments?.[0]?.name || "Attachment").slice(0, 80)}{((activeMessageActions.text || activeMessageActions.attachments?.[0]?.name || "").length || 0) > 80 ? "..." : ""}</span>
                     </div>
                     <div className="message-action-emojis">
                       {["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F64F}", "\u{1F525}"].map(emoji => (
@@ -2019,7 +2080,7 @@ export function GroupDetailPage({
                     type="button"
                     className="chat-composer-dismiss"
                     aria-label="Close message composer"
-                    onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); }}
+                    onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); setChatAttachments([]); }}
                   />
                   <div className="chat-input-bar">
                     {replyToMessage && (
@@ -2030,15 +2091,32 @@ export function GroupDetailPage({
                     )}
                     {showChatTools && (
                       <div className="chat-tools-menu">
-                        {memberCanManage && <button type="button" onClick={openResourceAddMenu}>Add resource</button>}
+                        <label className="chat-tool-file">
+                          Attach file
+                          <input type="file" multiple onChange={handleSelectChatAttachments} disabled={posting || busy} />
+                        </label>
                         {memberCanManage && (
-                          <label className="chat-tool-file">
-                            Quick upload
-                            <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
-                          </label>
+                          <>
+                            <button type="button" onClick={openResourceAddMenu}>Organize board</button>
+                            <label className="chat-tool-file">
+                              Save to board
+                              <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
+                            </label>
+                            <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin announcement</button>
+                          </>
                         )}
-                        {memberCanManage && <button type="button" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>Pin as announcement</button>}
-                        {!memberCanManage && <span>Only leaders can share files and resources here.</span>}
+                      </div>
+                    )}
+                    {chatAttachments.length > 0 && (
+                      <div className="chat-attachment-preview">
+                        {chatAttachments.map((file, index) => (
+                          <span key={`${file.name}-${index}`}>
+                            {file.name}
+                            <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeChatAttachment(index)}>
+                              <MenuIcon name="close" />
+                            </button>
+                          </span>
+                        ))}
                       </div>
                     )}
                     <div className="chat-input-row">
@@ -2050,11 +2128,11 @@ export function GroupDetailPage({
                         type="button"
                         className="chat-close-btn"
                         aria-label="Close message composer"
-                        onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); }}
+                        onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); setChatAttachments([]); }}
                       >
                         <MenuIcon name="close" />
                       </button>
-                      <button className="chat-send-btn" type="button" aria-label="Send message" disabled={posting || !messageText.trim()} onClick={() => handlePost("message")}>
+                      <button className="chat-send-btn" type="button" aria-label="Send message" disabled={posting || (!messageText.trim() && chatAttachments.length === 0)} onClick={() => handlePost("message")}>
                         <MenuIcon name="send" />
                       </button>
                     </div>
@@ -2803,6 +2881,7 @@ export function GroupDetailPage({
                   multiple
                   onChange={event => setSimpleResourceData(prev => ({ ...prev, files: Array.from(event.target.files || []) }))}
                 />
+                <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
                 {simpleResourceData.files.length > 0 && (
                   <small className="field-hint">
                     Selected: {simpleResourceData.files.map(file => file.name).join(", ")}
@@ -2863,6 +2942,7 @@ export function GroupDetailPage({
                   resourceType: prev.resourceType || inferResourceType(file.name) || "File",
                 }));
               }} />
+              <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
               {(resourceData.files?.length || resourceData.fileName) && (
                 <small className="field-hint">
                   Selected: {resourceData.files?.length > 1 ? resourceData.files.map(file => file.name).join(", ") : resourceData.fileName}
