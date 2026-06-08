@@ -1106,6 +1106,7 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     deadline: data.deadline || null,
     photoUrl: "",
     photoUploadStatus: storage && data.photoFile ? "pending" : "",
+    photoUploadStartedAt: storage && data.photoFile ? serverTimestamp() : null,
     visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
     createdByUid: user.uid,
     createdByName: profile.name || user.email || "Admin",
@@ -1143,7 +1144,7 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
           uid: user.uid,
           file: uploadFile,
         });
-        await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", updatedAt: serverTimestamp() });
+        await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", photoUploadedAt: serverTimestamp(), updatedAt: serverTimestamp() });
       } catch (error) {
         console.error("createGroupCollection photo upload failed:", error);
         await updateDoc(docRef, {

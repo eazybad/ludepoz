@@ -245,6 +245,18 @@ function resourcePreviewKind(resource = {}) {
   return "generic";
 }
 
+function eventPosterStatus(item = {}) {
+  if (item.photoUrl) return null;
+  if (item.photoUploadStatus === "failed") return { text: "Poster upload failed. The event is still active.", kind: "error" };
+  if (item.photoUploadStatus !== "pending") return null;
+  const startedAt = item.photoUploadStartedAt?.toDate?.() || item.createdAt || null;
+  const startedMs = startedAt?.getTime?.() || 0;
+  if (startedMs && Date.now() - startedMs > 3 * 60 * 1000) {
+    return { text: "Poster did not attach. The event is still active.", kind: "error" };
+  }
+  return { text: "Poster is still attaching...", kind: "" };
+}
+
 export function GroupDetailPage({
   db,
   storage,
@@ -333,6 +345,8 @@ export function GroupDetailPage({
   const messageListRef = useRef(null);
   const chatPhotoInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
+  const chatToolsMenuRef = useRef(null);
+  const chatPlusButtonRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
@@ -529,6 +543,17 @@ export function GroupDetailPage({
 
     return false;
   }, [activeMessageActions, activeTab, expandedProofUrl, initialSource, replyToMessage, resourcePreview, selectedCollectionId, selectedResourceSubject, showChatComposer, showChatTools, showManualPaymentForm, showPaymentForm, showResourceAddMenu, showResourceForm, showSimpleResourceForm, showTrackerForm, showWorkGroupForm, submittingWorkGroupId]);
+
+  useEffect(() => {
+    if (!showChatTools) return undefined;
+    const handleOutsideChatTools = (event) => {
+      const target = event.target;
+      if (chatToolsMenuRef.current?.contains(target) || chatPlusButtonRef.current?.contains(target)) return;
+      setShowChatTools(false);
+    };
+    document.addEventListener("pointerdown", handleOutsideChatTools);
+    return () => document.removeEventListener("pointerdown", handleOutsideChatTools);
+  }, [showChatTools]);
 
   useEffect(() => {
     if (!group?.id) return undefined;
@@ -2231,7 +2256,7 @@ export function GroupDetailPage({
                       </div>
                     )}
                     {showChatTools && (
-                      <div className="chat-tools-menu">
+                      <div className="chat-tools-menu" ref={chatToolsMenuRef}>
                         <button type="button" className="chat-tool-action" onClick={() => openChatPicker("photo")} disabled={posting || busy}>
                           <MenuIcon name="image" />
                           <span>Photo</span>
@@ -2273,10 +2298,10 @@ export function GroupDetailPage({
                       </div>
                     )}
                     <div className="chat-input-row">
-                      <button type="button" className="chat-plus-btn" aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); }}>
+                      <button type="button" className="chat-plus-btn" ref={chatPlusButtonRef} aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); }}>
                         <MenuIcon name="plus" />
                       </button>
-                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message - use @username to tag" rows={1} autoFocus />
+                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="use @username to tag" rows={1} autoFocus />
                       <button
                         type="button"
                         className="chat-close-btn"
@@ -2645,8 +2670,7 @@ export function GroupDetailPage({
               }}>Back to events</button>
               <div className="payment-card">
                 {(selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]) && <img className="tracker-card-photo" src={selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]} alt="" />}
-                {selectedCollection.photoUploadStatus === "pending" && <div className="tracker-photo-status">Poster is uploading...</div>}
-                {selectedCollection.photoUploadStatus === "failed" && <div className="tracker-photo-status error">Poster upload failed. The event is still active.</div>}
+                {eventPosterStatus(selectedCollection) && <div className={`tracker-photo-status ${eventPosterStatus(selectedCollection).kind}`}>{eventPosterStatus(selectedCollection).text}</div>}
                 <h4>{selectedCollection.title}</h4>
                 <div className="payment-meta">
                   {selectedCollection.description || "Event details"}
@@ -2779,8 +2803,7 @@ export function GroupDetailPage({
           ) : eventCollections.map(eventItem => (
             <div key={eventItem.id} className="tracker-card event-card">
               {(eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]) && <img className="tracker-card-photo" src={eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]} alt="" />}
-              {eventItem.photoUploadStatus === "pending" && <div className="tracker-photo-status">Poster is uploading...</div>}
-              {eventItem.photoUploadStatus === "failed" && <div className="tracker-photo-status error">Poster upload failed</div>}
+              {eventPosterStatus(eventItem) && <div className={`tracker-photo-status ${eventPosterStatus(eventItem).kind}`}>{eventPosterStatus(eventItem).text}</div>}
               <div>
                 <strong>{eventItem.title}</strong>
                 <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : "Free"}</span>
