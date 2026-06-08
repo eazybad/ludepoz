@@ -365,6 +365,9 @@ export function GroupDetailPage({
     : `${window.location.origin}/g/${group.inviteCode || group.id}`;
   const selectedCollection = collections.find(item => item.id === selectedCollectionId) || null;
   const eventCollections = collections.filter(item => (item.collectionType || "") === "event");
+  const visibleEventCollections = selectedCollection?.collectionType === "event"
+    ? eventCollections.filter(item => item.id !== selectedCollection.id)
+    : eventCollections;
   const paymentCollections = collections.filter(item => (item.collectionType || "") !== "event" || Number(item.amount || 0) > 0);
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
   const selectedPaidEvent = selectedCollection?.collectionType === "event" && selectedNeedsPayment;
@@ -2812,9 +2815,9 @@ export function GroupDetailPage({
               )}
             </>
           )}
-          {eventCollections.length === 0 ? (
+          {!selectedCollection && eventCollections.length === 0 ? (
             <div className="group-empty">No events yet.</div>
-          ) : eventCollections.map(eventItem => (
+          ) : visibleEventCollections.map(eventItem => (
             <div key={eventItem.id} className="tracker-card event-card">
               {(eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]) && <img className="tracker-card-photo" src={eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]} alt="" />}
               {eventPosterStatus(eventItem) && <div className={`tracker-photo-status ${eventPosterStatus(eventItem).kind}`}>{eventPosterStatus(eventItem).text}</div>}
