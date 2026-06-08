@@ -17,6 +17,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { compressImage, COMPRESSION_PRESETS } from "../imageCompression";
 
 export const GROUP_ROLES = ["owner", "admin", "treasurer", "member"];
 
@@ -1119,45 +1120,66 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     updatedAt: serverTimestamp(),
   });
 
-  if (storage && data.photoFile) {
+  Promise.resolve().then(async () => {
+    if (storage && data.photoFile) {
+      try {
+        let uploadFile = data.photoFile;
+        if (uploadFile.type?.startsWith("image/")) {
+          try {
+            const { file: compressed } = await compressImage(uploadFile, {
+              ...COMPRESSION_PRESETS.listing,
+              maxSizeKB: 350,
+              maxWidth: 1600,
+              maxHeight: 1600,
+            });
+            uploadFile = compressed;
+          } catch (compressionError) {
+            console.warn("createGroupCollection photo compression failed, uploading original:", compressionError);
+          }
+        }
+        const photoUrl = await uploadCollectionPhoto(storage, {
+          groupId,
+          collectionId: docRef.id,
+          uid: user.uid,
+          file: uploadFile,
+        });
+        await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", updatedAt: serverTimestamp() });
+      } catch (error) {
+        console.error("createGroupCollection photo upload failed:", error);
+        await updateDoc(docRef, {
+          photoUploadStatus: "failed",
+          photoUploadError: String(error.message || error).slice(0, 250),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
     try {
-      const photoUrl = await uploadCollectionPhoto(storage, {
+      const [groupSnap, members] = await Promise.all([
+        getDoc(doc(db, "groups", groupId)),
+        getGroupMembers(db, groupId),
+      ]);
+      const groupName = groupSnap.exists() ? groupSnap.data().name : "Group";
+      if (groupSnap.exists()) {
+        await updateDoc(docRef, {
+          uniId: groupSnap.data().uniId || "aru",
+          universityName: groupSnap.data().universityName || "ARU",
+        });
+      }
+      const isEvent = data.collectionType === "event";
+      await notifyMembers(db, members, {
+        excludeUid: user.uid,
+        type: isEvent ? "group_event" : "group_payment_request",
+        title: isEvent ? `${groupName}: new event` : `${groupName}: new payment request`,
+        message: `${data.title.trim()} - ${amount.toLocaleString()} TSh`,
         groupId,
         collectionId: docRef.id,
-        uid: user.uid,
-        file: data.photoFile,
+        category: isEvent ? "events" : "payments",
+        dedupeKey: collectionDedupeKey(isEvent ? "group_event" : "group_payment_request", groupId, docRef.id),
       });
-      await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", updatedAt: serverTimestamp() });
     } catch (error) {
-      console.error("createGroupCollection photo upload failed:", error);
-      await updateDoc(docRef, {
-        photoUploadStatus: "failed",
-        photoUploadError: String(error.message || error).slice(0, 250),
-        updatedAt: serverTimestamp(),
-      });
+      console.error("createGroupCollection background updates failed:", error);
     }
-  }
-  const [groupSnap, members] = await Promise.all([
-    getDoc(doc(db, "groups", groupId)),
-    getGroupMembers(db, groupId),
-  ]);
-  const groupName = groupSnap.exists() ? groupSnap.data().name : "Group";
-  if (groupSnap.exists()) {
-    await updateDoc(docRef, {
-      uniId: groupSnap.data().uniId || "aru",
-      universityName: groupSnap.data().universityName || "ARU",
-    });
-  }
-  const isEvent = data.collectionType === "event";
-  await notifyMembers(db, members, {
-    excludeUid: user.uid,
-    type: isEvent ? "group_event" : "group_payment_request",
-    title: isEvent ? `${groupName}: new event` : `${groupName}: new payment request`,
-    message: `${data.title.trim()} - ${amount.toLocaleString()} TSh`,
-    groupId,
-    collectionId: docRef.id,
-    category: isEvent ? "events" : "payments",
-    dedupeKey: collectionDedupeKey(isEvent ? "group_event" : "group_payment_request", groupId, docRef.id),
   });
   return docRef;
 }

@@ -1416,23 +1416,9 @@ export function GroupDetailPage({
       return;
     }
     setBusy(true);
-    setGroupUploadStatus(trackerData.photoFile ? "Compressing event poster..." : trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
+    setGroupUploadStatus(trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
     try {
       let photoFile = trackerData.photoFile || null;
-      if (photoFile) {
-        try {
-          const { file: compressedPoster } = await compressImage(photoFile, {
-            ...COMPRESSION_PRESETS.listing,
-            maxSizeKB: 350,
-            maxWidth: 1600,
-            maxHeight: 1600,
-          });
-          photoFile = compressedPoster;
-        } catch (compressionError) {
-          console.warn("Event poster compression failed, uploading original:", compressionError);
-        }
-        setGroupUploadStatus("Uploading event poster...");
-      }
       const data = {
         ...trackerData,
         photoFile,
