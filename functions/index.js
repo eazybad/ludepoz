@@ -211,6 +211,7 @@ const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
 const AFRICASTALKING_API_KEY = defineSecret("AFRICASTALKING_API_KEY");
 const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
+const CLOUDCONVERT_API_KEY = defineSecret("CLOUDCONVERT_API_KEY");
 
 function assertAdmin(request) {
   const callerUid = request.auth && request.auth.uid;
@@ -426,4 +427,177 @@ exports.adminDeleteUser = onCall(async (request) => {
   await admin.auth().deleteUser(uid);
 
   return { success: true };
+});
+
+function isConvertibleDocumentResource(resource) {
+  const text = [
+    resource.resourceType,
+    resource.fileName,
+    resource.title,
+    resource.text,
+    resource.url,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return /\b(ppt|pptx|doc|docx)\b/i.test(text) || /\.(pptx?|docx?)(\?|#|\s|$)/i.test(text);
+}
+
+function safeFileName(value) {
+  return String(value || "document")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 100) || "document";
+}
+
+async function assertGroupManager(db, groupId, uid) {
+  const [groupSnap, memberSnap] = await Promise.all([
+    db.collection("groups").doc(groupId).get(),
+    db.collection("groups").doc(groupId).collection("members").doc(uid).get(),
+  ]);
+  if (!groupSnap.exists) {
+    throw new HttpsError("not-found", "Group not found.");
+  }
+  const group = groupSnap.data() || {};
+  const member = memberSnap.exists ? (memberSnap.data() || {}) : {};
+  const manages = group.ownerUid === uid
+    || group.adminUid === uid
+    || ["owner", "admin", "treasurer"].includes(member.role);
+  if (!manages) {
+    throw new HttpsError("permission-denied", "Only group leaders can prepare document previews.");
+  }
+  return group;
+}
+
+exports.convertGroupResourceToPdf = onCall({
+  secrets: [CLOUDCONVERT_API_KEY],
+  timeoutSeconds: 540,
+  memory: "1GiB",
+}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const groupId = String(request.data && request.data.groupId || "").trim();
+  const resourceId = String(request.data && request.data.resourceId || "").trim();
+  if (!groupId || !resourceId) {
+    throw new HttpsError("invalid-argument", "Missing group or resource id.");
+  }
+
+  const apiKey = CLOUDCONVERT_API_KEY.value();
+  if (!apiKey) {
+    throw new HttpsError("failed-precondition", "Set CLOUDCONVERT_API_KEY before converting documents.");
+  }
+
+  const db = admin.firestore();
+  await assertGroupManager(db, groupId, uid);
+
+  const resourceRef = db
+    .collection("groups").doc(groupId)
+    .collection("channels").doc("resources")
+    .collection("messages").doc(resourceId);
+  const resourceSnap = await resourceRef.get();
+  if (!resourceSnap.exists) {
+    throw new HttpsError("not-found", "Resource not found.");
+  }
+  const resource = resourceSnap.data() || {};
+  if (!resource.url) {
+    throw new HttpsError("failed-precondition", "This resource does not have a file URL.");
+  }
+  if (!isConvertibleDocumentResource(resource)) {
+    throw new HttpsError("failed-precondition", "Only PPT/PPTX/DOC/DOCX resources can be converted.");
+  }
+  if (resource.previewPdfUrl && resource.previewStatus === "ready") {
+    return { previewPdfUrl: resource.previewPdfUrl, status: "ready" };
+  }
+
+  await resourceRef.update({
+    previewStatus: "processing",
+    previewError: admin.firestore.FieldValue.delete(),
+    previewRequestedByUid: uid,
+    previewRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  try {
+    const createJobResponse = await fetch("https://api.cloudconvert.com/v2/jobs", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tasks: {
+          "import-file": {
+            operation: "import/url",
+            url: resource.url,
+          },
+          "convert-file": {
+            operation: "convert",
+            input: "import-file",
+            output_format: "pdf",
+          },
+          "export-file": {
+            operation: "export/url",
+            input: "convert-file",
+          },
+        },
+      }),
+    });
+    const created = await createJobResponse.json();
+    if (!createJobResponse.ok) {
+      throw new Error(created?.message || created?.data?.message || "Could not start conversion.");
+    }
+    const jobId = created?.data?.id;
+    if (!jobId) throw new Error("Conversion job id missing.");
+
+    const waitResponse = await fetch(`https://sync.api.cloudconvert.com/v2/jobs/${jobId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const finished = await waitResponse.json();
+    if (!waitResponse.ok || finished?.data?.status !== "finished") {
+      throw new Error(finished?.message || "Document conversion did not finish.");
+    }
+    const exportTask = (finished.data.tasks || []).find(task => task.name === "export-file");
+    const exportUrl = exportTask?.result?.files?.[0]?.url;
+    if (!exportUrl) throw new Error("Converted PDF URL missing.");
+
+    const pdfResponse = await fetch(exportUrl);
+    if (!pdfResponse.ok) throw new Error("Could not download converted PDF.");
+    const pdfBytes = Buffer.from(await pdfResponse.arrayBuffer());
+
+    const bucket = admin.storage().bucket();
+    const token = crypto.randomUUID();
+    const fileName = `${safeFileName(resource.fileName || resource.title)}.pdf`;
+    const previewPath = `groups/${groupId}/resources/previews/${resourceId}_${Date.now()}_${fileName}`;
+    const file = bucket.file(previewPath);
+    await file.save(pdfBytes, {
+      resumable: false,
+      contentType: "application/pdf",
+      metadata: {
+        metadata: {
+          firebaseStorageDownloadTokens: token,
+          originalResourceId: resourceId,
+        },
+      },
+    });
+
+    const previewPdfUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(previewPath)}?alt=media&token=${token}`;
+    await resourceRef.update({
+      previewPdfUrl,
+      previewFilePath: previewPath,
+      previewStatus: "ready",
+      previewError: admin.firestore.FieldValue.delete(),
+      previewGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+      previewGeneratedByUid: uid,
+    });
+
+    return { previewPdfUrl, status: "ready" };
+  } catch (error) {
+    console.error("convertGroupResourceToPdf failed:", error);
+    await resourceRef.update({
+      previewStatus: "failed",
+      previewError: String(error.message || error).slice(0, 300),
+      previewFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw new HttpsError("internal", error.message || "Could not convert this document.");
+  }
 });

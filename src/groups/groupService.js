@@ -924,7 +924,7 @@ export async function addGroupResource(db, { groupId, user, profile, title, url 
   const cleanUrl = url.trim();
   const cleanDescription = description.trim();
   if (!text) throw new Error("Resource title is required.");
-  await addDoc(collection(db, "groups", groupId, "channels", "resources", "messages"), {
+  const resourceRef = await addDoc(collection(db, "groups", groupId, "channels", "resources", "messages"), {
     title: text,
     text: cleanDescription || text,
     url: cleanUrl,
@@ -938,16 +938,19 @@ export async function addGroupResource(db, { groupId, user, profile, title, url 
     authorUid: user.uid,
     kind: "resource",
     pinned: false,
+    previewPdfUrl: "",
+    previewStatus: "",
     createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
+  return resourceRef;
 }
 
 export async function updateGroupResource(db, { groupId, resourceId, user, data }) {
   const text = (data.title || "").trim();
   const cleanDescription = (data.description || "").trim();
   if (!text) throw new Error("Resource title is required.");
-  await updateDoc(doc(db, "groups", groupId, "channels", "resources", "messages", resourceId), {
+  const updates = {
     title: text,
     text: cleanDescription || text,
     url: (data.url || "").trim(),
@@ -959,7 +962,10 @@ export async function updateGroupResource(db, { groupId, resourceId, user, data 
     deadline: data.deadline || null,
     editedByUid: user.uid,
     updatedAt: serverTimestamp(),
-  });
+  };
+  if (Object.prototype.hasOwnProperty.call(data, "previewPdfUrl")) updates.previewPdfUrl = data.previewPdfUrl || "";
+  if (Object.prototype.hasOwnProperty.call(data, "previewStatus")) updates.previewStatus = data.previewStatus || "";
+  await updateDoc(doc(db, "groups", groupId, "channels", "resources", "messages", resourceId), updates);
   await updateDoc(doc(db, "groups", groupId), { activityAt: serverTimestamp(), lastActivityByUid: user.uid, updatedAt: serverTimestamp() });
 }
 

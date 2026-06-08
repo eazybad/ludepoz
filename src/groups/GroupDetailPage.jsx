@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { compressImage, COMPRESSION_PRESETS } from "../imageCompression";
 import "./GroupComponents.css";
 import {
@@ -121,6 +122,7 @@ const emptyWorkSubmission = {
 const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
 const MAX_RESOURCE_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOAD_FILE_MB = Math.round(MAX_RESOURCE_FILE_BYTES / (1024 * 1024));
+const ENABLE_DOCUMENT_PDF_PREVIEWS = false;
 
 function offlineResourceStoreKey(groupId) {
   return `kampasikaOfflineResources:${groupId || "unknown"}`;
@@ -237,7 +239,8 @@ function resourcePreviewKind(resource = {}) {
   ].filter(Boolean).join(" ").toLowerCase();
   if (type.includes("image") || /\.(png|jpe?g|webp|gif|bmp|svg)(\s|$|\?)/i.test(source)) return "image";
   if (type.includes("pdf") || /\.pdf(\s|$|\?)/i.test(source)) return "pdf";
-  if (/(ppt|doc|sheet|xls)/i.test(type) || /\.(docx?|pptx?|xlsx?)(\s|$|\?)/i.test(source)) return "office";
+  if (/(ppt|doc)/i.test(type) || /\.(pptx?|docx?)(\s|$|\?)/i.test(source)) return "convertible";
+  if (/(sheet|xls)/i.test(type) || /\.(xlsx?)(\s|$|\?)/i.test(source)) return "office";
   if (/\.(txt|csv)(\s|$|\?)/i.test(source)) return "text";
   return "generic";
 }
@@ -307,6 +310,7 @@ export function GroupDetailPage({
   const [paymentSearch, setPaymentSearch] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [expandedProofUrl, setExpandedProofUrl] = useState("");
+  const [convertingResourceId, setConvertingResourceId] = useState("");
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
@@ -1155,6 +1159,7 @@ export function GroupDetailPage({
 
   const getPreviewUrl = (resource) => {
     const url = typeof resource === "string" ? resource : resource?.url;
+    if (resource?.previewPdfUrl) return resource.previewPdfUrl;
     if (!url) return "";
     const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
     if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
@@ -1172,12 +1177,37 @@ export function GroupDetailPage({
     }
     pushGroupHistory();
     setResourcePreview({
+      id: resource.id || "",
       title: resource.title || resource.text || "Resource",
       url: resource.url,
+      previewPdfUrl: resource.previewPdfUrl || "",
+      previewStatus: resource.previewStatus || "",
+      previewError: resource.previewError || "",
       previewUrl: getPreviewUrl(resource),
       type: resource.resourceType || inferResourceType(resource.fileName || resource.name || resource.url || resource.title || ""),
       kind: resourcePreviewKind(resource),
     });
+  };
+
+  const handlePrepareDocumentPreview = async (resource = resourcePreview) => {
+    if (!resource?.id || !memberCanManage || !user) return;
+    setConvertingResourceId(resource.id);
+    try {
+      const convertResource = httpsCallable(getFunctions(), "convertGroupResourceToPdf");
+      const result = await convertResource({ groupId: group.id, resourceId: resource.id });
+      const previewPdfUrl = result.data?.previewPdfUrl || "";
+      setResourcePreview(prev => prev && prev.id === resource.id ? {
+        ...prev,
+        previewPdfUrl,
+        previewUrl: previewPdfUrl || prev.previewUrl,
+        previewStatus: "ready",
+      } : prev);
+      onSuccess("PDF preview is ready.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setConvertingResourceId("");
+    }
   };
 
   const prepareResourceUploadFile = async (file) => {
@@ -1201,7 +1231,7 @@ export function GroupDetailPage({
     const filePath = `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`;
     const snap = await uploadBytes(ref(storage, filePath), uploadFile);
     const url = await getDownloadURL(snap.ref);
-    await addGroupResource(db, {
+    const resourceRef = await addGroupResource(db, {
       groupId: group.id,
       user,
       profile,
@@ -1212,6 +1242,9 @@ export function GroupDetailPage({
       resourceType: inferResourceType(uploadFile.name || file.name) || "File",
       fileName: file.name,
     });
+    if (ENABLE_DOCUMENT_PDF_PREVIEWS && resourcePreviewKind({ fileName: file.name, resourceType: inferResourceType(uploadFile.name || file.name) }) === "convertible") {
+      await handlePrepareDocumentPreview({ id: resourceRef.id });
+    }
   };
 
   const toggleWorkGroupMember = (uid) => {
@@ -3245,8 +3278,26 @@ export function GroupDetailPage({
               <h3>{resourcePreview.title}</h3>
               <button className="group-btn ghost compact" type="button" onClick={() => setResourcePreview(null)}>Close</button>
             </div>
+            {resourcePreview.kind === "convertible" && (
+              <div className="resource-preview-note">
+                {resourcePreview.previewPdfUrl
+                  ? "Converted PDF preview is ready for smooth reading inside Kampasika."
+                  : ENABLE_DOCUMENT_PDF_PREVIEWS
+                    ? "PPT/PPTX/DOC/DOCX file. Open original for now, or let a group leader prepare a PDF preview."
+                    : "PPT/PPTX/DOC/DOCX file. Use Open original to view it smoothly."}
+              </div>
+            )}
             {resourcePreview.kind === "image" ? (
               <img className="resource-preview-image" src={resourcePreview.previewUrl} alt={resourcePreview.title} />
+            ) : resourcePreview.kind === "convertible" && !resourcePreview.previewPdfUrl ? (
+              <div className="resource-preview-fallback">
+                <MenuIcon name="file" />
+                <strong>{resourcePreview.type || "Document"}</strong>
+                <span>Open the original file to view it smoothly.</span>
+                {resourcePreview.previewStatus === "failed" && resourcePreview.previewError ? (
+                  <small>{resourcePreview.previewError}</small>
+                ) : null}
+              </div>
             ) : resourcePreview.kind === "generic" ? (
               <div className="resource-preview-fallback">
                 <MenuIcon name="file" />
@@ -3257,7 +3308,12 @@ export function GroupDetailPage({
               <iframe className="resource-preview-frame" src={resourcePreview.previewUrl} title={resourcePreview.title} />
             )}
             <div className="group-inline-actions">
-              <a className="group-btn ghost group-link-btn" href={resourcePreview.url} target="_blank" rel="noreferrer">Open original</a>
+              {ENABLE_DOCUMENT_PDF_PREVIEWS && resourcePreview.kind === "convertible" && !resourcePreview.previewPdfUrl && memberCanManage && resourcePreview.id && (
+                <button className="group-btn primary group-link-btn" type="button" disabled={!!convertingResourceId} onClick={() => handlePrepareDocumentPreview(resourcePreview)}>
+                  {convertingResourceId === resourcePreview.id ? "Preparing..." : "Prepare PDF preview"}
+                </button>
+              )}
+              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={resourcePreview.url} target="_blank" rel="noreferrer">Open original</a>
             </div>
           </div>
         </div>

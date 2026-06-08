@@ -262,6 +262,8 @@ export function GroupListPage({
 }
 
 export function CreateGroupModal({ data, onChange, onClose, onCreate, uploading }) {
+  const [showMembers, setShowMembers] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const typeOptions = [
     ["class", "Class / Year"],
     ["church", "Faith group"],
@@ -284,38 +286,57 @@ export function CreateGroupModal({ data, onChange, onClose, onCreate, uploading 
             onChange={event => onChange({ ...data, name: event.target.value })}
           />
         </div>
-        <div className="group-field">
-          <label>Description</label>
-          <input
-            type="text"
-            placeholder="Announcements, payments, resources..."
-            value={data.desc}
-            onChange={event => onChange({ ...data, desc: event.target.value })}
-          />
-        </div>
-        <div className="group-field">
-          <label>Group type</label>
-          <div className="group-choice-row">
-            {typeOptions.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={`group-choice ${data.type === id ? "active" : ""}`}
-                onClick={() => onChange({ ...data, type: id })}
-              >
-                {label}
-              </button>
-            ))}
+
+        <button className="group-option-row" type="button" onClick={() => setShowMembers(value => !value)}>
+          <span>Add members</span>
+          <strong>{showMembers ? "Hide" : "Open"}</strong>
+        </button>
+        {showMembers && (
+          <div className="group-create-note">
+            Create the group first, then share the invite link or approve members from the Members tab.
           </div>
-        </div>
-        <div className="group-field">
-          <label>Who can join?</label>
-          <select value={data.visibility || "public"} onChange={event => onChange({ ...data, visibility: event.target.value })}>
-            <option value="public">Public - students can discover and join</option>
-            <option value="inviteOnly">Invite only - link holders can join</option>
-            <option value="approvalRequired">Approval required - admins approve requests</option>
-          </select>
-        </div>
+        )}
+
+        <button className="group-option-row" type="button" onClick={() => setShowMore(value => !value)}>
+          <span>More</span>
+          <strong>{showMore ? "Hide" : "Open"}</strong>
+        </button>
+        {showMore && (
+          <>
+            <div className="group-field">
+              <label>Description</label>
+              <input
+                type="text"
+                placeholder="Announcements, payments, resources..."
+                value={data.desc}
+                onChange={event => onChange({ ...data, desc: event.target.value })}
+              />
+            </div>
+            <div className="group-field">
+              <label>Group type</label>
+              <div className="group-choice-row">
+                {typeOptions.map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`group-choice ${data.type === id ? "active" : ""}`}
+                    onClick={() => onChange({ ...data, type: id })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="group-field">
+              <label>Who can join?</label>
+              <select value={data.visibility || "public"} onChange={event => onChange({ ...data, visibility: event.target.value })}>
+                <option value="public">Public - students can discover and join</option>
+                <option value="inviteOnly">Invite only - link holders can join</option>
+                <option value="approvalRequired">Approval required - admins approve requests</option>
+              </select>
+            </div>
+          </>
+        )}
         <button className="group-btn primary" type="button" disabled={uploading || !data.name.trim()} style={{ width: "100%" }} onClick={onCreate}>
           {uploading ? "Creating..." : "Create Group"}
         </button>
