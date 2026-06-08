@@ -3357,11 +3357,6 @@ useEffect(() => {
       setError("Password must be at least 6 characters.");
       return;
     }
-    if (!isStudent && !signupLocation.trim()) {
-      setError("Please tell us where you operate, for example Survey or Mlimani.");
-      return;
-    }
-
     const chosenUni = DEFAULT_UNI;
 
     try {
@@ -3373,19 +3368,15 @@ useEffect(() => {
       const userDoc = {
         name: signupName.trim(),
         email: cleanEmail,
-        accountType: isStudent ? "student" : "provider",
+        accountType: "student",
         avatarUrl: null,
         bio: "",
         services: [],
         createdAt: serverTimestamp()
       };
 
-      if (isStudent) {
-        userDoc.universityId = chosenUni.id;
-        userDoc.universityName = chosenUni.short;
-      } else {
-        userDoc.location = signupLocation.trim();
-      }
+      userDoc.universityId = chosenUni.id;
+      userDoc.universityName = chosenUni.short;
 
       await setDoc(doc(db, "users", userCredential.user.uid), userDoc);
 
@@ -10345,7 +10336,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account to sell, message sellers, and save items</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email address</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'12px'}}>
+                {false && <>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Are you a student?</label>
                   <div style={{display:'flex',gap:'8px'}}>
                     <button type="button" onClick={()=>setIsStudent(true)} style={{
@@ -10378,9 +10369,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       ? 'Students at ARU can sell goods, offer services, find rooms.'
                       : 'Providers (barbers, tailors, landlords, vendors) can list services near campus.'}
                   </div>
-                </div>
+                </>}
 
-                {!isStudent && (
+                {false && (
                   <div style={{marginBottom:'12px'}}>
                     <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Your location / area *</label>
                     <input type="text" placeholder="e.g. Kijitonyama, Mlimani, Ubungo" value={signupLocation} onChange={e=>setSignupLocation(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
