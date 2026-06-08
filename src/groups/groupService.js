@@ -735,7 +735,7 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
 }
 
 export function subscribeGroupMembers(db, groupId, onNext, onError = console.error) {
-  return onSnapshot(collection(db, "groups", groupId, "members"), snap => {
+  return onSnapshot(collection(db, "groups", groupId, "members"), { includeMetadataChanges: true }, snap => {
     const items = snap.docs
       .map(d => ({
         id: d.id,
@@ -748,26 +748,29 @@ export function subscribeGroupMembers(db, groupId, onNext, onError = console.err
         const bTime = b.joinedAt?.getTime?.() || b.requestedAt?.getTime?.() || 0;
         return aTime - bTime;
       });
-    onNext(items);
+    onNext(items, { fromCache: snap.metadata.fromCache, hasPendingWrites: snap.metadata.hasPendingWrites });
   }, onError);
 }
 
 export function subscribeChannelMessages(db, groupId, channelId, onNext, onError = console.error) {
   const q = query(collection(db, "groups", groupId, "channels", channelId, "messages"), orderBy("createdAt", "desc"));
-  return onSnapshot(q, snap => {
-    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })));
+  return onSnapshot(q, { includeMetadataChanges: true }, snap => {
+    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })), {
+      fromCache: snap.metadata.fromCache,
+      hasPendingWrites: snap.metadata.hasPendingWrites,
+    });
   }, onError);
 }
 
 export function subscribeGroupWorkGroups(db, groupId, onNext, onError = console.error) {
   const q = query(collection(db, "groups", groupId, "workGroups"), orderBy("createdAt", "asc"));
-  return onSnapshot(q, snap => {
+  return onSnapshot(q, { includeMetadataChanges: true }, snap => {
     onNext(snap.docs.map(d => ({
       id: d.id,
       ...d.data(),
       createdAt: d.data().createdAt?.toDate?.() || null,
       submittedAt: d.data().submittedAt?.toDate?.() || null,
-    })));
+    })), { fromCache: snap.metadata.fromCache, hasPendingWrites: snap.metadata.hasPendingWrites });
   }, onError);
 }
 
@@ -1075,14 +1078,20 @@ export async function archiveUniversityGroup(db, { groupId, user, mode = "archiv
 
 export function subscribeGroupCollections(db, groupId, onNext, onError = console.error) {
   const q = query(collection(db, "groups", groupId, "collections"), orderBy("createdAt", "desc"));
-  return onSnapshot(q, snap => {
-    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })));
+  return onSnapshot(q, { includeMetadataChanges: true }, snap => {
+    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })), {
+      fromCache: snap.metadata.fromCache,
+      hasPendingWrites: snap.metadata.hasPendingWrites,
+    });
   }, onError);
 }
 
 export function subscribeGroupCollection(db, groupId, collectionId, onNext, onError = console.error) {
-  return onSnapshot(doc(db, "groups", groupId, "collections", collectionId), snap => {
-    onNext(snap.exists() ? [{ id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate?.() || null }] : []);
+  return onSnapshot(doc(db, "groups", groupId, "collections", collectionId), { includeMetadataChanges: true }, snap => {
+    onNext(snap.exists() ? [{ id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate?.() || null }] : [], {
+      fromCache: snap.metadata.fromCache,
+      hasPendingWrites: snap.metadata.hasPendingWrites,
+    });
   }, onError);
 }
 
@@ -1285,14 +1294,20 @@ export function subscribePublicGroupEvents(db, onNext, onError = console.error) 
 
 export function subscribeCollectionPayments(db, groupId, collectionId, onNext, onError = console.error) {
   const q = query(collection(db, "groups", groupId, "collections", collectionId, "payments"), orderBy("createdAt", "desc"));
-  return onSnapshot(q, snap => {
-    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })));
+  return onSnapshot(q, { includeMetadataChanges: true }, snap => {
+    onNext(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() || null })), {
+      fromCache: snap.metadata.fromCache,
+      hasPendingWrites: snap.metadata.hasPendingWrites,
+    });
   }, onError);
 }
 
 export function subscribeMyCollectionPayment(db, groupId, collectionId, uid, onNext, onError = console.error) {
-  return onSnapshot(doc(db, "groups", groupId, "collections", collectionId, "payments", uid), snap => {
-    onNext(snap.exists() ? [{ id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate?.() || null }] : []);
+  return onSnapshot(doc(db, "groups", groupId, "collections", collectionId, "payments", uid), { includeMetadataChanges: true }, snap => {
+    onNext(snap.exists() ? [{ id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate?.() || null }] : [], {
+      fromCache: snap.metadata.fromCache,
+      hasPendingWrites: snap.metadata.hasPendingWrites,
+    });
   }, onError);
 }
 

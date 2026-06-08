@@ -143,6 +143,42 @@ function writeOfflineResourceStore(groupId, value) {
   } catch (_) {}
 }
 
+function groupScreenCacheKey(groupId) {
+  return `kampasikaGroupScreen:${groupId || "unknown"}`;
+}
+
+function encodeCacheValue(value) {
+  if (value instanceof Date) return { __kampasikaDate: value.toISOString() };
+  if (Array.isArray(value)) return value.map(encodeCacheValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encodeCacheValue(item)]));
+  }
+  return value;
+}
+
+function decodeCacheValue(value) {
+  if (Array.isArray(value)) return value.map(decodeCacheValue);
+  if (value && typeof value === "object") {
+    if (value.__kampasikaDate) return new Date(value.__kampasikaDate);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decodeCacheValue(item)]));
+  }
+  return value;
+}
+
+function readGroupScreenCache(groupId) {
+  try {
+    return decodeCacheValue(JSON.parse(localStorage.getItem(groupScreenCacheKey(groupId)) || "null")) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeGroupScreenCache(groupId, value) {
+  try {
+    localStorage.setItem(groupScreenCacheKey(groupId), JSON.stringify(encodeCacheValue(value)));
+  } catch (_) {}
+}
+
 function MenuIcon({ name }) {
   const common = {
     width: "22",
@@ -258,6 +294,16 @@ function eventPosterStatus(item = {}) {
   return { text: "Poster is still attaching...", kind: "" };
 }
 
+function savedFileSection(resource = {}) {
+  const value = `${resource.resourceType || ""} ${resource.fileName || ""} ${resource.title || ""} ${resource.url || ""}`.toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/.test(value) || value.includes("image")) return "Images";
+  if (/\.(pdf)(\?|$)/.test(value) || value.includes("pdf")) return "PDFs";
+  if (/\.(pptx?|docx?|xlsx?)(\?|$)/.test(value) || value.includes("document") || value.includes("slide") || value.includes("office")) return "Documents";
+  if (/\.(mp4|webm|mov|m4v)(\?|$)/.test(value) || value.includes("video")) return "Videos";
+  if (/\.(mp3|wav|m4a|ogg)(\?|$)/.test(value) || value.includes("audio")) return "Audio";
+  return "Other files";
+}
+
 export function GroupDetailPage({
   db,
   storage,
@@ -282,6 +328,7 @@ export function GroupDetailPage({
   initialSource = "",
   groupHasUnread = false,
   groupReadAtValue = 0,
+  isOffline = false,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || "chats");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -338,9 +385,12 @@ export function GroupDetailPage({
   const [savedOfflineResources, setSavedOfflineResources] = useState({});
   // eslint-disable-next-line no-unused-vars
   const [savingOfflineResourceId, setSavingOfflineResourceId] = useState("");
+  const [networkOffline, setNetworkOffline] = useState(() => isOffline || !navigator.onLine);
+  const [screenCacheState, setScreenCacheState] = useState({ hydrated: false, fromCache: false, hasPendingWrites: false, savedAt: 0 });
   // eslint-disable-next-line no-unused-vars
   const [resourcePreview, setResourcePreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const screenCacheRef = useRef({});
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
@@ -374,6 +424,16 @@ export function GroupDetailPage({
   const canViewPublicSelectedEvent = selectedCollection?.collectionType === "event" && selectedCollection.visibility === "public";
   const myPayment = payments.find(payment => payment.uid === user?.uid || payment.id === user?.uid) || null;
   const myPaymentRemaining = Math.max(0, Number(selectedCollection?.amount || 0) - Number(myPayment?.amountPaid || 0));
+  const cacheSavedLabel = screenCacheState.savedAt
+    ? new Date(screenCacheState.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+  const screenConnectionMessage = networkOffline
+    ? (screenCacheState.savedAt ? `Offline - showing saved group data from ${cacheSavedLabel}` : "Offline - open this group once online to save its data here")
+    : screenCacheState.fromCache
+      ? "Showing saved data while Kampasika reconnects..."
+      : screenCacheState.hasPendingWrites
+        ? "Saving changes when the network catches up..."
+        : "";
   const myPaymentStatusLabel = myPayment?.status === "paid"
     ? "Paid"
     : myPayment?.status === "registered"
@@ -413,6 +473,29 @@ export function GroupDetailPage({
     && message.createdAt.getTime() > openedReadAtRef.current
   )), [chatMessages, user?.uid]);
   const firstUnreadMessageId = unreadChatMessages[0]?.id || "";
+  const noteSnapshotMeta = useCallback((meta = {}) => {
+    setScreenCacheState(prev => ({
+      ...prev,
+      fromCache: !!meta.fromCache,
+      hasPendingWrites: !!meta.hasPendingWrites,
+    }));
+  }, []);
+  const rememberGroupScreen = useCallback((patch = {}) => {
+    if (!group?.id) return;
+    const previous = screenCacheRef.current || {};
+    const next = {
+      ...previous,
+      ...patch,
+      paymentsByCollection: {
+        ...(previous.paymentsByCollection || {}),
+        ...(patch.paymentsByCollection || {}),
+      },
+      savedAt: Date.now(),
+    };
+    screenCacheRef.current = next;
+    writeGroupScreenCache(group.id, next);
+    setScreenCacheState(prev => ({ ...prev, savedAt: next.savedAt }));
+  }, [group?.id]);
   const sortedResources = useMemo(() => [...resources].sort((a, b) => (
     (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0)
   )), [resources]);
@@ -431,6 +514,19 @@ export function GroupDetailPage({
     }
     return items.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
   }, [groupedResources, resourceSortMode, selectedResourceSubject]);
+  const savedOfflineResourceList = useMemo(() => Object.entries(savedOfflineResources)
+    .map(([id, saved]) => {
+      const liveResource = resources.find(resource => resource.id === id) || {};
+      const merged = { ...saved, ...liveResource, id, savedAt: saved.savedAt || liveResource.savedAt || 0 };
+      return { ...merged, section: savedFileSection(merged) };
+    })
+    .sort((a, b) => Number(b.savedAt || 0) - Number(a.savedAt || 0)), [resources, savedOfflineResources]);
+  const savedOfflineResourceGroups = useMemo(() => savedOfflineResourceList.reduce((acc, resource) => {
+    const key = resource.section || "Other files";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(resource);
+    return acc;
+  }, {}), [savedOfflineResourceList]);
 
   useEffect(() => {
     setSavedOfflineResources(readOfflineResourceStore(group.id));
@@ -560,6 +656,17 @@ export function GroupDetailPage({
   }, [showChatTools]);
 
   useEffect(() => {
+    const updateNetworkState = () => setNetworkOffline(isOffline || !navigator.onLine);
+    updateNetworkState();
+    window.addEventListener("online", updateNetworkState);
+    window.addEventListener("offline", updateNetworkState);
+    return () => {
+      window.removeEventListener("online", updateNetworkState);
+      window.removeEventListener("offline", updateNetworkState);
+    };
+  }, [isOffline]);
+
+  useEffect(() => {
     if (!group?.id) return undefined;
     setActiveTab(initialTab || "chats");
     setMenuOpen(false);
@@ -589,6 +696,26 @@ export function GroupDetailPage({
   }, [group?.id, user?.uid, initialTab, initialCollectionId, initialCollection]);
 
   useEffect(() => {
+    if (!group?.id) return;
+    const cached = readGroupScreenCache(group.id);
+    screenCacheRef.current = cached;
+    if (!cached.savedAt) {
+      setScreenCacheState({ hydrated: false, fromCache: false, hasPendingWrites: false, savedAt: 0 });
+      return;
+    }
+    setMembers(cached.members || []);
+    setMessages(cached.messages || []);
+    setResources(cached.resources || []);
+    setWorkGroups(cached.workGroups || []);
+    setCollections(cached.collections?.length ? cached.collections : (initialCollection ? [initialCollection] : []));
+    if (initialCollectionId && cached.paymentsByCollection?.[initialCollectionId]) {
+      setPayments(cached.paymentsByCollection[initialCollectionId]);
+    }
+    setMembersLoaded(true);
+    setScreenCacheState(prev => ({ ...prev, hydrated: true, savedAt: cached.savedAt || 0 }));
+  }, [group?.id, initialCollection, initialCollectionId]);
+
+  useEffect(() => {
     if (!group?.id) return undefined;
     if (!user?.uid) {
       setMembers([]);
@@ -596,8 +723,10 @@ export function GroupDetailPage({
       return undefined;
     }
     setMembersLoaded(false);
-    const unsubMembers = subscribeGroupMembers(db, group.id, items => {
+    const unsubMembers = subscribeGroupMembers(db, group.id, (items, meta) => {
       setMembers(items);
+      rememberGroupScreen({ members: items });
+      noteSnapshotMeta(meta);
       setMembersLoaded(true);
     }, err => {
       setMembersLoaded(true);
@@ -606,7 +735,7 @@ export function GroupDetailPage({
     return () => {
       unsubMembers();
     };
-  }, [db, group?.id, onError, user?.uid]);
+  }, [db, group?.id, noteSnapshotMeta, onError, rememberGroupScreen, user?.uid]);
 
   useEffect(() => {
     const canPreviewPublicGroup = group.visibility === "public" || group.joinPolicy === "public";
@@ -619,15 +748,29 @@ export function GroupDetailPage({
       setSelectedCollectionId(initialCollectionId || "");
       return undefined;
     }
-    const unsubMessages = canViewGroupContent ? subscribeChannelMessages(db, group.id, "chats", setMessages, onError) : null;
-    const unsubResources = (canViewGroupContent || canPreviewPublicGroup) ? subscribeChannelMessages(db, group.id, "resources", setResources, onError) : null;
-    const unsubWorkGroups = (canViewGroupContent || canPreviewPublicGroup) ? subscribeGroupWorkGroups(db, group.id, setWorkGroups, onError) : null;
+    const unsubMessages = canViewGroupContent ? subscribeChannelMessages(db, group.id, "chats", (items, meta) => {
+      setMessages(items);
+      rememberGroupScreen({ messages: items.slice(0, 100) });
+      noteSnapshotMeta(meta);
+    }, onError) : null;
+    const unsubResources = (canViewGroupContent || canPreviewPublicGroup) ? subscribeChannelMessages(db, group.id, "resources", (items, meta) => {
+      setResources(items);
+      rememberGroupScreen({ resources: items.slice(0, 250) });
+      noteSnapshotMeta(meta);
+    }, onError) : null;
+    const unsubWorkGroups = (canViewGroupContent || canPreviewPublicGroup) ? subscribeGroupWorkGroups(db, group.id, (items, meta) => {
+      setWorkGroups(items);
+      rememberGroupScreen({ workGroups: items.slice(0, 100) });
+      noteSnapshotMeta(meta);
+    }, onError) : null;
     const subscribeCollections = (canViewGroupContent || canPreviewPublicGroup)
       ? (next) => subscribeGroupCollections(db, group.id, next, onError)
       : (next) => subscribeGroupCollection(db, group.id, initialCollectionId, next, onError);
-    const unsubCollections = subscribeCollections(items => {
+    const unsubCollections = subscribeCollections((items, meta) => {
       const nextItems = items.length ? items : initialCollection ? [initialCollection] : [];
       setCollections(nextItems);
+      rememberGroupScreen({ collections: nextItems.slice(0, 150) });
+      noteSnapshotMeta(meta);
       setPendingEventPhotoPreviews(prev => {
         const next = { ...prev };
         nextItems.forEach(item => {
@@ -643,7 +786,7 @@ export function GroupDetailPage({
       unsubWorkGroups?.();
       unsubCollections();
     };
-  }, [canViewGroupContent, db, group?.id, group.visibility, group.joinPolicy, initialCollection, initialCollectionId, onError]);
+  }, [canViewGroupContent, db, group?.id, group.visibility, group.joinPolicy, initialCollection, initialCollectionId, noteSnapshotMeta, onError, rememberGroupScreen]);
 
   useEffect(() => {
     if (!group?.id || !selectedCollection?.id) {
@@ -651,14 +794,28 @@ export function GroupDetailPage({
       return undefined;
     }
     if (memberCanVerify) {
-      return subscribeCollectionPayments(db, group.id, selectedCollection.id, setPayments, onError);
+      return subscribeCollectionPayments(db, group.id, selectedCollection.id, (items, meta) => {
+        setPayments(items);
+        rememberGroupScreen({ paymentsByCollection: { [selectedCollection.id]: items.slice(0, 250) } });
+        noteSnapshotMeta(meta);
+      }, onError);
     }
     if (user?.uid) {
-      return subscribeMyCollectionPayment(db, group.id, selectedCollection.id, user.uid, setPayments, onError);
+      return subscribeMyCollectionPayment(db, group.id, selectedCollection.id, user.uid, (items, meta) => {
+        setPayments(items);
+        rememberGroupScreen({ paymentsByCollection: { [selectedCollection.id]: items.slice(0, 20) } });
+        noteSnapshotMeta(meta);
+      }, onError);
     }
     setPayments([]);
     return undefined;
-  }, [db, group?.id, selectedCollection?.id, memberCanVerify, user?.uid, onError]);
+  }, [db, group?.id, selectedCollection?.id, memberCanVerify, user?.uid, noteSnapshotMeta, onError, rememberGroupScreen]);
+
+  useEffect(() => {
+    if (!selectedCollection?.id) return;
+    const cachedPayments = screenCacheRef.current?.paymentsByCollection?.[selectedCollection.id];
+    if (cachedPayments?.length) setPayments(cachedPayments);
+  }, [selectedCollection?.id]);
 
   useEffect(() => {
     if (activeTab !== "chats") return;
@@ -1162,7 +1319,11 @@ export function GroupDetailPage({
         [resource.id]: {
           url: resource.url,
           title: resource.title || resource.text || "Saved resource",
+          fileName: resource.fileName || "",
           resourceType: resource.resourceType || "",
+          contentType: response.headers.get("content-type") || "",
+          size: Number(response.headers.get("content-length") || 0),
+          subject: resource.subject || "",
           savedAt: Date.now(),
         },
       };
@@ -1197,6 +1358,24 @@ export function GroupDetailPage({
       setTimeout(() => URL.revokeObjectURL(savedUrl), 60000);
     } catch (err) {
       onError(new Error("Could not open the saved copy. Try opening the original link when online."));
+    }
+  };
+
+  const handleRemoveSavedResource = async (resource) => {
+    const saved = savedOfflineResources[resource.id];
+    const savedUrl = saved?.url || resource.url;
+    try {
+      if (savedUrl && "caches" in window) {
+        const cache = await caches.open(OFFLINE_RESOURCE_CACHE);
+        await cache.delete(savedUrl);
+      }
+      const nextSaved = { ...savedOfflineResources };
+      delete nextSaved[resource.id];
+      setSavedOfflineResources(nextSaved);
+      writeOfflineResourceStore(group.id, nextSaved);
+      onSuccess("Removed saved copy from this device.");
+    } catch (err) {
+      onError(new Error("Could not remove the saved copy. Try again."));
     }
   };
 
@@ -2058,6 +2237,12 @@ export function GroupDetailPage({
         )}
         {(canViewGroupContent || canViewPublicSelectedEvent) && <div className="group-current-channel">{activeTab}</div>}
       </div>
+
+      {screenConnectionMessage && (
+        <div className={`group-connection-strip ${networkOffline ? "offline" : ""}`}>
+          {screenConnectionMessage}
+        </div>
+      )}
 
       {(!user || membersLoaded) && !canViewGroupContent && !canViewPublicSelectedEvent && (
         <div className="group-panel">
@@ -2932,6 +3117,40 @@ export function GroupDetailPage({
                   <span>{resource.subject || "General"}{resource.topic ? ` - ${resource.topic}` : ""}</span>
                 </button>
               ))}
+            </div>
+          )}
+          {savedOfflineResourceList.length > 0 && (
+            <div className="saved-files-panel">
+              <div className="saved-files-head">
+                <div>
+                  <strong>Saved files</strong>
+                  <span>{savedOfflineResourceList.length} available on this device</span>
+                </div>
+              </div>
+              <div className="saved-files-grid">
+                {Object.entries(savedOfflineResourceGroups).map(([section, items]) => (
+                  <div key={section} className="saved-files-section">
+                    <div className="saved-files-section-title">
+                      <strong>{section}</strong>
+                      <span>{items.length}</span>
+                    </div>
+                    {items.map(resource => (
+                      <div key={resource.id} className="saved-file-row">
+                        <button type="button" onClick={() => handleOpenSavedResource(resource)}>
+                          <strong>{resource.title || resource.fileName || "Saved file"}</strong>
+                          <span>
+                            {resource.subject || "Saved"}
+                            {resource.savedAt ? ` - ${new Date(resource.savedAt).toLocaleDateString()}` : ""}
+                          </span>
+                        </button>
+                        <button type="button" className="saved-file-remove" aria-label="Remove saved file" onClick={() => handleRemoveSavedResource(resource)}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {sortedResources.length === 0 ? (
