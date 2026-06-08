@@ -1411,22 +1411,25 @@ export function GroupDetailPage({
   };
 
   const handleCreateTracker = async () => {
-    if (!trackerData.title.trim() || (trackerData.collectionType !== "event" && !trackerData.amount)) {
-      onError(new Error(trackerData.collectionType === "event" ? "Event title is required." : "Tracker title and amount are required."));
+    const effectiveCollectionType = activeTab === "events" ? "event" : trackerData.collectionType;
+    if (!trackerData.title.trim() || (effectiveCollectionType !== "event" && !trackerData.amount)) {
+      onError(new Error(effectiveCollectionType === "event" ? "Event title is required." : "Tracker title and amount are required."));
       return;
     }
     setBusy(true);
-    setGroupUploadStatus(trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
+    setGroupUploadStatus(effectiveCollectionType === "event" ? "Creating event..." : "Saving tracker...");
     try {
       let photoFile = trackerData.photoFile || null;
       const data = {
         ...trackerData,
+        collectionType: effectiveCollectionType,
+        visibility: effectiveCollectionType === "event" ? (trackerData.visibility || "public") : trackerData.visibility,
         photoFile,
         paymentMethods: typeof trackerData.paymentMethods === "string"
           ? trackerData.paymentMethods.split(",").map(item => item.trim()).filter(Boolean)
           : trackerData.paymentMethods || [],
       };
-      setGroupUploadStatus(trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
+      setGroupUploadStatus(effectiveCollectionType === "event" ? "Creating event..." : "Saving tracker...");
       let createdTracker = null;
       if (editingTrackerId) {
         await updateGroupCollection(db, {
@@ -1449,8 +1452,9 @@ export function GroupDetailPage({
       setEditingTrackerId("");
       setShowTrackerForm(false);
       if (activeTab === "payments" && createdTracker) setSelectedCollectionId(createdTracker.id);
+      if (activeTab === "events" && createdTracker) setSelectedCollectionId(createdTracker.id);
       markCurrentGroupRead();
-      onSuccess(editingTrackerId ? "Tracker updated." : trackerData.collectionType === "event" ? "Event created." : "Payment tracker created.");
+      onSuccess(editingTrackerId ? "Tracker updated." : effectiveCollectionType === "event" ? "Event created." : "Payment tracker created.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1854,7 +1858,11 @@ export function GroupDetailPage({
         {trackerData.photoPreview && <img className="tracker-photo-preview" src={trackerData.photoPreview} alt="Preview" />}
       </div>
       <div className="group-field"><label>Title</label><input value={trackerData.title} onChange={event => setTrackerData({ ...trackerData, title: event.target.value })} placeholder={trackerData.collectionType === "event" ? "ARU Freshers welcome night" : "Studio model materials"} /></div>
-      <div className="group-field"><label>Type</label><select value={trackerData.collectionType} onChange={event => setTrackerData({ ...trackerData, collectionType: event.target.value, visibility: event.target.value === "event" ? "public" : "groupOnly", amount: event.target.value === "event" ? trackerData.amount : trackerData.amount })}><option value="contribution">Contribution</option><option value="order">Group order</option><option value="event">Event registration</option></select></div>
+      {activeTab === "events" ? (
+        <div className="payment-alert compact">Event registration</div>
+      ) : (
+        <div className="group-field"><label>Type</label><select value={trackerData.collectionType} onChange={event => setTrackerData({ ...trackerData, collectionType: event.target.value, visibility: event.target.value === "event" ? "public" : "groupOnly", amount: event.target.value === "event" ? trackerData.amount : trackerData.amount })}><option value="contribution">Contribution</option><option value="order">Group order</option><option value="event">Event registration</option></select></div>
+      )}
       <div className="group-field"><label>Visibility</label><select value={trackerData.visibility} onChange={event => setTrackerData({ ...trackerData, visibility: event.target.value })}><option value="groupOnly">Group members only</option><option value="public">Public - all students can participate</option><option value="inviteOnly">Invite link only</option></select></div>
       <div className="group-field"><label>{trackerData.collectionType === "event" ? "Payment amount, optional" : "Amount per member"}</label><input type="number" value={trackerData.amount} onChange={event => setTrackerData({ ...trackerData, amount: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Leave empty for free registration" : "10000"} /></div>
       <div className="group-field"><label>Expected people</label><input type="number" value={trackerData.expectedPeople} onChange={event => setTrackerData({ ...trackerData, expectedPeople: event.target.value })} placeholder="45" /></div>
