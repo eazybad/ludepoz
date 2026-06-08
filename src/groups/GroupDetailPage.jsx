@@ -226,6 +226,22 @@ function inferResourceType(value = "") {
   return "";
 }
 
+function resourcePreviewKind(resource = {}) {
+  const type = String(resource.resourceType || "").toLowerCase();
+  const source = [
+    resource.fileName,
+    resource.name,
+    resource.title,
+    resource.text,
+    resource.url,
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (type.includes("image") || /\.(png|jpe?g|webp|gif|bmp|svg)(\s|$|\?)/i.test(source)) return "image";
+  if (type.includes("pdf") || /\.pdf(\s|$|\?)/i.test(source)) return "pdf";
+  if (/(ppt|doc|sheet|xls)/i.test(type) || /\.(docx?|pptx?|xlsx?)(\s|$|\?)/i.test(source)) return "office";
+  if (/\.(txt|csv)(\s|$|\?)/i.test(source)) return "text";
+  return "generic";
+}
+
 export function GroupDetailPage({
   db,
   storage,
@@ -1137,12 +1153,13 @@ export function GroupDetailPage({
     }
   };
 
-  const getPreviewUrl = (url) => {
+  const getPreviewUrl = (resource) => {
+    const url = typeof resource === "string" ? resource : resource?.url;
     if (!url) return "";
     const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
     if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
-    if (/\.(doc|docx|ppt|pptx|xls|xlsx)(\?|#|$)/i.test(url)) {
-      return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+    if (resourcePreviewKind(resource).includes("office")) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -1157,8 +1174,9 @@ export function GroupDetailPage({
     setResourcePreview({
       title: resource.title || resource.text || "Resource",
       url: resource.url,
-      previewUrl: getPreviewUrl(resource.url),
-      type: resource.resourceType || inferResourceType(resource.url || resource.title || ""),
+      previewUrl: getPreviewUrl(resource),
+      type: resource.resourceType || inferResourceType(resource.fileName || resource.name || resource.url || resource.title || ""),
+      kind: resourcePreviewKind(resource),
     });
   };
 
@@ -2028,6 +2046,7 @@ export function GroupDetailPage({
                                 title: attachment.name,
                                 text: attachment.name,
                                 url: attachment.url,
+                                fileName: attachment.name,
                                 resourceType: attachment.resourceType || inferResourceType(attachment.name || attachment.url || ""),
                               });
                             }}
@@ -3226,8 +3245,14 @@ export function GroupDetailPage({
               <h3>{resourcePreview.title}</h3>
               <button className="group-btn ghost compact" type="button" onClick={() => setResourcePreview(null)}>Close</button>
             </div>
-            {String(resourcePreview.type || "").toLowerCase().includes("image") ? (
+            {resourcePreview.kind === "image" ? (
               <img className="resource-preview-image" src={resourcePreview.previewUrl} alt={resourcePreview.title} />
+            ) : resourcePreview.kind === "generic" ? (
+              <div className="resource-preview-fallback">
+                <MenuIcon name="file" />
+                <strong>{resourcePreview.type || "File"}</strong>
+                <span>This file type cannot be previewed inside Kampasika yet.</span>
+              </div>
             ) : (
               <iframe className="resource-preview-frame" src={resourcePreview.previewUrl} title={resourcePreview.title} />
             )}

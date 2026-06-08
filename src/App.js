@@ -340,6 +340,7 @@ function App() {
   const [showAdvancedCollection, setShowAdvancedCollection] = useState(false);
   // Groups
   const [groups, setGroups] = useState([]);
+  const [myGroupMemberships, setMyGroupMemberships] = useState({});
   const [publicGroupEvents, setPublicGroupEvents] = useState([]);
   const [groupReadAt, setGroupReadAt] = useState(() => {
     try { return JSON.parse(localStorage.getItem("groupReadAt") || "{}"); }
@@ -3078,6 +3079,30 @@ await updateDoc(convRef, {
   }, [loadGroups]);
 
   useEffect(() => {
+    if (!user?.uid) {
+      setMyGroupMemberships({});
+      return undefined;
+    }
+    const membershipsQuery = query(collectionGroup(db, "members"), where("uid", "==", user.uid));
+    const unsubscribe = onSnapshot(membershipsQuery, snap => {
+      const memberships = {};
+      snap.docs.forEach(memberDoc => {
+        const groupId = memberDoc.ref.parent.parent?.id;
+        if (!groupId) return;
+        const data = memberDoc.data();
+        if (data.status !== "removed" && data.status !== "left" && data.status !== "rejected") {
+          memberships[groupId] = data.status || "active";
+        }
+      });
+      setMyGroupMemberships(memberships);
+    }, err => {
+      console.error("my group memberships:", err);
+      setMyGroupMemberships({});
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  useEffect(() => {
     let unsubscribe;
     try {
       unsubscribe = subscribePublicGroupEvents(db, setPublicGroupEvents, (err) => console.error("public group events:", err));
@@ -4362,7 +4387,24 @@ const loadSellerStats = useCallback(async (userId) => {
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
   const currentUniId = selectedUni?.id || "aru";
-  const groupsForSelectedUni = groups.filter(group => group.active !== false && (group.uniId || currentUniId) === currentUniId);
+  const canSeeInviteOnlyGroup = (group) => (
+    !!user?.uid
+    && (
+      group.ownerUid === user.uid
+      || group.adminUid === user.uid
+      || (group.coAdmins || []).includes(user.email)
+      || !!myGroupMemberships[group.id]
+    )
+  );
+  const isGroupVisibleInDirectory = (group) => (
+    group.visibility !== "inviteOnly"
+    && group.joinPolicy !== "inviteOnly"
+  ) || canSeeInviteOnlyGroup(group);
+  const groupsForSelectedUni = groups.filter(group => (
+    group.active !== false
+    && (group.uniId || currentUniId) === currentUniId
+    && isGroupVisibleInDirectory(group)
+  ));
   const publicEventsForGroups = publicGroupEvents.filter(eventItem => (
     (eventItem.uniId || currentUniId) === currentUniId
     && groupsForSelectedUni.some(group => group.id === eventItem.groupId)
