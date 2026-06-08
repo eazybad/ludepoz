@@ -396,6 +396,7 @@ export function GroupDetailPage({
   const sortedResources = useMemo(() => [...resources].sort((a, b) => (
     (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0)
   )), [resources]);
+  const visibleSortedResources = useMemo(() => sortedResources.filter(resource => resource.resourceType !== "Folder"), [sortedResources]);
   const groupedResources = useMemo(() => sortedResources.reduce((acc, resource) => {
     const key = (resource.subject || "General").trim() || "General";
     if (!acc[key]) acc[key] = [];
@@ -404,7 +405,7 @@ export function GroupDetailPage({
   }, {}), [sortedResources]);
   const resourceSubjectEntries = useMemo(() => Object.entries(groupedResources).sort(([a], [b]) => a.localeCompare(b)), [groupedResources]);
   const selectedResourceItems = useMemo(() => {
-    const items = selectedResourceSubject ? [...(groupedResources[selectedResourceSubject] || [])] : [];
+    const items = selectedResourceSubject ? (groupedResources[selectedResourceSubject] || []).filter(resource => resource.resourceType !== "Folder") : [];
     if (resourceSortMode === "alpha") {
       return items.sort((a, b) => String(a.title || a.text || "").localeCompare(String(b.title || b.text || "")));
     }
@@ -2836,10 +2837,10 @@ export function GroupDetailPage({
               </button>
             )}
           </div>
-          {sortedResources.length > 0 && (
+          {visibleSortedResources.length > 0 && (
             <div className="class-board-latest">
               <div className="group-section-title">Latest updates</div>
-              {sortedResources.slice(0, 3).map(resource => (
+              {visibleSortedResources.slice(0, 3).map(resource => (
                 <button key={resource.id} type="button" className="class-board-update" onClick={() => openResourceSubject((resource.subject || "General").trim() || "General")}>
                   <strong>{resource.title || resource.text}</strong>
                   <span>{resource.subject || "General"}{resource.topic ? ` - ${resource.topic}` : ""}</span>
@@ -2848,7 +2849,7 @@ export function GroupDetailPage({
             </div>
           )}
           {sortedResources.length === 0 ? (
-            <div className="resource-box">No resources yet. Add Drive links, files, notes, programs, deadlines, or important updates here.</div>
+            <div className="resource-box">No folders yet. Create a folder, then add files or links inside it.</div>
           ) : selectedResourceSubject ? (
             <div className="class-board-subject">
               <div className="class-board-folder-header">
@@ -2862,59 +2863,71 @@ export function GroupDetailPage({
                   <button type="button" className={resourceSortMode === "alpha" ? "active" : ""} onClick={() => setResourceSortMode("alpha")}>A-Z</button>
                 </div>
                 {memberCanManage && (
-                  <button type="button" className="group-btn primary compact" disabled={busy} onClick={() => openSimpleResourceForm("files")}>
+                  <button type="button" className="group-btn primary compact" disabled={busy} onClick={openResourceAddMenu}>
                     + Add
                   </button>
                 )}
               </div>
-              {selectedResourceItems.map(resource => (
-                <div key={resource.id} className="resource-box class-board-resource">
-                  <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</div>
-                  {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
-                  {(resource.description || (resource.text && resource.title && resource.text !== resource.title)) && (
-                    <div className="resource-text">{resource.description || resource.text}</div>
+              {selectedResourceItems.length === 0 ? (
+                <div className="resource-box">
+                  This folder is empty.
+                  {memberCanManage && (
+                    <button type="button" className="group-btn primary compact" disabled={busy} onClick={openResourceAddMenu}>
+                      Add files or links
+                    </button>
                   )}
-                  <div className="class-board-meta">
-                    {resource.resourceType && <span>{resource.resourceType}</span>}
-                    {resource.deadline && <span>Deadline: {resource.deadline}</span>}
-                    {resource.createdAt && <span>Added {formatDate(resource.createdAt)}</span>}
-                  </div>
-                  <div className="group-inline-actions">
-                    {resource.url && <button className="group-btn secondary group-link-btn" type="button" onClick={() => handleOpenResourceInApp(resource)}>Open</button>}
-                    {resource.url && !savedOfflineResources[resource.id] && (
-                      <button
-                        className="group-btn ghost"
-                        type="button"
-                        disabled={savingOfflineResourceId === resource.id}
-                        onClick={() => handleSaveResourceOffline(resource)}
-                      >
-                        {savingOfflineResourceId === resource.id ? "Saving..." : "Save offline"}
-                      </button>
-                    )}
-                    {resource.url && savedOfflineResources[resource.id] && (
-                      <button
-                        className="group-btn saved-offline"
-                        type="button"
-                        onClick={() => handleOpenSavedResource(resource)}
-                      >
-                        Open saved
-                      </button>
-                    )}
-                    {memberCanManage && <button className="group-btn ghost" type="button" onClick={() => openEditResourceForm(resource)}>Edit</button>}
-                    {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteResource(resource)}>Delete</button>}
-                  </div>
                 </div>
-              ))}
+              ) : (
+                selectedResourceItems.map(resource => (
+                  <div key={resource.id} className="resource-box class-board-resource">
+                    <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</div>
+                    {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
+                    {(resource.description || (resource.text && resource.title && resource.text !== resource.title)) && (
+                      <div className="resource-text">{resource.description || resource.text}</div>
+                    )}
+                    <div className="class-board-meta">
+                      {resource.resourceType && <span>{resource.resourceType}</span>}
+                      {resource.deadline && <span>Deadline: {resource.deadline}</span>}
+                      {resource.createdAt && <span>Added {formatDate(resource.createdAt)}</span>}
+                    </div>
+                    <div className="group-inline-actions">
+                      {resource.url && <button className="group-btn secondary group-link-btn" type="button" onClick={() => handleOpenResourceInApp(resource)}>Open</button>}
+                      {resource.url && !savedOfflineResources[resource.id] && (
+                        <button
+                          className="group-btn ghost"
+                          type="button"
+                          disabled={savingOfflineResourceId === resource.id}
+                          onClick={() => handleSaveResourceOffline(resource)}
+                        >
+                          {savingOfflineResourceId === resource.id ? "Saving..." : "Save offline"}
+                        </button>
+                      )}
+                      {resource.url && savedOfflineResources[resource.id] && (
+                        <button
+                          className="group-btn saved-offline"
+                          type="button"
+                          onClick={() => handleOpenSavedResource(resource)}
+                        >
+                          Open saved
+                        </button>
+                      )}
+                      {memberCanManage && <button className="group-btn ghost" type="button" onClick={() => openEditResourceForm(resource)}>Edit</button>}
+                      {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteResource(resource)}>Delete</button>}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           ) : (
             <div className="class-board-folder-grid">
               {resourceSubjectEntries.map(([subject, items]) => {
-                const latest = items[0];
+                const realItems = items.filter(resource => resource.resourceType !== "Folder");
+                const latest = realItems[0];
                 return (
                   <button key={subject} type="button" className="class-board-folder-card" onClick={() => openResourceSubject(subject)}>
                     <div className="class-board-folder-icon">+</div>
                     <strong>{subject}</strong>
-                    <span>{items.length} {items.length === 1 ? "resource" : "resources"}</span>
+                    <span>{realItems.length} {realItems.length === 1 ? "resource" : "resources"}</span>
                     {latest && <small>Latest: {latest.title || latest.text}</small>}
                   </button>
                 );
@@ -2927,35 +2940,40 @@ export function GroupDetailPage({
       {showResourceAddMenu && (
         <div className="group-modal-backdrop" onClick={() => setShowResourceAddMenu(false)}>
           <div className="group-modal resource-add-menu" onClick={event => event.stopPropagation()}>
-            <h3>Add to Group Board</h3>
+            <h3>{selectedResourceSubject ? `Add to ${selectedResourceSubject}` : "Add to Group Board"}</h3>
             <div className="resource-add-grid">
-              <button type="button" onClick={handleCreateResourceFolder} disabled={busy}>
-                <MenuIcon name="folder" />
-                <strong>Create folder</strong>
-                <span>Start a new category such as Topographical Surveying.</span>
-              </button>
-              <label className={busy ? "disabled" : ""}>
-                <MenuIcon name="file" />
-                <strong>Add files</strong>
-                <span>Choose PDFs, docs, slides, sheets, images, or zip files.</span>
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
-                  onChange={handleSelectSimpleResourceFiles}
-                  disabled={busy}
-                />
-              </label>
-              <button type="button" onClick={() => openSimpleResourceForm("link")} disabled={busy}>
-                <MenuIcon name="link" />
-                <strong>Add link</strong>
-                <span>Use this for exact Drive links or large files.</span>
-              </button>
-              <button type="button" onClick={() => openCreateResourceForm(selectedResourceSubject)} disabled={busy}>
-                <MenuIcon name="plus" />
-                <strong>Advanced</strong>
-                <span>Add title, topic, type, deadline, and description.</span>
-              </button>
+              {!selectedResourceSubject ? (
+                <button type="button" onClick={handleCreateResourceFolder} disabled={busy}>
+                  <MenuIcon name="folder" />
+                  <strong>Create folder</strong>
+                  <span>Start an empty folder such as Topographical Surveying.</span>
+                </button>
+              ) : (
+                <>
+                  <label className={busy ? "disabled" : ""}>
+                    <MenuIcon name="file" />
+                    <strong>Add files</strong>
+                    <span>Choose PDFs, docs, slides, sheets, images, or zip files.</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
+                      onChange={handleSelectSimpleResourceFiles}
+                      disabled={busy}
+                    />
+                  </label>
+                  <button type="button" onClick={() => openSimpleResourceForm("link")} disabled={busy}>
+                    <MenuIcon name="link" />
+                    <strong>Add link</strong>
+                    <span>Use this for exact Drive links or large files.</span>
+                  </button>
+                  <button type="button" onClick={() => openCreateResourceForm(selectedResourceSubject)} disabled={busy}>
+                    <MenuIcon name="plus" />
+                    <strong>Advanced</strong>
+                    <span>Add title, topic, type, deadline, and description.</span>
+                  </button>
+                </>
+              )}
             </div>
             <div className="group-inline-actions">
               <button className="group-btn ghost" type="button" onClick={() => setShowResourceAddMenu(false)}>
@@ -2970,14 +2988,16 @@ export function GroupDetailPage({
         <div className="group-modal-backdrop" onClick={() => setShowSimpleResourceForm(false)}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
             <h3>{simpleResourceData.mode === "link" ? "Add link" : "Add files"}</h3>
-            <div className="group-field">
-              <label>Folder name</label>
-              <input
-                value={simpleResourceData.subject}
-                onChange={event => setSimpleResourceData(prev => ({ ...prev, subject: event.target.value }))}
-                placeholder="Topographical Surveying"
-              />
-            </div>
+            {!selectedResourceSubject && (
+              <div className="group-field">
+                <label>Folder name</label>
+                <input
+                  value={simpleResourceData.subject}
+                  onChange={event => setSimpleResourceData(prev => ({ ...prev, subject: event.target.value }))}
+                  placeholder="Topographical Surveying"
+                />
+              </div>
+            )}
             {simpleResourceData.mode === "link" ? (
               <div className="group-field">
                 <label>File / Drive link</label>
@@ -3035,10 +3055,12 @@ export function GroupDetailPage({
               <label>Title</label>
               <input value={resourceData.title} onChange={event => setResourceData({ ...resourceData, title: event.target.value })} placeholder="Resection notes, Sunday program, or meeting file" />
             </div>
-            <div className="group-field">
-              <label>Category / folder</label>
-              <input value={resourceData.subject} onChange={event => setResourceData({ ...resourceData, subject: event.target.value })} placeholder="Topographical Surveying, Choir, Events" />
-            </div>
+            {(!selectedResourceSubject || editingResourceId) && (
+              <div className="group-field">
+                <label>Category / folder</label>
+                <input value={resourceData.subject} onChange={event => setResourceData({ ...resourceData, subject: event.target.value })} placeholder="Topographical Surveying, Choir, Events" />
+              </div>
+            )}
             <div className="group-field">
               <label>Topic / item</label>
               <input value={resourceData.topic} onChange={event => setResourceData({ ...resourceData, topic: event.target.value })} placeholder="Week 4, Sunday service, or meeting agenda" />
