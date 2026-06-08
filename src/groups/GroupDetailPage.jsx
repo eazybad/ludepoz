@@ -10,6 +10,7 @@ import {
   canManageGroup,
   canVerifyPayments,
   addManualGroupPayment,
+  attachGroupCollectionPhoto,
   createGroupCollection,
   createGroupWorkGroup,
   deleteGroupMessage,
@@ -1489,6 +1490,19 @@ export function GroupDetailPage({
         setSelectedCollectionId(createdTracker.id);
         if (trackerData.photoPreview) {
           setPendingEventPhotoPreviews(prev => ({ ...prev, [createdTracker.id]: trackerData.photoPreview }));
+        }
+      }
+      if (!editingTrackerId && effectiveCollectionType === "event" && createdTracker && photoFile) {
+        setGroupUploadStatus("Attaching poster...");
+        try {
+          await attachGroupCollectionPhoto(db, storage, {
+            groupId: group.id,
+            collectionId: createdTracker.id,
+            uid: user.uid,
+            file: photoFile,
+          });
+        } catch (photoError) {
+          onError(new Error(`Event created, but poster did not attach: ${photoError.message || photoError}`));
         }
       }
       markCurrentGroupRead();

@@ -1088,8 +1088,52 @@ export function subscribeGroupCollection(db, groupId, collectionId, onNext, onEr
 
 export async function uploadCollectionPhoto(storage, { groupId, collectionId, uid, file }) {
   const photoRef = ref(storage, `groups/${groupId}/collections/${collectionId}/media/${uid}_${Date.now()}.jpg`);
-  const snap = await uploadBytes(photoRef, file);
+  const snap = await uploadBytes(photoRef, file, {
+    contentType: file.type?.startsWith("image/") ? file.type : "image/jpeg",
+  });
   return getDownloadURL(snap.ref);
+}
+
+export async function attachGroupCollectionPhoto(db, storage, { groupId, collectionId, uid, file }) {
+  if (!storage || !file) return "";
+  try {
+    await updateDoc(doc(db, "groups", groupId, "collections", collectionId), {
+      photoUploadStatus: "pending",
+      photoUploadStartedAt: serverTimestamp(),
+      photoUploadError: "",
+      updatedAt: serverTimestamp(),
+    });
+    let uploadFile = file;
+    if (uploadFile.type?.startsWith("image/")) {
+      try {
+        const { file: compressed } = await compressImage(uploadFile, {
+          ...COMPRESSION_PRESETS.listing,
+          maxSizeKB: 350,
+          maxWidth: 1600,
+          maxHeight: 1600,
+        });
+        uploadFile = compressed;
+      } catch (compressionError) {
+        console.warn("attachGroupCollectionPhoto compression failed, uploading original:", compressionError);
+      }
+    }
+    const photoUrl = await uploadCollectionPhoto(storage, { groupId, collectionId, uid, file: uploadFile });
+    await updateDoc(doc(db, "groups", groupId, "collections", collectionId), {
+      photoUrl,
+      photoUploadStatus: "ready",
+      photoUploadedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return photoUrl;
+  } catch (error) {
+    console.error("attachGroupCollectionPhoto failed:", error);
+    await updateDoc(doc(db, "groups", groupId, "collections", collectionId), {
+      photoUploadStatus: "failed",
+      photoUploadError: String(error.message || error).slice(0, 250),
+      updatedAt: serverTimestamp(),
+    });
+    throw error;
+  }
 }
 
 export async function createGroupCollection(db, { groupId, user, profile, data, storage = null }) {
@@ -1105,8 +1149,8 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     paymentMethods: data.paymentMethods,
     deadline: data.deadline || null,
     photoUrl: "",
-    photoUploadStatus: storage && data.photoFile ? "pending" : "",
-    photoUploadStartedAt: storage && data.photoFile ? serverTimestamp() : null,
+    photoUploadStatus: "",
+    photoUploadStartedAt: null,
     visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
     createdByUid: user.uid,
     createdByName: profile.name || user.email || "Admin",
@@ -1122,39 +1166,6 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
   });
 
   Promise.resolve().then(async () => {
-    if (storage && data.photoFile) {
-      try {
-        let uploadFile = data.photoFile;
-        if (uploadFile.type?.startsWith("image/")) {
-          try {
-            const { file: compressed } = await compressImage(uploadFile, {
-              ...COMPRESSION_PRESETS.listing,
-              maxSizeKB: 350,
-              maxWidth: 1600,
-              maxHeight: 1600,
-            });
-            uploadFile = compressed;
-          } catch (compressionError) {
-            console.warn("createGroupCollection photo compression failed, uploading original:", compressionError);
-          }
-        }
-        const photoUrl = await uploadCollectionPhoto(storage, {
-          groupId,
-          collectionId: docRef.id,
-          uid: user.uid,
-          file: uploadFile,
-        });
-        await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", photoUploadedAt: serverTimestamp(), updatedAt: serverTimestamp() });
-      } catch (error) {
-        console.error("createGroupCollection photo upload failed:", error);
-        await updateDoc(docRef, {
-          photoUploadStatus: "failed",
-          photoUploadError: String(error.message || error).slice(0, 250),
-          updatedAt: serverTimestamp(),
-        });
-      }
-    }
-
     try {
       const [groupSnap, members] = await Promise.all([
         getDoc(doc(db, "groups", groupId)),
