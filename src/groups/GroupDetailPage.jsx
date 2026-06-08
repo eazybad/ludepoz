@@ -314,6 +314,7 @@ export function GroupDetailPage({
   const [expandedProofUrl, setExpandedProofUrl] = useState("");
   const [convertingResourceId, setConvertingResourceId] = useState("");
   const [groupUploadStatus, setGroupUploadStatus] = useState("");
+  const [pendingEventPhotoPreviews, setPendingEventPhotoPreviews] = useState({});
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
@@ -598,6 +599,13 @@ export function GroupDetailPage({
     const unsubCollections = subscribeCollections(items => {
       const nextItems = items.length ? items : initialCollection ? [initialCollection] : [];
       setCollections(nextItems);
+      setPendingEventPhotoPreviews(prev => {
+        const next = { ...prev };
+        nextItems.forEach(item => {
+          if (item.photoUrl && next[item.id]) delete next[item.id];
+        });
+        return next;
+      });
       setSelectedCollectionId(prev => (prev && nextItems.some(item => item.id === prev)) ? prev : (initialCollectionId || ""));
     });
     return () => {
@@ -1452,7 +1460,12 @@ export function GroupDetailPage({
       setEditingTrackerId("");
       setShowTrackerForm(false);
       if (activeTab === "payments" && createdTracker) setSelectedCollectionId(createdTracker.id);
-      if (activeTab === "events" && createdTracker) setSelectedCollectionId(createdTracker.id);
+      if (activeTab === "events" && createdTracker) {
+        setSelectedCollectionId(createdTracker.id);
+        if (trackerData.photoPreview) {
+          setPendingEventPhotoPreviews(prev => ({ ...prev, [createdTracker.id]: trackerData.photoPreview }));
+        }
+      }
       markCurrentGroupRead();
       onSuccess(editingTrackerId ? "Tracker updated." : effectiveCollectionType === "event" ? "Event created." : "Payment tracker created.");
     } catch (err) {
@@ -2631,7 +2644,9 @@ export function GroupDetailPage({
                 setPayments([]);
               }}>Back to events</button>
               <div className="payment-card">
-                {selectedCollection.photoUrl && <img className="tracker-card-photo" src={selectedCollection.photoUrl} alt="" />}
+                {(selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]) && <img className="tracker-card-photo" src={selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]} alt="" />}
+                {selectedCollection.photoUploadStatus === "pending" && <div className="tracker-photo-status">Poster is uploading...</div>}
+                {selectedCollection.photoUploadStatus === "failed" && <div className="tracker-photo-status error">Poster upload failed. The event is still active.</div>}
                 <h4>{selectedCollection.title}</h4>
                 <div className="payment-meta">
                   {selectedCollection.description || "Event details"}
@@ -2763,7 +2778,9 @@ export function GroupDetailPage({
             <div className="group-empty">No events yet.</div>
           ) : eventCollections.map(eventItem => (
             <div key={eventItem.id} className="tracker-card event-card">
-              {eventItem.photoUrl && <img className="tracker-card-photo" src={eventItem.photoUrl} alt="" />}
+              {(eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]) && <img className="tracker-card-photo" src={eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]} alt="" />}
+              {eventItem.photoUploadStatus === "pending" && <div className="tracker-photo-status">Poster is uploading...</div>}
+              {eventItem.photoUploadStatus === "failed" && <div className="tracker-photo-status error">Poster upload failed</div>}
               <div>
                 <strong>{eventItem.title}</strong>
                 <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : "Free"}</span>
