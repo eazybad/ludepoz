@@ -1170,7 +1170,7 @@ export function GroupDetailPage({
     const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
     if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
     if (resourcePreviewKind(resource).includes("office")) {
-      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+      return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -1181,7 +1181,7 @@ export function GroupDetailPage({
     if (url.includes("docs.google.com/") || url.includes("drive.google.com/drive/folders/")) return url;
     const kind = resourcePreviewKind(resource);
     if (kind === "convertible" || kind === "office") {
-      return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+      return `https://docs.google.com/gview?url=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -2767,13 +2767,14 @@ export function GroupDetailPage({
           )}
           {eventCollections.length === 0 ? (
             <div className="group-empty">No events yet.</div>
-          ) : selectedCollection?.collectionType === "event" ? null : eventCollections.map(eventItem => (
+          ) : eventCollections.map(eventItem => (
             <div key={eventItem.id} className="tracker-card event-card">
               {eventItem.photoUrl && <img className="tracker-card-photo" src={eventItem.photoUrl} alt="" />}
               <div>
                 <strong>{eventItem.title}</strong>
                 <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : "Free"}</span>
               </div>
+              {Number(eventItem.amount || 0) > 0 && <span className="group-role-pill">Also in payments</span>}
               <p>
                 {eventItem.description || "Event details"}
                 {eventItem.deadline ? ` - Deadline: ${eventItem.deadline}` : ""}
@@ -3389,7 +3390,10 @@ export function GroupDetailPage({
                   {convertingResourceId === resourcePreview.id ? "Preparing..." : "Prepare PDF preview"}
                 </button>
               )}
-              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">Open original</a>
+              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">{resourcePreview.kind === "convertible" ? "Open in viewer" : "Open original"}</a>
+              {resourcePreview.kind === "convertible" && (
+                <a className="group-btn ghost group-link-btn" href={resourcePreview.url} target="_blank" rel="noreferrer">Download original</a>
+              )}
             </div>
           </div>
         </div>
