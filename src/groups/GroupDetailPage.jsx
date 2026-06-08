@@ -296,6 +296,8 @@ export function GroupDetailPage({
   const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
   const [resourceSortMode, setResourceSortMode] = useState("latest");
   const [showWorkGroupForm, setShowWorkGroupForm] = useState(false);
+  const [showWorkGroupMembers, setShowWorkGroupMembers] = useState(false);
+  const [showWorkGroupMore, setShowWorkGroupMore] = useState(false);
   const [editingWorkGroupId, setEditingWorkGroupId] = useState("");
   const [submittingWorkGroupId, setSubmittingWorkGroupId] = useState("");
   const [trackerData, setTrackerData] = useState(emptyTracker);
@@ -1262,6 +1264,8 @@ export function GroupDetailPage({
   const openCreateWorkGroupForm = () => {
     setEditingWorkGroupId("");
     setWorkGroupData(emptyWorkGroup);
+    setShowWorkGroupMembers(false);
+    setShowWorkGroupMore(false);
     setShowWorkGroupForm(true);
   };
 
@@ -1276,6 +1280,8 @@ export function GroupDetailPage({
       leaderUid: workGroup.leaderUid || "",
       memberUids: workGroup.memberUids || [],
     });
+    setShowWorkGroupMembers(true);
+    setShowWorkGroupMore(Boolean(workGroup.description || workGroup.taskTitle || workGroup.taskInstructions || workGroup.deadline || workGroup.leaderUid));
     setShowWorkGroupForm(true);
   };
 
@@ -3105,60 +3111,73 @@ export function GroupDetailPage({
       )}
 
       {showWorkGroupForm && (
-        <div className="group-modal-backdrop" onClick={() => setShowWorkGroupForm(false)}>
+        <div className="group-modal-backdrop" onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); setShowWorkGroupMembers(false); setShowWorkGroupMore(false); }}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
             <h3>{editingWorkGroupId ? "Edit Work Group" : "Create Work Group"}</h3>
             <div className="group-field">
               <label>Group name</label>
               <input value={workGroupData.name} onChange={event => setWorkGroupData({ ...workGroupData, name: event.target.value })} placeholder="Group 01" />
             </div>
-            <div className="group-field">
-              <label>Description</label>
-              <input value={workGroupData.description} onChange={event => setWorkGroupData({ ...workGroupData, description: event.target.value })} placeholder="Topographical surveying assignment group" />
-            </div>
-            <div className="group-field">
-              <label>Task title</label>
-              <input value={workGroupData.taskTitle} onChange={event => setWorkGroupData({ ...workGroupData, taskTitle: event.target.value })} placeholder="Submit field report" />
-            </div>
-            <div className="group-field">
-              <label>Task instructions</label>
-              <textarea value={workGroupData.taskInstructions} onChange={event => setWorkGroupData({ ...workGroupData, taskInstructions: event.target.value })} placeholder="What this group should do and submit." />
-            </div>
-            <div className="group-field">
-              <label>Deadline</label>
-              <input type="date" value={workGroupData.deadline} onChange={event => setWorkGroupData({ ...workGroupData, deadline: event.target.value })} />
-            </div>
-            <div className="group-field">
-              <label>Members</label>
-              <div className="workgroup-member-picker">
-                {activeMembers.length === 0 ? (
-                  <div className="payment-meta">No active members yet.</div>
-                ) : activeMembers.map(member => {
-                  const selected = workGroupData.memberUids.includes(member.uid);
-                  return (
-                    <label key={member.uid} className={`workgroup-member-option ${selected ? "selected" : ""}`}>
-                      <input type="checkbox" checked={selected} onChange={() => toggleWorkGroupMember(member.uid)} />
-                      <span>{member.name || member.email || "Member"}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-            {workGroupData.memberUids.length > 0 && (
+            <button className="group-option-row" type="button" onClick={() => setShowWorkGroupMembers(value => !value)}>
+              <span>Add members</span>
+              <strong>{workGroupData.memberUids.length > 0 ? `${workGroupData.memberUids.length} selected` : showWorkGroupMembers ? "Hide" : "Open"}</strong>
+            </button>
+            {showWorkGroupMembers && (
               <div className="group-field">
-                <label>Group leader</label>
-                <select value={workGroupData.leaderUid} onChange={event => setWorkGroupData({ ...workGroupData, leaderUid: event.target.value })}>
-                  {workGroupData.memberUids.map(uid => (
-                    <option key={uid} value={uid}>{memberNameByUid[uid] || uid}</option>
-                  ))}
-                </select>
+                <div className="workgroup-member-picker">
+                  {activeMembers.length === 0 ? (
+                    <div className="payment-meta">No active members yet.</div>
+                  ) : activeMembers.map(member => {
+                    const selected = workGroupData.memberUids.includes(member.uid);
+                    return (
+                      <label key={member.uid} className={`workgroup-member-option ${selected ? "selected" : ""}`}>
+                        <input type="checkbox" checked={selected} onChange={() => toggleWorkGroupMember(member.uid)} />
+                        <span>{member.name || member.email || "Member"}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
+            )}
+            <button className="group-option-row" type="button" onClick={() => setShowWorkGroupMore(value => !value)}>
+              <span>More</span>
+              <strong>{showWorkGroupMore ? "Hide" : "Open"}</strong>
+            </button>
+            {showWorkGroupMore && (
+              <>
+                <div className="group-field">
+                  <label>Description</label>
+                  <input value={workGroupData.description} onChange={event => setWorkGroupData({ ...workGroupData, description: event.target.value })} placeholder="Topographical surveying assignment group" />
+                </div>
+                <div className="group-field">
+                  <label>Task title</label>
+                  <input value={workGroupData.taskTitle} onChange={event => setWorkGroupData({ ...workGroupData, taskTitle: event.target.value })} placeholder="Submit field report" />
+                </div>
+                <div className="group-field">
+                  <label>Task instructions</label>
+                  <textarea value={workGroupData.taskInstructions} onChange={event => setWorkGroupData({ ...workGroupData, taskInstructions: event.target.value })} placeholder="What this group should do and submit." />
+                </div>
+                <div className="group-field">
+                  <label>Deadline</label>
+                  <input type="date" value={workGroupData.deadline} onChange={event => setWorkGroupData({ ...workGroupData, deadline: event.target.value })} />
+                </div>
+                {workGroupData.memberUids.length > 0 && (
+                  <div className="group-field">
+                    <label>Group leader</label>
+                    <select value={workGroupData.leaderUid} onChange={event => setWorkGroupData({ ...workGroupData, leaderUid: event.target.value })}>
+                      {workGroupData.memberUids.map(uid => (
+                        <option key={uid} value={uid}>{memberNameByUid[uid] || uid}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
             <div className="group-inline-actions">
               <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveWorkGroup}>
                 {busy ? "Saving..." : editingWorkGroupId ? "Update work group" : "Create work group"}
               </button>
-              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); }}>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); setShowWorkGroupMembers(false); setShowWorkGroupMore(false); }}>
                 Cancel
               </button>
             </div>
