@@ -313,6 +313,7 @@ export function GroupDetailPage({
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [expandedProofUrl, setExpandedProofUrl] = useState("");
   const [convertingResourceId, setConvertingResourceId] = useState("");
+  const [groupUploadStatus, setGroupUploadStatus] = useState("");
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
@@ -1053,6 +1054,7 @@ export function GroupDetailPage({
       return;
     }
     setBusy(true);
+    setGroupUploadStatus(simpleResourceData.mode === "files" ? `Uploading ${simpleResourceData.files.length} ${simpleResourceData.files.length === 1 ? "file" : "files"}...` : "Adding link...");
     try {
       if (simpleResourceData.mode === "link") {
         const cleanUrl = simpleResourceData.url.trim();
@@ -1080,6 +1082,7 @@ export function GroupDetailPage({
       onError(err);
     } finally {
       setBusy(false);
+      setGroupUploadStatus("");
     }
   };
 
@@ -1168,6 +1171,17 @@ export function GroupDetailPage({
     if (driveFileMatch?.[1]) return `https://drive.google.com/file/d/${driveFileMatch[1]}/preview`;
     if (resourcePreviewKind(resource).includes("office")) {
       return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
+  const getOriginalOpenUrl = (resource = {}) => {
+    const url = resource.url || "";
+    if (!url) return "";
+    if (url.includes("docs.google.com/") || url.includes("drive.google.com/drive/folders/")) return url;
+    const kind = resourcePreviewKind(resource);
+    if (kind === "convertible" || kind === "office") {
+      return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -1402,13 +1416,31 @@ export function GroupDetailPage({
       return;
     }
     setBusy(true);
+    setGroupUploadStatus(trackerData.photoFile ? "Compressing event poster..." : trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
     try {
+      let photoFile = trackerData.photoFile || null;
+      if (photoFile) {
+        try {
+          const { file: compressedPoster } = await compressImage(photoFile, {
+            ...COMPRESSION_PRESETS.listing,
+            maxSizeKB: 350,
+            maxWidth: 1600,
+            maxHeight: 1600,
+          });
+          photoFile = compressedPoster;
+        } catch (compressionError) {
+          console.warn("Event poster compression failed, uploading original:", compressionError);
+        }
+        setGroupUploadStatus("Uploading event poster...");
+      }
       const data = {
         ...trackerData,
+        photoFile,
         paymentMethods: typeof trackerData.paymentMethods === "string"
           ? trackerData.paymentMethods.split(",").map(item => item.trim()).filter(Boolean)
           : trackerData.paymentMethods || [],
       };
+      setGroupUploadStatus(trackerData.collectionType === "event" ? "Creating event..." : "Saving tracker...");
       let createdTracker = null;
       if (editingTrackerId) {
         await updateGroupCollection(db, {
@@ -1437,6 +1469,7 @@ export function GroupDetailPage({
       onError(err);
     } finally {
       setBusy(false);
+      setGroupUploadStatus("");
     }
   };
 
@@ -1842,7 +1875,8 @@ export function GroupDetailPage({
       <div className="group-field"><label>Payment numbers</label><input value={trackerData.paymentMethods} onChange={event => setTrackerData({ ...trackerData, paymentMethods: event.target.value })} placeholder="M-Pesa 255..., Airtel Money 255..." /></div>
       <div className="group-field"><label>Deadline</label><input type="date" value={trackerData.deadline} onChange={event => setTrackerData({ ...trackerData, deadline: event.target.value })} /></div>
       <div className="group-field"><label>Description</label><textarea value={trackerData.description} onChange={event => setTrackerData({ ...trackerData, description: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Where, when, who can register, and what students should bring." : "What this payment is for and how members should pay."} /></div>
-      <button className="group-btn primary" type="button" disabled={busy} onClick={handleCreateTracker}>{busy ? "Saving..." : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : "Create order / contribution"}</button>
+      {busy && groupUploadStatus && <div className="group-upload-status">{groupUploadStatus}</div>}
+      <button className="group-btn primary" type="button" disabled={busy} onClick={handleCreateTracker}>{busy ? (groupUploadStatus || "Saving...") : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : "Create order / contribution"}</button>
       {editingTrackerId && <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowTrackerForm(false); setEditingTrackerId(""); setTrackerData(emptyTracker); }}>Cancel edit</button>}
     </div>
   );
@@ -2235,7 +2269,7 @@ export function GroupDetailPage({
                       <button type="button" className="chat-plus-btn" aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); }}>
                         <MenuIcon name="plus" />
                       </button>
-                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message" rows={1} autoFocus />
+                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message - use @username to tag" rows={1} autoFocus />
                       <button
                         type="button"
                         className="chat-close-btn"
@@ -3036,8 +3070,9 @@ export function GroupDetailPage({
               </div>
             )}
             <div className="group-inline-actions">
+              {busy && groupUploadStatus && <div className="group-upload-status full">{groupUploadStatus}</div>}
               <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveSimpleResource}>
-                {busy ? "Saving..." : simpleResourceData.mode === "link" ? "Add link" : "Add files"}
+                {busy ? (groupUploadStatus || "Saving...") : simpleResourceData.mode === "link" ? "Add link" : "Add files"}
               </button>
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowSimpleResourceForm(false)}>
                 Cancel
@@ -3354,7 +3389,7 @@ export function GroupDetailPage({
                   {convertingResourceId === resourcePreview.id ? "Preparing..." : "Prepare PDF preview"}
                 </button>
               )}
-              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={resourcePreview.url} target="_blank" rel="noreferrer">Open original</a>
+              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">Open original</a>
             </div>
           </div>
         </div>

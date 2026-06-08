@@ -573,6 +573,24 @@
   line-height: 1.4;
 }
 
+.group-upload-status {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 10px;
+  border: 1px solid #99f0ee;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.group-upload-status.full {
+  flex-basis: 100%;
+}
+
 .group-choice-row {
   display: flex;
   gap: 7px;

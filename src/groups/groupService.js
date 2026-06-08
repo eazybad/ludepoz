@@ -1094,15 +1094,6 @@ export async function uploadCollectionPhoto(storage, { groupId, collectionId, ui
 export async function createGroupCollection(db, { groupId, user, profile, data, storage = null }) {
   const amount = Number(data.amount || 0);
   const docRef = doc(collection(db, "groups", groupId, "collections"));
-  let photoUrl = "";
-  if (storage && data.photoFile) {
-    photoUrl = await uploadCollectionPhoto(storage, {
-      groupId,
-      collectionId: docRef.id,
-      uid: user.uid,
-      file: data.photoFile,
-    });
-  }
 
   await setDoc(docRef, {
     title: data.title.trim(),
@@ -1112,7 +1103,8 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     expectedPeople: Number(data.expectedPeople || 0),
     paymentMethods: data.paymentMethods,
     deadline: data.deadline || null,
-    photoUrl,
+    photoUrl: "",
+    photoUploadStatus: storage && data.photoFile ? "pending" : "",
     visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
     createdByUid: user.uid,
     createdByName: profile.name || user.email || "Admin",
@@ -1126,6 +1118,25 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     lastActivityByUid: user.uid,
     updatedAt: serverTimestamp(),
   });
+
+  if (storage && data.photoFile) {
+    try {
+      const photoUrl = await uploadCollectionPhoto(storage, {
+        groupId,
+        collectionId: docRef.id,
+        uid: user.uid,
+        file: data.photoFile,
+      });
+      await updateDoc(docRef, { photoUrl, photoUploadStatus: "ready", updatedAt: serverTimestamp() });
+    } catch (error) {
+      console.error("createGroupCollection photo upload failed:", error);
+      await updateDoc(docRef, {
+        photoUploadStatus: "failed",
+        photoUploadError: String(error.message || error).slice(0, 250),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
   const [groupSnap, members] = await Promise.all([
     getDoc(doc(db, "groups", groupId)),
     getGroupMembers(db, groupId),

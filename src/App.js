@@ -251,6 +251,7 @@ function App() {
   const pageHistory = useRef(["communities"]);
   const isGoingBack = useRef(false)
   const groupInternalBackRef = useRef(null);
+  const pendingAuthGroupRef = useRef(null);
 
   // Tracks whether any home-tab search is active. The back-button handler
   // reads this to decide whether to clear search first vs. navigate pages.
@@ -338,6 +339,7 @@ function App() {
   // Collection payment QR scanner
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showAdvancedCollection, setShowAdvancedCollection] = useState(false);
+  const [collectionUploadStatus, setCollectionUploadStatus] = useState("");
   // Groups
   const [groups, setGroups] = useState([]);
   const [myGroupMemberships, setMyGroupMemberships] = useState({});
@@ -579,6 +581,9 @@ useEffect(() => {
   // Require auth - shows modal if not logged in
   const requireAuth = (action, callback) => {
     if (user) { callback(); return; }
+    if (viewingGroup) {
+      pendingAuthGroupRef.current = { group: viewingGroup, initialView: groupInitialView };
+    }
     setShowAuthModal(true);
   };
 
@@ -2888,7 +2893,11 @@ await updateDoc(convRef, {
 
   const joinGroup = async (group = viewingGroup) => {
     if (!group) return;
-    if (!user) { requireAuth("join group", () => openGroup(group)); return; }
+    if (!user) {
+      pendingAuthGroupRef.current = { group, initialView: groupInitialView };
+      requireAuth("join group", () => openGroup(group));
+      return;
+    }
     if (currentGroupMember) return;
     setJoiningGroup(true);
     try {
@@ -3049,6 +3058,21 @@ await updateDoc(convRef, {
     }
   };
 
+  const currentUniId = selectedUni?.id || "aru";
+  const canSeeInviteOnlyGroup = (group) => (
+    !!user?.uid
+    && (
+      group.ownerUid === user.uid
+      || group.adminUid === user.uid
+      || (group.coAdmins || []).includes(user.email)
+      || !!myGroupMemberships[group.id]
+    )
+  );
+  const isGroupVisibleInDirectory = (group) => (
+    group.visibility !== "inviteOnly"
+    && group.joinPolicy !== "inviteOnly"
+  ) || canSeeInviteOnlyGroup(group);
+
   const markGroupRead = useCallback((group) => {
     if (!group?.id) return;
     const readAt = Date.now();
@@ -3062,6 +3086,8 @@ await updateDoc(convRef, {
 
   const groupUnreadCount = groups.filter(group => (
     group.active !== false
+    && (group.uniId || currentUniId) === currentUniId
+    && isGroupVisibleInDirectory(group)
     && group.lastActivityByUid !== user?.uid
     && group.activityAt?.toMillis
     && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
@@ -3388,8 +3414,16 @@ useEffect(() => {
         ? "Account created! Welcome to Kampasika 🎉"
         : "Akaunti yako imeundwa! Sasa wanafunzi wanaweza kukupata.");
       setTimeout(() => setSuccess(""), 4000);
+      const pendingGroup = pendingAuthGroupRef.current;
+      pendingAuthGroupRef.current = null;
       setShowAuthModal(false);
-      setPage("communities");
+      if (pendingGroup?.group) {
+        openGroup(pendingGroup.group, pendingGroup.initialView || {});
+      } else if (viewingGroup) {
+        openGroup(viewingGroup, groupInitialView);
+      } else {
+        setPage("communities");
+      }
     } catch (err) {
       console.error("Signup error:", err);
       setError(getAuthErrorMessage(err, "signup"));
@@ -3426,8 +3460,16 @@ useEffect(() => {
       setLoading(false);
       setSuccess("Logged in successfully!");
       setTimeout(() => setSuccess(""), 4000);
+      const pendingGroup = pendingAuthGroupRef.current;
+      pendingAuthGroupRef.current = null;
       setShowAuthModal(false);
-      setPage("communities");
+      if (pendingGroup?.group) {
+        openGroup(pendingGroup.group, pendingGroup.initialView || {});
+      } else if (viewingGroup) {
+        openGroup(viewingGroup, groupInitialView);
+      } else {
+        setPage("communities");
+      }
     } catch (err) {
       console.error("Login error:", err);
       setError(getAuthErrorMessage(err, "login"));
@@ -3781,24 +3823,39 @@ useEffect(() => {
       setShowVerifyModal(true);
       return;
     }
-    const parsedColPrice = parsePrice(createCollectionData.price);
+    const isEventCollection = createCollectionData.collectionType === "event";
+    const parsedColPrice = createCollectionData.price.trim() ? parsePrice(createCollectionData.price) : (isEventCollection ? 0 : null);
     if (!createCollectionData.title.trim() || parsedColPrice === null) {
-      setError("Tafadhali jaza kichwa na bei.");
+      setError(isEventCollection ? "Tafadhali jaza kichwa cha event." : "Tafadhali jaza kichwa na bei.");
+      setTimeout(() => setError(""), 4000);
+      return;
+    }
+    if (parsedColPrice > 0 && !createCollectionData.paymentMethods.some(pm => pm.number?.trim())) {
+      setError("Add a payment number for a paid event/order.");
       setTimeout(() => setError(""), 4000);
       return;
     }
     try {
       setUploading(true);
+      setCollectionUploadStatus(createCollectionData.photoFiles.length > 0 ? "Preparing poster..." : isEventCollection ? "Creating event..." : "Creating order...");
       const photoUrls = [];
       if (createCollectionData.photoFiles.length > 0) {
         for (let i = 0; i < createCollectionData.photoFiles.length; i++) {
-          const original = createCollectionData.photoFiles[i];
-          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
-          const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
-          const snapshot = await uploadBytes(storageRef, file);
-          photoUrls.push(await getDownloadURL(snapshot.ref));
+          try {
+            const original = createCollectionData.photoFiles[i];
+            setCollectionUploadStatus(`Compressing poster ${i + 1} of ${createCollectionData.photoFiles.length}...`);
+            const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
+            setCollectionUploadStatus(`Uploading poster ${i + 1} of ${createCollectionData.photoFiles.length}...`);
+            const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
+            const snapshot = await uploadBytes(storageRef, file);
+            photoUrls.push(await getDownloadURL(snapshot.ref));
+          } catch (photoError) {
+            console.error("Collection poster upload failed:", photoError);
+            setCollectionUploadStatus("Poster upload failed. Creating event without poster...");
+          }
         }
       }
+      setCollectionUploadStatus(isEventCollection ? "Creating event..." : "Creating order...");
       const optionsList = createCollectionData.options.split(",").map(o => o.trim()).filter(o => o);
       const newColRef = await addDoc(collection(db, "collections"), {
         userId: user.uid,
@@ -3841,7 +3898,10 @@ useEffect(() => {
     } catch (err) {
       console.error("Error creating collection:", err);
       setError("Failed to create collection: " + err.message);
-    } finally { setUploading(false); }
+    } finally {
+      setUploading(false);
+      setCollectionUploadStatus("");
+    }
   };
 
   // Place order — just registers name, phone, option (no payment)
@@ -4377,20 +4437,6 @@ const loadSellerStats = useCallback(async (userId) => {
   // To re-enable expiry someday: restore `isExpired` checks and a TTL field.
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
-  const currentUniId = selectedUni?.id || "aru";
-  const canSeeInviteOnlyGroup = (group) => (
-    !!user?.uid
-    && (
-      group.ownerUid === user.uid
-      || group.adminUid === user.uid
-      || (group.coAdmins || []).includes(user.email)
-      || !!myGroupMemberships[group.id]
-    )
-  );
-  const isGroupVisibleInDirectory = (group) => (
-    group.visibility !== "inviteOnly"
-    && group.joinPolicy !== "inviteOnly"
-  ) || canSeeInviteOnlyGroup(group);
   const groupsForSelectedUni = groups.filter(group => (
     group.active !== false
     && (group.uniId || currentUniId) === currentUniId
@@ -7143,6 +7189,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     </div>
                   )}
                 </label>
+                {uploading && collectionUploadStatus && (
+                  <div style={{marginBottom:'14px',padding:'10px 12px',background:'#f0fdfa',border:'1px solid #99f0ee',borderRadius:'10px',color:'#0f766e',fontSize:'12px',fontWeight:'800'}}>
+                    {collectionUploadStatus}
+                  </div>
+                )}
 
                 {/* SIMPLE REQUIRED FIELDS */}
                 <div style={{marginBottom:'14px'}}>
@@ -7151,13 +7202,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
 
                 <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Price per person (TSh) *</label>
-                  <input type="number" placeholder="e.g. 15000" value={createCollectionData.price} onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>{createCollectionData.collectionType === "event" ? "Payment amount (optional)" : "Price per person (TSh) *"}</label>
+                  <input type="number" placeholder={createCollectionData.collectionType === "event" ? "Leave empty for free registration" : "e.g. 15000"} value={createCollectionData.price} onChange={e=>setCreateCollectionData({...createCollectionData,price:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                 </div>
 
                 {/* PAYMENT METHOD — simple single field */}
                 <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Payment number (M-Pesa / Tigo / Airtel) *</label>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>{createCollectionData.collectionType === "event" ? "Payment number, if paid" : "Payment number (M-Pesa / Tigo / Airtel) *"}</label>
                   <input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.paymentMethods[0]?.number||''} onChange={e=>{const updated=[{network:createCollectionData.paymentMethods[0]?.network||'M-Pesa',number:e.target.value,name:createCollectionData.paymentMethods[0]?.name||'',saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                   <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
                     {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa"].map(net=>(
