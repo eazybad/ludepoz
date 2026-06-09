@@ -213,6 +213,31 @@ async function safeCompress(file, preset) {
   }
 }
 
+const QUICK_FILE_MAX_BYTES = 25 * 1024 * 1024;
+
+function inferQuickResourceType(value = "") {
+  const text = String(value || "").toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/.test(text)) return "Image";
+  if (/\.(pdf)(\?|$)/.test(text)) return "PDF";
+  if (/\.(pptx?|key)(\?|$)/.test(text)) return "Slides";
+  if (/\.(docx?|odt)(\?|$)/.test(text)) return "Document";
+  if (/\.(xlsx?|csv)(\?|$)/.test(text)) return "Sheet";
+  if (/\.(mp4|webm|mov|m4v)(\?|$)/.test(text)) return "Video";
+  if (/\.(mp3|wav|m4a|ogg)(\?|$)/.test(text)) return "Audio";
+  if (/drive\.google\.com|docs\.google\.com/.test(text)) return "Drive";
+  return "File";
+}
+
+function quickSavedFileSection(item = {}) {
+  const value = `${item.resourceType || ""} ${item.fileName || ""} ${item.title || ""} ${item.url || ""}`.toLowerCase();
+  if (value.includes("image") || /\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/.test(value)) return "Images";
+  if (value.includes("pdf") || /\.pdf(\?|$)/.test(value)) return "PDFs";
+  if (value.includes("document") || value.includes("slide") || /\.(pptx?|docx?|xlsx?)(\?|$)/.test(value)) return "Documents";
+  if (value.includes("video") || /\.(mp4|webm|mov|m4v)(\?|$)/.test(value)) return "Videos";
+  if (value.includes("audio") || /\.(mp3|wav|m4a|ogg)(\?|$)/.test(value)) return "Audio";
+  return "Other files";
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -335,6 +360,14 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null, avatarPreset: null });
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
+  const [showQuickUpload, setShowQuickUpload] = useState(false);
+  const [showQuickSavedFiles, setShowQuickSavedFiles] = useState(false);
+  const [quickUploadGroupId, setQuickUploadGroupId] = useState("");
+  const [quickUploadFolder, setQuickUploadFolder] = useState("Files");
+  const [quickUploadFiles, setQuickUploadFiles] = useState([]);
+  const [quickUploadStatus, setQuickUploadStatus] = useState("");
+  const quickUploadInputRef = useRef(null);
   const [showQRModal, setShowQRModal] = useState(false);
   // Collection payment QR scanner
   const [showQRScanner, setShowQRScanner] = useState(false);
@@ -3092,6 +3125,136 @@ await updateDoc(convRef, {
     && group.activityAt?.toMillis
     && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
   )).length;
+
+  const readAllQuickSavedFiles = useCallback(() => {
+    const items = [];
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith("kampasikaOfflineResources:")) continue;
+        const groupId = key.replace("kampasikaOfflineResources:", "");
+        const saved = JSON.parse(localStorage.getItem(key) || "{}");
+        Object.entries(saved).forEach(([resourceId, item]) => {
+          const group = groups.find(groupItem => groupItem.id === groupId);
+          items.push({
+            ...item,
+            id: resourceId,
+            groupId,
+            groupName: group?.name || "Saved group",
+            section: quickSavedFileSection(item),
+          });
+        });
+      }
+    } catch (_) {}
+    return items.sort((a, b) => Number(b.savedAt || 0) - Number(a.savedAt || 0));
+  }, [groups]);
+
+  const quickSavedFiles = showQuickSavedFiles ? readAllQuickSavedFiles() : [];
+  const quickSavedFileGroups = quickSavedFiles.reduce((acc, item) => {
+    const key = item.section || "Other files";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const openQuickSavedFile = async (item) => {
+    if (!item.url || !("caches" in window)) {
+      window.open(item.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    try {
+      const cache = await caches.open("kampasika-offline-resources-v1");
+      const response = await cache.match(item.url);
+      if (!response) {
+        setError("This saved file is not available on this device anymore.");
+        return;
+      }
+      const blob = await response.blob();
+      const savedUrl = URL.createObjectURL(blob);
+      window.open(savedUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(savedUrl), 60000);
+    } catch (err) {
+      setError("Could not open the saved copy.");
+    }
+  };
+
+  const removeQuickSavedFile = async (item) => {
+    try {
+      if (item.url && "caches" in window) {
+        const cache = await caches.open("kampasika-offline-resources-v1");
+        await cache.delete(item.url);
+      }
+      const key = `kampasikaOfflineResources:${item.groupId}`;
+      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+      delete saved[item.id];
+      localStorage.setItem(key, JSON.stringify(saved));
+      setShowQuickSavedFiles(false);
+      setTimeout(() => setShowQuickSavedFiles(true), 0);
+      setSuccess("Saved copy removed from this device.");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch (err) {
+      setError("Could not remove the saved copy.");
+    }
+  };
+
+  const resetQuickUpload = () => {
+    setQuickUploadFiles([]);
+    setQuickUploadStatus("");
+    if (quickUploadInputRef.current) quickUploadInputRef.current.value = "";
+  };
+
+  const handleQuickUploadFiles = async () => {
+    if (!user) {
+      requireAuth("upload files", () => setShowQuickUpload(true));
+      return;
+    }
+    const group = groups.find(item => item.id === quickUploadGroupId);
+    if (!group) {
+      setError("Choose a group first.");
+      return;
+    }
+    if (quickUploadFiles.length === 0) {
+      setError("Choose at least one file.");
+      return;
+    }
+    const folder = quickUploadFolder.trim() || "Files";
+    setUploading(true);
+    setQuickUploadStatus(`Uploading ${quickUploadFiles.length} ${quickUploadFiles.length === 1 ? "file" : "files"}...`);
+    try {
+      for (let index = 0; index < quickUploadFiles.length; index += 1) {
+        const file = quickUploadFiles[index];
+        if (file.size > QUICK_FILE_MAX_BYTES) {
+          throw new Error(`${file.name} is too large. Use files under 25MB.`);
+        }
+        setQuickUploadStatus(`Uploading ${index + 1} of ${quickUploadFiles.length}: ${file.name}`);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
+        const fileRef = ref(storage, `groups/${group.id}/resources/${user.uid}_${Date.now()}_${safeName}`);
+        const snap = await uploadBytes(fileRef, file, { contentType: file.type || "application/octet-stream" });
+        const url = await getDownloadURL(snap.ref);
+        await addGroupResource(db, {
+          groupId: group.id,
+          user,
+          profile: { name: userName, avatarUrl: userAvatar },
+          title: file.name,
+          url,
+          subject: folder,
+          resourceType: inferQuickResourceType(file.name),
+          fileName: file.name,
+          description: "",
+        });
+      }
+      setSuccess(`${quickUploadFiles.length} ${quickUploadFiles.length === 1 ? "file" : "files"} uploaded to ${group.name}.`);
+      setTimeout(() => setSuccess(""), 2500);
+      setShowQuickUpload(false);
+      setShowQuickActions(false);
+      resetQuickUpload();
+    } catch (err) {
+      setError(err.message || "Upload failed.");
+    } finally {
+      setUploading(false);
+      setQuickUploadStatus("");
+    }
+  };
 
   useEffect(() => {
     let unsubscribe;
@@ -10569,6 +10732,107 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
 
+      {showQuickActions && (
+        <div onClick={() => setShowQuickActions(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.42)',zIndex:2200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'#fff',borderRadius:'18px 18px 0 0',padding:'14px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.22)'}}>
+            <div style={{width:'42px',height:'4px',borderRadius:'999px',background:'#d7e1e6',margin:'0 auto 12px'}} />
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
+              <div>
+                <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d'}}>Add to Kampasika</div>
+                <div style={{fontSize:'12px',color:'#667085',marginTop:'2px'}}>Files, groups, events, and marketplace posts.</div>
+              </div>
+              <button type="button" onClick={() => setShowQuickActions(false)} style={{border:0,background:'#f1f5f7',borderRadius:'999px',width:'34px',height:'34px',fontSize:'18px',fontWeight:900,color:'#486171'}}>×</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'9px'}}>
+              <button type="button" onClick={() => { if (!user) { requireAuth("upload files", () => setShowQuickActions(true)); return; } setShowQuickUpload(true); if (!quickUploadGroupId) { const firstGroup = groupsForSelectedUni.find(group => myGroupMemberships[group.id] === "active" || group.ownerUid === user.uid || group.adminUid === user.uid); if (firstGroup) setQuickUploadGroupId(firstGroup.id); } }} style={{border:'1px solid #ccebea',background:'#effefe',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f766e'}}>Upload files</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#486171',marginTop:'3px'}}>PDF, PPTX, DOCX, images</span>
+              </button>
+              <button type="button" onClick={() => setShowQuickSavedFiles(true)} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Saved files</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Open offline copies</span>
+              </button>
+              <button type="button" onClick={() => { setShowQuickActions(false); user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create group</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Class, course, club</span>
+              </button>
+              <button type="button" onClick={() => { setShowQuickActions(false); setCreateCollectionData(prev => ({...prev, collectionType:'event', price:''})); user ? setPage('createCollection') : requireAuth("create event", () => setPage('createCollection')); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create event</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Poster, register, pay</span>
+              </button>
+              <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("create") : requireAuth("sell", () => setPage("create")); }} style={{gridColumn:'1 / -1',border:'1px solid #dbe8e7',background:'#f8fbfc',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Sell item</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Marketplace listing</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuickUpload && (
+        <div onClick={() => setShowQuickUpload(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.48)',zIndex:2300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'#fff',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
+            <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d',marginBottom:'4px'}}>Upload files to group</div>
+            <div style={{fontSize:'12px',color:'#667085',marginBottom:'14px'}}>Choose destination, then pick files from your phone.</div>
+            <label style={{display:'block',fontSize:'12px',fontWeight:800,color:'#0f1b2d',marginBottom:'6px'}}>Group</label>
+            <select value={quickUploadGroupId} onChange={event => setQuickUploadGroupId(event.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #dbe8e7',borderRadius:'10px',fontSize:'15px',marginBottom:'12px',boxSizing:'border-box'}}>
+              <option value="">Choose group</option>
+              {groupsForSelectedUni.filter(group => myGroupMemberships[group.id] === "active" || group.ownerUid === user?.uid || group.adminUid === user?.uid).map(group => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+            <label style={{display:'block',fontSize:'12px',fontWeight:800,color:'#0f1b2d',marginBottom:'6px'}}>Folder</label>
+            <input value={quickUploadFolder} onChange={event => setQuickUploadFolder(event.target.value)} placeholder="e.g. Topographical Surveying" style={{width:'100%',padding:'12px',border:'1.5px solid #dbe8e7',borderRadius:'10px',fontSize:'15px',marginBottom:'12px',boxSizing:'border-box'}} />
+            <input ref={quickUploadInputRef} type="file" multiple style={{display:'none'}} onChange={event => setQuickUploadFiles(Array.from(event.target.files || []))} />
+            <button type="button" onClick={() => quickUploadInputRef.current?.click()} style={{width:'100%',padding:'13px',border:'1.5px dashed #0d9488',borderRadius:'10px',background:'#effefe',color:'#0f766e',fontSize:'15px',fontWeight:900,cursor:'pointer',marginBottom:'10px'}}>
+              {quickUploadFiles.length ? `${quickUploadFiles.length} selected` : "Choose files from phone"}
+            </button>
+            {quickUploadFiles.length > 0 && (
+              <div style={{maxHeight:'118px',overflowY:'auto',border:'1px solid #eef3f4',borderRadius:'10px',marginBottom:'10px'}}>
+                {quickUploadFiles.map(file => (
+                  <div key={`${file.name}-${file.size}`} style={{padding:'8px 10px',borderBottom:'1px solid #eef3f4',fontSize:'12px',color:'#486171',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</div>
+                ))}
+              </div>
+            )}
+            {quickUploadStatus && <div style={{padding:'9px 10px',borderRadius:'8px',background:'#effefe',color:'#0f766e',fontSize:'12px',fontWeight:900,marginBottom:'10px'}}>{quickUploadStatus}</div>}
+            <div style={{display:'flex',gap:'8px'}}>
+              <button type="button" disabled={uploading} onClick={handleQuickUploadFiles} style={{flex:1,padding:'13px',border:0,borderRadius:'10px',background:'#06d6c7',color:'#0f1b2d',fontSize:'15px',fontWeight:900,cursor:uploading?'wait':'pointer'}}>{uploading ? "Uploading..." : "Upload"}</button>
+              <button type="button" disabled={uploading} onClick={() => { setShowQuickUpload(false); resetQuickUpload(); }} style={{padding:'13px 16px',border:0,borderRadius:'10px',background:'#f1f5f7',color:'#486171',fontSize:'15px',fontWeight:900,cursor:'pointer'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuickSavedFiles && (
+        <div onClick={() => setShowQuickSavedFiles(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.48)',zIndex:2300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',maxHeight:'78vh',overflowY:'auto',background:'#fff',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
+              <div>
+                <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d'}}>Saved files</div>
+                <div style={{fontSize:'12px',color:'#667085',marginTop:'2px'}}>{quickSavedFiles.length} offline {quickSavedFiles.length === 1 ? "file" : "files"} on this device</div>
+              </div>
+              <button type="button" onClick={() => setShowQuickSavedFiles(false)} style={{border:0,background:'#f1f5f7',borderRadius:'999px',width:'34px',height:'34px',fontSize:'18px',fontWeight:900,color:'#486171'}}>×</button>
+            </div>
+            {quickSavedFiles.length === 0 ? (
+              <div style={{border:'1px solid #dbe8e7',borderRadius:'10px',padding:'18px',textAlign:'center',color:'#667085',fontSize:'13px',fontWeight:700}}>No saved files yet. Open a group resource and tap Save offline first.</div>
+            ) : Object.entries(quickSavedFileGroups).map(([section, items]) => (
+              <div key={section} style={{border:'1px solid #eef3f4',borderRadius:'10px',overflow:'hidden',marginBottom:'10px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'9px 10px',background:'#f8fbfc',fontSize:'12px',fontWeight:900,color:'#0f766e'}}><span>{section}</span><span>{items.length}</span></div>
+                {items.map(item => (
+                  <div key={`${item.groupId}-${item.id}`} style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) auto',borderTop:'1px solid #eef3f4'}}>
+                    <button type="button" onClick={() => openQuickSavedFile(item)} style={{minWidth:0,border:0,background:'#fff',padding:'10px',textAlign:'left',cursor:'pointer'}}>
+                      <strong style={{display:'block',fontSize:'13px',fontWeight:900,color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.title || item.fileName || "Saved file"}</strong>
+                      <span style={{display:'block',fontSize:'11px',fontWeight:700,color:'#667085',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.groupName}{item.savedAt ? ` - ${new Date(item.savedAt).toLocaleDateString()}` : ""}</span>
+                    </button>
+                    <button type="button" onClick={() => removeQuickSavedFile(item)} style={{border:0,background:'#fff',padding:'0 10px',color:'#991b1b',fontSize:'11px',fontWeight:900,cursor:'pointer'}}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{
   position:'fixed',
   bottom:0,
@@ -10594,7 +10858,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount}</span>}
         </button>
         <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
-        <button onClick={()=>{user ? setPage("create") : requireAuth("sell", ()=>setPage("create"));}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>＋</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Sell</span></button>
+        <button onClick={()=>setShowQuickActions(true)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>+</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Add</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
