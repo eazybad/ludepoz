@@ -1154,6 +1154,7 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     description: data.description.trim(),
     collectionType: data.collectionType || "contribution",
     amount,
+    options: (data.options || "").trim(),
     expectedPeople: Number(data.expectedPeople || 0),
     paymentMethods: data.paymentMethods,
     deadline: data.deadline || null,
@@ -1224,6 +1225,7 @@ export async function updateGroupCollection(db, { groupId, collectionId, user, d
     description: data.description.trim(),
     collectionType: data.collectionType || "contribution",
     amount,
+    options: (data.options || "").trim(),
     expectedPeople: Number(data.expectedPeople || 0),
     paymentMethods: data.paymentMethods,
     deadline: data.deadline || null,
@@ -1335,6 +1337,7 @@ export async function submitGroupPayment(db, storage, { groupId, collectionItem,
     phone: data.phone.trim(),
     payerName: data.payerName.trim(),
     paymentRef: data.paymentRef.trim(),
+    selectedOption: (data.selectedOption || "").trim(),
     amountDue: Number(collectionItem.amount || 0),
     amountPaid: Number(data.amountPaid || 0),
     ...(paymentProofUrl ? { paymentProofUrl } : {}),
@@ -1362,12 +1365,14 @@ export async function submitGroupPayment(db, storage, { groupId, collectionItem,
 
 export async function registerGroupEvent(db, { groupId, collectionItem, user, profile, data = {} }) {
   const registrationRef = doc(db, "groups", groupId, "collections", collectionItem.id, "payments", user.uid);
+  const isOrder = collectionItem.collectionType === "order";
   await setDoc(registrationRef, {
     uid: user.uid,
     studentName: profile.name || user.email || "Member",
     phone: (data.phone || "").trim(),
     payerName: "",
     paymentRef: "",
+    selectedOption: (data.selectedOption || "").trim(),
     amountDue: Number(collectionItem.amount || 0),
     amountPaid: 0,
     status: "registered",
@@ -1380,14 +1385,16 @@ export async function registerGroupEvent(db, { groupId, collectionItem, user, pr
   const { groupName, reviewers } = await getGroupReviewers(db, groupId);
   await notifyMembers(db, reviewers, {
     excludeUid: user.uid,
-    type: "group_event_registered",
-    title: `${groupName}: event registration`,
-    message: `${profile.name || user.email || "Member"} registered for ${collectionItem.title}`,
+    type: isOrder ? "group_order_placed" : "group_event_registered",
+    title: isOrder ? `${groupName}: new order` : `${groupName}: event registration`,
+    message: isOrder
+      ? `${profile.name || user.email || "Member"} placed an order for ${collectionItem.title}`
+      : `${profile.name || user.email || "Member"} registered for ${collectionItem.title}`,
     groupId,
     collectionId: collectionItem.id,
     paymentId: registrationRef.id,
     category: "adminAlerts",
-    dedupeKey: collectionDedupeKey("group_event_registered", groupId, collectionItem.id, registrationRef.id),
+    dedupeKey: collectionDedupeKey(isOrder ? "group_order_placed" : "group_event_registered", groupId, collectionItem.id, registrationRef.id),
   });
 }
 

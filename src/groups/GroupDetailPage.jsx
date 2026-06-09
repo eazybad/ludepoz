@@ -56,6 +56,7 @@ const emptyTracker = {
   description: "",
   collectionType: "contribution",
   amount: "",
+  options: "",
   expectedPeople: "",
   paymentMethods: "",
   visibility: "groupOnly",
@@ -70,6 +71,7 @@ const emptyPayment = {
   payerName: "",
   paymentRef: "",
   amountPaid: "",
+  selectedOption: "",
   paymentProofFile: null,
   paymentProofPreview: "",
 };
@@ -414,14 +416,16 @@ export function GroupDetailPage({
     ? group.inviteLink
     : `${window.location.origin}/g/${group.inviteCode || group.id}`;
   const selectedCollection = collections.find(item => item.id === selectedCollectionId) || null;
-  const eventCollections = collections.filter(item => (item.collectionType || "") === "event");
-  const visibleEventCollections = selectedCollection?.collectionType === "event"
+  const eventCollections = collections.filter(item => ["event", "order"].includes(item.collectionType || ""));
+  const visibleEventCollections = ["event", "order"].includes(selectedCollection?.collectionType || "")
     ? eventCollections.filter(item => item.id !== selectedCollection.id)
     : eventCollections;
   const paymentCollections = collections.filter(item => (item.collectionType || "") !== "event" || Number(item.amount || 0) > 0);
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
   const selectedPaidEvent = selectedCollection?.collectionType === "event" && selectedNeedsPayment;
-  const canViewPublicSelectedEvent = selectedCollection?.collectionType === "event" && selectedCollection.visibility === "public";
+  const selectedGroupOrder = selectedCollection?.collectionType === "order";
+  const selectedOrderOptions = (selectedCollection?.options || "").split(",").map(item => item.trim()).filter(Boolean);
+  const canViewPublicSelectedEvent = ["event", "order"].includes(selectedCollection?.collectionType || "") && selectedCollection.visibility === "public";
   const myPayment = payments.find(payment => payment.uid === user?.uid || payment.id === user?.uid) || null;
   const myPaymentRemaining = Math.max(0, Number(selectedCollection?.amount || 0) - Number(myPayment?.amountPaid || 0));
   const cacheSavedLabel = screenCacheState.savedAt
@@ -871,6 +875,7 @@ export function GroupDetailPage({
       studentName: prev.studentName || myPayment.studentName || userName || "",
       phone: prev.phone || myPayment.phone || "",
       amountPaid: prev.amountPaid || String(myPayment.amountPaid || ""),
+      selectedOption: prev.selectedOption || myPayment.selectedOption || "",
       paymentRef: prev.paymentRef || myPayment.paymentRef || "",
       payerName: prev.payerName || myPayment.payerName || "",
     }));
@@ -1627,9 +1632,11 @@ export function GroupDetailPage({
   };
 
   const handleCreateTracker = async () => {
-    const effectiveCollectionType = activeTab === "events" ? "event" : trackerData.collectionType;
+    const effectiveCollectionType = activeTab === "events"
+      ? (trackerData.collectionType === "order" ? "order" : "event")
+      : trackerData.collectionType;
     if (!trackerData.title.trim() || (effectiveCollectionType !== "event" && !trackerData.amount)) {
-      onError(new Error(effectiveCollectionType === "event" ? "Event title is required." : "Tracker title and amount are required."));
+      onError(new Error(effectiveCollectionType === "event" ? "Event title is required." : "Order title and price are required."));
       return;
     }
     setBusy(true);
@@ -1674,7 +1681,7 @@ export function GroupDetailPage({
           setPendingEventPhotoPreviews(prev => ({ ...prev, [createdTracker.id]: trackerData.photoPreview }));
         }
       }
-      if (!editingTrackerId && effectiveCollectionType === "event" && createdTracker && photoFile) {
+      if (!editingTrackerId && ["event", "order"].includes(effectiveCollectionType) && createdTracker && photoFile) {
         setGroupUploadStatus("Attaching poster...");
         try {
           await attachGroupCollectionPhoto(db, storage, {
@@ -1688,7 +1695,7 @@ export function GroupDetailPage({
         }
       }
       markCurrentGroupRead();
-      onSuccess(editingTrackerId ? "Tracker updated." : effectiveCollectionType === "event" ? "Event created." : "Payment tracker created.");
+      onSuccess(editingTrackerId ? "Tracker updated." : effectiveCollectionType === "event" ? "Event created." : effectiveCollectionType === "order" ? "Order created." : "Payment tracker created.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1699,7 +1706,7 @@ export function GroupDetailPage({
 
   const handleDeleteTracker = async (item = selectedCollection) => {
     if (!item || !memberCanManage || !user) return;
-    const label = item.collectionType === "event" ? "event" : "payment tracker";
+    const label = item.collectionType === "event" ? "event" : item.collectionType === "order" ? "order" : "payment tracker";
     if (!window.confirm(`Delete "${item.title || label}"? This will remove its registrations/payment records from this group.`)) return;
     setBusy(true);
     try {
@@ -1728,6 +1735,7 @@ export function GroupDetailPage({
       description: item.description || "",
       collectionType: item.collectionType || "contribution",
       amount: item.amount || "",
+      options: item.options || "",
       expectedPeople: item.expectedPeople || "",
       paymentMethods: Array.isArray(item.paymentMethods) ? item.paymentMethods.join(", ") : item.paymentMethods || "",
       visibility: item.visibility || (item.collectionType === "event" ? "public" : "groupOnly"),
@@ -1765,6 +1773,11 @@ export function GroupDetailPage({
 
   const handleSubmitPayment = async () => {
     if (!selectedCollection) return;
+    const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
+    if (needsOption && !paymentData.selectedOption) {
+      onError(new Error("Choose an option or size first."));
+      return;
+    }
     if (!paymentData.phone.trim() || !String(paymentData.amountPaid || "").trim() || !paymentData.paymentRef.trim()) {
       onError(new Error("Phone number, amount paid, and sender name/reference are required."));
       return;
@@ -1799,6 +1812,11 @@ export function GroupDetailPage({
 
   const handleRegisterEvent = async () => {
     if (!selectedCollection || !user) return;
+    const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
+    if (needsOption && !paymentData.selectedOption) {
+      onError(new Error("Choose an option or size first."));
+      return;
+    }
     if (myPayment && !window.confirm("You already registered. Do you want to update your registration?")) return;
     setBusy(true);
     try {
@@ -1807,10 +1825,10 @@ export function GroupDetailPage({
         collectionItem: selectedCollection,
         user,
         profile,
-        data: { phone: paymentData.phone },
+        data: { phone: paymentData.phone, selectedOption: paymentData.selectedOption },
       });
       setShowPaymentForm(false);
-      onSuccess("Registration saved.");
+      onSuccess(selectedCollection.collectionType === "order" ? "Order placed. You can submit payment proof later." : "Registration saved.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1920,10 +1938,11 @@ export function GroupDetailPage({
   const handleExportPayments = () => {
     if (!selectedCollection) return;
     const rows = [
-      ["Name", "Status", "Amount Paid", "Amount Due", "Phone", "Reference", "Proof URL", "Submitted At"],
+      ["Name", "Status", "Option", "Amount Paid", "Amount Due", "Phone", "Reference", "Proof URL", "Submitted At"],
       ...payments.map(payment => [
         payment.studentName || "",
         payment.status || "pending",
+        payment.selectedOption || "",
         payment.amountPaid || "",
         payment.amountDue || selectedCollection.amount || "",
         payment.phone || "",
@@ -2082,29 +2101,32 @@ export function GroupDetailPage({
 
   const renderTrackerForm = () => (
     <div className="payment-card group-create-card">
-      {editingTrackerId && <div className="payment-alert compact">Editing existing {trackerData.collectionType === "event" ? "event" : "payment tracker"}</div>}
+      {editingTrackerId && <div className="payment-alert compact">Editing existing {trackerData.collectionType === "event" ? "event" : trackerData.collectionType === "order" ? "order" : "payment tracker"}</div>}
       <div className="group-field">
-        <label>{trackerData.collectionType === "event" ? "Event poster / photo" : "Photo"}</label>
+        <label>{trackerData.collectionType === "event" ? "Event poster / photo" : trackerData.collectionType === "order" ? "Order photo / poster" : "Photo"}</label>
         <input type="file" accept="image/*" onChange={event => {
           const file = event.target.files?.[0] || null;
           setTrackerData({ ...trackerData, photoFile: file, photoPreview: file ? URL.createObjectURL(file) : "" });
         }} />
         {trackerData.photoPreview && <img className="tracker-photo-preview" src={trackerData.photoPreview} alt="Preview" />}
       </div>
-      <div className="group-field"><label>Title</label><input value={trackerData.title} onChange={event => setTrackerData({ ...trackerData, title: event.target.value })} placeholder={trackerData.collectionType === "event" ? "ARU Freshers welcome night" : "Studio model materials"} /></div>
+      <div className="group-field"><label>Title</label><input value={trackerData.title} onChange={event => setTrackerData({ ...trackerData, title: event.target.value })} placeholder={trackerData.collectionType === "event" ? "ARU Freshers welcome night" : trackerData.collectionType === "order" ? "CSN YR 2 T-Shirts" : "Studio model materials"} /></div>
       {activeTab === "events" ? (
-        <div className="payment-alert compact">Event registration</div>
+        <div className="payment-alert compact">{trackerData.collectionType === "order" ? "Group order" : "Event registration"}</div>
       ) : (
         <div className="group-field"><label>Type</label><select value={trackerData.collectionType} onChange={event => setTrackerData({ ...trackerData, collectionType: event.target.value, visibility: event.target.value === "event" ? "public" : "groupOnly", amount: event.target.value === "event" ? trackerData.amount : trackerData.amount })}><option value="contribution">Contribution</option><option value="order">Group order</option><option value="event">Event registration</option></select></div>
       )}
       <div className="group-field"><label>Visibility</label><select value={trackerData.visibility} onChange={event => setTrackerData({ ...trackerData, visibility: event.target.value })}><option value="groupOnly">Group members only</option><option value="public">Public - all students can participate</option><option value="inviteOnly">Invite link only</option></select></div>
-      <div className="group-field"><label>{trackerData.collectionType === "event" ? "Payment amount, optional" : "Amount per member"}</label><input type="number" value={trackerData.amount} onChange={event => setTrackerData({ ...trackerData, amount: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Leave empty for free registration" : "10000"} /></div>
+      <div className="group-field"><label>{trackerData.collectionType === "event" ? "Payment amount, optional" : trackerData.collectionType === "order" ? "Price per item" : "Amount per member"}</label><input type="number" value={trackerData.amount} onChange={event => setTrackerData({ ...trackerData, amount: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Leave empty for free registration" : "10000"} /></div>
+      {trackerData.collectionType === "order" && (
+        <div className="group-field"><label>Options / sizes</label><input value={trackerData.options} onChange={event => setTrackerData({ ...trackerData, options: event.target.value })} placeholder="S, M, L, XL" /></div>
+      )}
       <div className="group-field"><label>Expected people</label><input type="number" value={trackerData.expectedPeople} onChange={event => setTrackerData({ ...trackerData, expectedPeople: event.target.value })} placeholder="45" /></div>
       <div className="group-field"><label>Payment numbers</label><input value={trackerData.paymentMethods} onChange={event => setTrackerData({ ...trackerData, paymentMethods: event.target.value })} placeholder="M-Pesa 255..., Airtel Money 255..." /></div>
       <div className="group-field"><label>Deadline</label><input type="date" value={trackerData.deadline} onChange={event => setTrackerData({ ...trackerData, deadline: event.target.value })} /></div>
-      <div className="group-field"><label>Description</label><textarea value={trackerData.description} onChange={event => setTrackerData({ ...trackerData, description: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Where, when, who can register, and what students should bring." : "What this payment is for and how members should pay."} /></div>
+      <div className="group-field"><label>Description</label><textarea value={trackerData.description} onChange={event => setTrackerData({ ...trackerData, description: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Where, when, who can register, and what students should bring." : trackerData.collectionType === "order" ? "Fabric, pickup point, deadline, and order instructions." : "What this payment is for and how members should pay."} /></div>
       {busy && groupUploadStatus && <div className="group-upload-status">{groupUploadStatus}</div>}
-      <button className="group-btn primary" type="button" disabled={busy} onClick={handleCreateTracker}>{busy ? (groupUploadStatus || "Saving...") : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : "Create order / contribution"}</button>
+      <button className="group-btn primary" type="button" disabled={busy} onClick={handleCreateTracker}>{busy ? (groupUploadStatus || "Saving...") : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : trackerData.collectionType === "order" ? "Create order" : "Create order / contribution"}</button>
       {editingTrackerId && <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowTrackerForm(false); setEditingTrackerId(""); setTrackerData(emptyTracker); }}>Cancel edit</button>}
     </div>
   );
@@ -2659,7 +2681,7 @@ export function GroupDetailPage({
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
                       <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
-                      <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedGroupOrder ? "Payment proof not submitted yet" : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       {myPayment.paymentProofUrl && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(myPayment.paymentProofUrl)}><img className="payment-proof-thumb" src={myPayment.paymentProofUrl} alt="Your payment proof" /></button>}
                       <details className="group-payment-qr">
@@ -2712,6 +2734,7 @@ export function GroupDetailPage({
                       <div className="member-name">{payment.studentName || "Student"}</div>
                       <div className="payment-detail-grid">
                         <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
+                        {payment.selectedOption ? <span><small>Option</small><strong>{payment.selectedOption}</strong></span> : null}
                         {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
                         {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
                         {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
@@ -2844,7 +2867,7 @@ export function GroupDetailPage({
       {(canViewGroupContent || canViewPublicSelectedEvent) && activeTab === "events" && (
         <div className="group-panel">
           {memberCanManage && (
-            <div style={{ marginBottom: 10 }}>
+            <div className="group-inline-actions" style={{ marginBottom: 10 }}>
               <button
                 className="group-btn primary"
                 type="button"
@@ -2856,10 +2879,21 @@ export function GroupDetailPage({
               >
                 {showTrackerForm ? "Close form" : "Create event"}
               </button>
+              <button
+                className="group-btn secondary"
+                type="button"
+                onClick={() => {
+                  if (!showTrackerForm) pushGroupHistory();
+                  setShowTrackerForm(true);
+                  setTrackerData(prev => ({ ...prev, collectionType: "order", visibility: "groupOnly", amount: prev.amount || "" }));
+                }}
+              >
+                Create order
+              </button>
             </div>
           )}
           {showTrackerForm && renderTrackerForm()}
-          {selectedCollection && selectedCollection.collectionType === "event" && (
+          {selectedCollection && ["event", "order"].includes(selectedCollection.collectionType) && (
             <>
               <button className="group-btn ghost" type="button" style={{ marginBottom: 10 }} onClick={() => {
                 if (groupNavDepth.current > 0) {
@@ -2875,9 +2909,10 @@ export function GroupDetailPage({
                 {eventPosterStatus(selectedCollection) && <div className={`tracker-photo-status ${eventPosterStatus(selectedCollection).kind}`}>{eventPosterStatus(selectedCollection).text}</div>}
                 <h4>{selectedCollection.title}</h4>
                 <div className="payment-meta">
-                  {selectedCollection.description || "Event details"}
+                  {selectedCollection.description || (selectedGroupOrder ? "Order details" : "Event details")}
                   {selectedCollection.deadline ? ` - Deadline: ${selectedCollection.deadline}` : ""}
-                  {Number(selectedCollection.amount || 0) > 0 ? ` - ${Number(selectedCollection.amount || 0).toLocaleString()} TSh` : " - Free registration"}
+                  {Number(selectedCollection.amount || 0) > 0 ? ` - ${Number(selectedCollection.amount || 0).toLocaleString()} TSh` : selectedGroupOrder ? " - Price not set" : " - Free registration"}
+                  {selectedGroupOrder && selectedCollection.options ? ` - Options: ${selectedCollection.options}` : ""}
                 </div>
                 {memberCanManage && (
                   <div className="group-inline-actions" style={{ marginTop: 10 }}>
@@ -2918,11 +2953,12 @@ export function GroupDetailPage({
               )}
               {user && (
                 <div className="payment-card">
-                  <h4>{selectedNeedsPayment ? "Pay for event" : "Register"}</h4>
+                  <h4>{selectedGroupOrder ? "Place order" : selectedNeedsPayment ? "Pay for event" : "Register"}</h4>
                   {myPayment && (
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
-                      <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
+                      <strong>{selectedGroupOrder ? "Your order is on record." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
+                      {myPayment.selectedOption && <span>Option: {myPayment.selectedOption}</span>}
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       <details className="group-payment-qr">
@@ -2940,11 +2976,25 @@ export function GroupDetailPage({
                       <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>Pay now</button>
                     </div>
                   )}
-                  {(!myPayment && !selectedPaidEvent) || showPaymentForm || myPayment?.proofRequested ? (
+                  {selectedGroupOrder && myPayment && !showPaymentForm && myPayment.status !== "paid" && (
+                    <button className="group-btn primary" type="button" onClick={() => setShowPaymentForm(true)}>Submit payment proof</button>
+                  )}
+                  {selectedGroupOrder && !myPayment && !showPaymentForm ? (
+                    <>
+                      {selectedOrderOptions.length > 0 && (
+                        <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                      )}
+                      <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={handleRegisterEvent}>{busy ? "Placing..." : "Place order"}</button>
+                    </>
+                  ) : (!myPayment && !selectedPaidEvent) || showPaymentForm || myPayment?.proofRequested ? (
                     <>
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
                         <>
+                          {selectedGroupOrder && selectedOrderOptions.length > 0 && (
+                            <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                          )}
                           <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
                           <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
                           <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
@@ -2954,17 +3004,17 @@ export function GroupDetailPage({
                           }} /></div>
                         </>
                       )}
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? "Pay / submit proof" : "Register"}</button>
+                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Submit / update payment proof" : selectedGroupOrder ? "Submit order proof" : selectedNeedsPayment ? "Pay / submit proof" : "Register"}</button>
                     </>
                   ) : myPayment?.status === "paid" ? null : (
-                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
+                    <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedGroupOrder ? "Update order / proof" : selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
                   )}
                 </div>
               )}
               {!user && (
                 <div className="payment-card">
-                  <h4>{selectedNeedsPayment ? "Register, then pay" : "Register"}</h4>
-                  <div className="payment-meta">Sign in to register for this public event. You can pay later if payment is required.</div>
+                  <h4>{selectedGroupOrder ? "Sign in to order" : selectedNeedsPayment ? "Register, then pay" : "Register"}</h4>
+                  <div className="payment-meta">{selectedGroupOrder ? "Sign in to place an order. You can submit payment proof later." : "Sign in to register for this public event. You can pay later if payment is required."}</div>
                   <button className="group-btn primary" type="button" onClick={onJoinGroup} style={{ marginTop: 10 }}>
                     Sign in to register
                   </button>
@@ -2981,6 +3031,7 @@ export function GroupDetailPage({
                         <div className="member-name">{payment.studentName || "Student"}</div>
                         <div className="payment-detail-grid">
                           <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
+                          {payment.selectedOption ? <span><small>Option</small><strong>{payment.selectedOption}</strong></span> : null}
                           {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
                           {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
                           {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
@@ -3008,12 +3059,14 @@ export function GroupDetailPage({
               {eventPosterStatus(eventItem) && <div className={`tracker-photo-status ${eventPosterStatus(eventItem).kind}`}>{eventPosterStatus(eventItem).text}</div>}
               <div>
                 <strong>{eventItem.title}</strong>
-                <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : "Free"}</span>
+                <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : eventItem.collectionType === "order" ? "Price not set" : "Free"}</span>
               </div>
+              {eventItem.collectionType === "order" && <span className="group-role-pill">Group order</span>}
               {Number(eventItem.amount || 0) > 0 && <span className="group-role-pill">Also in payments</span>}
               <p>
                 {eventItem.description || "Event details"}
                 {eventItem.deadline ? ` - Deadline: ${eventItem.deadline}` : ""}
+                {eventItem.collectionType === "order" && eventItem.options ? ` - Options: ${eventItem.options}` : ""}
                 {eventItem.visibility ? ` - ${eventItem.visibility}` : ""}
               </p>
               {memberCanManage && <span className="group-role-pill">Tap to view / edit</span>}
@@ -3025,7 +3078,7 @@ export function GroupDetailPage({
                 }}
                 style={{ marginTop: 10 }}
               >
-                View
+                {eventItem.collectionType === "order" ? "Place order" : "View"}
               </button>
             </div>
           ))}
