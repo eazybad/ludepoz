@@ -923,7 +923,7 @@ export async function reactToGroupMessage(db, { groupId, channelId = "chats", me
   });
 }
 
-export async function addGroupResource(db, { groupId, user, profile, title, url = "", subject = "", topic = "", resourceType = "", fileName = "", description = "", deadline = "" }) {
+export async function addGroupResource(db, { groupId, user, profile, title, url = "", subject = "", topic = "", resourceType = "", fileName = "", storagePath = "", description = "", deadline = "" }) {
   const text = title.trim();
   const cleanUrl = url.trim();
   const cleanDescription = description.trim();
@@ -936,6 +936,7 @@ export async function addGroupResource(db, { groupId, user, profile, title, url 
     topic: topic.trim(),
     resourceType: resourceType.trim(),
     fileName: fileName.trim(),
+    storagePath: storagePath.trim(),
     description: cleanDescription,
     deadline: deadline || null,
     authorName: profile.name || user.email || "Admin",
@@ -962,6 +963,7 @@ export async function updateGroupResource(db, { groupId, resourceId, user, data 
     topic: (data.topic || "").trim(),
     resourceType: (data.resourceType || "").trim(),
     fileName: (data.fileName || "").trim(),
+    storagePath: (data.storagePath || "").trim(),
     description: cleanDescription,
     deadline: data.deadline || null,
     editedByUid: user.uid,

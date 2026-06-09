@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getBlob, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { compressImage, COMPRESSION_PRESETS } from "../imageCompression";
 import "./GroupComponents.css";
@@ -312,6 +312,16 @@ function isDriveFolderUrl(url = "") {
 
 function isLikelyHtmlResponse(response) {
   return (response.headers.get("content-type") || "").toLowerCase().includes("text/html");
+}
+
+function storagePathFromDownloadUrl(url = "") {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/\/o\/([^/?]+)/);
+    return match?.[1] ? decodeURIComponent(match[1]) : "";
+  } catch (_) {
+    return "";
+  }
 }
 
 export function GroupDetailPage({
@@ -1139,6 +1149,7 @@ export function GroupDetailPage({
       }
       let resourceUrl = resourceData.url.trim();
       let fileName = resourceData.fileName || "";
+      let storagePath = "";
       if (storage && resourceData.file) {
         const uploadFile = await prepareResourceUploadFile(resourceData.file);
         const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
@@ -1146,6 +1157,7 @@ export function GroupDetailPage({
         const snap = await uploadBytes(fileRef, uploadFile);
         resourceUrl = await getDownloadURL(snap.ref);
         fileName = resourceData.file.name;
+        storagePath = fileRef.fullPath;
       }
       const title = resourceData.title || fileName || resourceUrl;
       const resourceType = resourceData.resourceType || inferResourceType(fileName || resourceUrl || title) || "Resource";
@@ -1155,6 +1167,7 @@ export function GroupDetailPage({
         url: resourceUrl,
         fileName,
         resourceType,
+        storagePath,
       };
       if (editingResourceId) {
         await updateGroupResource(db, {
@@ -1290,12 +1303,27 @@ export function GroupDetailPage({
 
     setSavingOfflineResourceId(resource.id);
     try {
-      const response = await fetch(resource.url, { mode: "cors", credentials: "omit", cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("The file could not be downloaded.");
-      }
-      if (isLikelyHtmlResponse(response) && !["PDF", "Image", "Video", "Audio"].includes(resource.resourceType || "")) {
-        throw new Error("This link opens a web page, not a direct file.");
+      const storagePath = resource.storagePath || storagePathFromDownloadUrl(resource.url);
+      let response;
+      let contentType = "";
+      let size = 0;
+      if (storage && storagePath) {
+        const blob = await getBlob(ref(storage, storagePath));
+        contentType = blob.type || resource.contentType || "";
+        size = blob.size || 0;
+        response = new Response(blob, {
+          headers: contentType ? { "content-type": contentType } : undefined,
+        });
+      } else {
+        response = await fetch(resource.url, { mode: "cors", credentials: "omit", cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("The file could not be downloaded.");
+        }
+        if (isLikelyHtmlResponse(response) && !["PDF", "Image", "Video", "Audio"].includes(resource.resourceType || "")) {
+          throw new Error("This link opens a web page, not a direct file.");
+        }
+        contentType = response.headers.get("content-type") || "";
+        size = Number(response.headers.get("content-length") || 0);
       }
 
       const cache = await caches.open(OFFLINE_RESOURCE_CACHE);
@@ -1308,8 +1336,9 @@ export function GroupDetailPage({
           title: resource.title || resource.text || "Saved resource",
           fileName: resource.fileName || "",
           resourceType: resource.resourceType || "",
-          contentType: response.headers.get("content-type") || "",
-          size: Number(response.headers.get("content-length") || 0),
+          storagePath,
+          contentType,
+          size,
           subject: resource.subject || "",
           savedAt: Date.now(),
         },
@@ -1461,6 +1490,7 @@ export function GroupDetailPage({
       topic: file.name,
       resourceType: inferResourceType(uploadFile.name || file.name) || "File",
       fileName: file.name,
+      storagePath: filePath,
     });
     if (ENABLE_DOCUMENT_PDF_PREVIEWS && resourcePreviewKind({ fileName: file.name, resourceType: inferResourceType(uploadFile.name || file.name) }) === "convertible") {
       await handlePrepareDocumentPreview({ id: resourceRef.id });

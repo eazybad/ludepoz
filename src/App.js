@@ -3237,6 +3237,7 @@ await updateDoc(convRef, {
           subject: folder,
           resourceType: inferQuickResourceType(file.name),
           fileName: file.name,
+          storagePath: fileRef.fullPath,
           description: "",
         });
       }
