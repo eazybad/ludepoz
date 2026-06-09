@@ -313,11 +313,9 @@ function App() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
-      setOfflineBannerDismissed(false);
     };
     const handleOffline = () => {
       setIsOffline(true);
-      setOfflineBannerDismissed(false);
     };
 
     window.addEventListener("online", handleOnline);
@@ -563,7 +561,6 @@ useEffect(() => {
   const [showNotificationBanner, setShowNotificationBanner] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
-  const [offlineBannerDismissed, setOfflineBannerDismissed] = useState(false);
 
   // Saved search alerts — track which queries the user has already subscribed to in this session
   const [savedAlerts, setSavedAlerts] = useState(new Set());
@@ -4838,48 +4835,6 @@ return (
   display:'flex',
   flexDirection:'column'
 }}>
-      {isOffline && !offlineBannerDismissed && (
-        <div
-          style={{
-            margin: '10px 12px 0',
-            background: '#ecfdf5',
-            color: '#065f46',
-            border: '1px solid #a7f3d0',
-            padding: '10px 38px 10px 12px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            lineHeight: 1.35,
-            flexShrink: 0,
-            zIndex: 80,
-            boxShadow: '0 8px 20px rgba(6, 95, 70, 0.08)',
-            position: 'relative'
-          }}
-        >
-          <strong style={{ display: 'block', marginBottom: '2px' }}>Offline mode</strong>
-          Showing saved group data on this device. New updates, messages, and submissions will sync when internet returns.
-          <button
-            type="button"
-            aria-label="Dismiss offline message"
-            onClick={() => setOfflineBannerDismissed(true)}
-            style={{
-              position:'absolute',
-              top:'7px',
-              right:'8px',
-              width:'24px',
-              height:'24px',
-              border:'none',
-              borderRadius:'50%',
-              background:'rgba(6,95,70,0.1)',
-              color:'#065f46',
-              fontSize:'16px',
-              lineHeight:1,
-              cursor:'pointer'
-            }}
-          >
-            ×
-          </button>
-        </div>
-      )}
 
       {showNotificationBanner && !isOffline && (
         <div
@@ -7029,7 +6984,6 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             && viewingGroup.activityAt.toMillis() > (groupReadAt[viewingGroup.id] || 0)
           }
           groupReadAtValue={groupReadAt[viewingGroup.id] || 0}
-          isOffline={isOffline}
           onGroupUpdated={(updatedGroup) => {
             setViewingGroup(updatedGroup);
             setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));

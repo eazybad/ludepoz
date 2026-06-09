@@ -306,6 +306,14 @@ function savedFileSection(resource = {}) {
   return "Other files";
 }
 
+function isDriveFolderUrl(url = "") {
+  return /drive\.google\.com\/drive\/folders\//i.test(url);
+}
+
+function isLikelyHtmlResponse(response) {
+  return (response.headers.get("content-type") || "").toLowerCase().includes("text/html");
+}
+
 export function GroupDetailPage({
   db,
   storage,
@@ -330,7 +338,6 @@ export function GroupDetailPage({
   initialSource = "",
   groupHasUnread = false,
   groupReadAtValue = 0,
-  isOffline = false,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || "chats");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -387,8 +394,6 @@ export function GroupDetailPage({
   const [savedOfflineResources, setSavedOfflineResources] = useState({});
   // eslint-disable-next-line no-unused-vars
   const [savingOfflineResourceId, setSavingOfflineResourceId] = useState("");
-  const [networkOffline, setNetworkOffline] = useState(() => isOffline || !navigator.onLine);
-  const [screenCacheState, setScreenCacheState] = useState({ hydrated: false, fromCache: false, hasPendingWrites: false, savedAt: 0 });
   // eslint-disable-next-line no-unused-vars
   const [resourcePreview, setResourcePreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -428,16 +433,6 @@ export function GroupDetailPage({
   const canViewPublicSelectedEvent = ["event", "order"].includes(selectedCollection?.collectionType || "") && selectedCollection.visibility === "public";
   const myPayment = payments.find(payment => payment.uid === user?.uid || payment.id === user?.uid) || null;
   const myPaymentRemaining = Math.max(0, Number(selectedCollection?.amount || 0) - Number(myPayment?.amountPaid || 0));
-  const cacheSavedLabel = screenCacheState.savedAt
-    ? new Date(screenCacheState.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "";
-  const screenConnectionMessage = networkOffline
-    ? (screenCacheState.savedAt ? `Offline - showing saved group data from ${cacheSavedLabel}` : "Offline - open this group once online to save its data here")
-    : screenCacheState.fromCache
-      ? "Showing saved data while Kampasika reconnects..."
-      : screenCacheState.hasPendingWrites
-        ? "Saving changes when the network catches up..."
-        : "";
   const myPaymentStatusLabel = myPayment?.status === "paid"
     ? "Paid"
     : myPayment?.status === "registered"
@@ -477,13 +472,7 @@ export function GroupDetailPage({
     && message.createdAt.getTime() > openedReadAtRef.current
   )), [chatMessages, user?.uid]);
   const firstUnreadMessageId = unreadChatMessages[0]?.id || "";
-  const noteSnapshotMeta = useCallback((meta = {}) => {
-    setScreenCacheState(prev => ({
-      ...prev,
-      fromCache: !!meta.fromCache,
-      hasPendingWrites: !!meta.hasPendingWrites,
-    }));
-  }, []);
+  const noteSnapshotMeta = useCallback(() => {}, []);
   const rememberGroupScreen = useCallback((patch = {}) => {
     if (!group?.id) return;
     const previous = screenCacheRef.current || {};
@@ -498,7 +487,6 @@ export function GroupDetailPage({
     };
     screenCacheRef.current = next;
     writeGroupScreenCache(group.id, next);
-    setScreenCacheState(prev => ({ ...prev, savedAt: next.savedAt }));
   }, [group?.id]);
   const sortedResources = useMemo(() => [...resources].sort((a, b) => (
     (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0)
@@ -660,17 +648,6 @@ export function GroupDetailPage({
   }, [showChatTools]);
 
   useEffect(() => {
-    const updateNetworkState = () => setNetworkOffline(isOffline || !navigator.onLine);
-    updateNetworkState();
-    window.addEventListener("online", updateNetworkState);
-    window.addEventListener("offline", updateNetworkState);
-    return () => {
-      window.removeEventListener("online", updateNetworkState);
-      window.removeEventListener("offline", updateNetworkState);
-    };
-  }, [isOffline]);
-
-  useEffect(() => {
     if (!group?.id) return undefined;
     setActiveTab(initialTab || "chats");
     setMenuOpen(false);
@@ -704,7 +681,6 @@ export function GroupDetailPage({
     const cached = readGroupScreenCache(group.id);
     screenCacheRef.current = cached;
     if (!cached.savedAt) {
-      setScreenCacheState({ hydrated: false, fromCache: false, hasPendingWrites: false, savedAt: 0 });
       return;
     }
     setMembers(cached.members || []);
@@ -716,7 +692,6 @@ export function GroupDetailPage({
       setPayments(cached.paymentsByCollection[initialCollectionId]);
     }
     setMembersLoaded(true);
-    setScreenCacheState(prev => ({ ...prev, hydrated: true, savedAt: cached.savedAt || 0 }));
   }, [group?.id, initialCollection, initialCollectionId]);
 
   useEffect(() => {
@@ -1304,6 +1279,10 @@ export function GroupDetailPage({
       onError(new Error("This resource does not have a file link to save."));
       return;
     }
+    if (isDriveFolderUrl(resource.url)) {
+      onError(new Error("Drive folders cannot be saved offline inside Kampasika. Upload the actual files to Kampasika first."));
+      return;
+    }
     if (!("caches" in window)) {
       onError(new Error("This browser does not support offline file saving."));
       return;
@@ -1311,9 +1290,12 @@ export function GroupDetailPage({
 
     setSavingOfflineResourceId(resource.id);
     try {
-      const response = await fetch(resource.url, { mode: "cors", credentials: "omit" });
+      const response = await fetch(resource.url, { mode: "cors", credentials: "omit", cache: "no-store" });
       if (!response.ok) {
         throw new Error("The file could not be downloaded.");
+      }
+      if (isLikelyHtmlResponse(response) && !["PDF", "Image", "Video", "Audio"].includes(resource.resourceType || "")) {
+        throw new Error("This link opens a web page, not a direct file.");
       }
 
       const cache = await caches.open(OFFLINE_RESOURCE_CACHE);
@@ -1334,9 +1316,9 @@ export function GroupDetailPage({
       };
       setSavedOfflineResources(nextSaved);
       writeOfflineResourceStore(group.id, nextSaved);
-      onSuccess("Resource saved for offline use on this device.");
+      onSuccess("Saved on this device.");
     } catch (err) {
-      onError(new Error("This link could not be saved offline inside Kampasika. Uploaded files work best; Google Drive links may need Drive's own offline cache."));
+      onError(new Error("This file could not be saved offline. If it is a Drive link, upload the actual file to Kampasika; if it is already uploaded, try opening it once and saving again."));
     } finally {
       setSavingOfflineResourceId("");
     }
@@ -2259,12 +2241,6 @@ export function GroupDetailPage({
         )}
         {(canViewGroupContent || canViewPublicSelectedEvent) && <div className="group-current-channel">{activeTab}</div>}
       </div>
-
-      {screenConnectionMessage && (
-        <div className={`group-connection-strip ${networkOffline ? "offline" : ""}`}>
-          {screenConnectionMessage}
-        </div>
-      )}
 
       {(!user || membersLoaded) && !canViewGroupContent && !canViewPublicSelectedEvent && (
         <div className="group-panel">
