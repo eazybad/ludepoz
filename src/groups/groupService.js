@@ -776,7 +776,7 @@ export function subscribeGroupWorkGroups(db, groupId, onNext, onError = console.
 
 export async function createGroupWorkGroup(db, { groupId, user, profile, data }) {
   const name = (data.name || "").trim();
-  if (!name) throw new Error("Work group name is required.");
+  if (!name) throw new Error("In-group name is required.");
   const memberUids = Array.from(new Set(data.memberUids || [])).filter(Boolean);
   const leaderUid = data.leaderUid || memberUids[0] || "";
   await addDoc(collection(db, "groups", groupId, "workGroups"), {

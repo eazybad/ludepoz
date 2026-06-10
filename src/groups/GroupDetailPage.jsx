@@ -1535,11 +1535,11 @@ export function GroupDetailPage({
 
   const handleSaveWorkGroup = async () => {
     if (!workGroupData.name.trim()) {
-      onError(new Error("Work group name is required."));
+      onError(new Error("In-group name is required."));
       return;
     }
     if (workGroupData.memberUids.length === 0) {
-      onError(new Error("Add at least one member to this work group."));
+      onError(new Error("Add at least one member to this in-group."));
       return;
     }
     setBusy(true);
@@ -1568,7 +1568,7 @@ export function GroupDetailPage({
       setEditingWorkGroupId("");
       setShowWorkGroupForm(false);
       markCurrentGroupRead();
-      onSuccess(editingWorkGroupId ? "Work group updated." : "Work group created.");
+      onSuccess(editingWorkGroupId ? "In-group updated." : "In-group created.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1577,11 +1577,11 @@ export function GroupDetailPage({
   };
 
   const handleDeleteWorkGroup = async (workGroup) => {
-    if (!window.confirm(`Delete "${workGroup.name || "this work group"}"? Submissions for it will be removed from this view.`)) return;
+    if (!window.confirm(`Delete "${workGroup.name || "this in-group"}"? Submissions for it will be removed from this view.`)) return;
     setBusy(true);
     try {
       await deleteGroupWorkGroup(db, { groupId: group.id, workGroupId: workGroup.id, user });
-      onSuccess("Work group deleted.");
+      onSuccess("In-group deleted.");
     } catch (err) {
       onError(err);
     } finally {
@@ -2187,7 +2187,7 @@ export function GroupDetailPage({
                       {[
                         ["chats", "Chats"],
                         ["payments", "Payments"],
-                        ["workgroups", "Work Groups"],
+                        ["workgroups", "In-groups"],
                         ["members", "Members"],
                         ["resources", "Resources"],
                       ].map(([id, label]) => (
@@ -2280,7 +2280,7 @@ export function GroupDetailPage({
               <>
                 <div className="group-preview-stats">
                   <span><strong>{sortedResources.length}</strong><small>Resources</small></span>
-                  <span><strong>{workGroups.length}</strong><small>Work groups</small></span>
+                  <span><strong>{workGroups.length}</strong><small>In-groups</small></span>
                   <span><strong>{collections.filter(item => (item.collectionType || "") === "event").length}</strong><small>Events</small></span>
                 </div>
                 {sortedResources.length > 0 && (
@@ -2296,7 +2296,7 @@ export function GroupDetailPage({
                 )}
                 {workGroups.length > 0 && (
                   <div className="group-preview-section">
-                    <strong>Work groups</strong>
+                    <strong>In-groups</strong>
                     {workGroups.slice(0, 3).map(workGroup => (
                       <div key={workGroup.id} className="group-preview-row">
                         <span>{workGroup.name}</span>
@@ -2785,7 +2785,7 @@ export function GroupDetailPage({
         <div className="group-panel">
           <div className="class-board-header">
             <div>
-              <strong>Work Groups</strong>
+              <strong>In-groups</strong>
               <span>Create teams, assign tasks, and receive submissions from each group.</span>
             </div>
             {memberCanManage && (
@@ -2796,7 +2796,7 @@ export function GroupDetailPage({
           </div>
 
           {workGroups.length === 0 ? (
-            <div className="resource-box">No work groups yet. Leaders can create Group 01, Group 02, assign members, and collect submissions here.</div>
+            <div className="resource-box">No in-groups yet. Leaders can create Group 01, Group 02, assign members, and collect submissions here.</div>
           ) : (
             <div className="workgroup-list">
               {workGroups.map(workGroup => {
@@ -3562,7 +3562,7 @@ export function GroupDetailPage({
             )}
             <div className="group-inline-actions">
               <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveWorkGroup}>
-                {busy ? "Saving..." : editingWorkGroupId ? "Update work group" : "Create work group"}
+                {busy ? "Saving..." : editingWorkGroupId ? "Update in-group" : "Create in-group"}
               </button>
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); setShowWorkGroupMembers(false); setShowWorkGroupMore(false); }}>
                 Cancel

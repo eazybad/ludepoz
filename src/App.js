@@ -2987,7 +2987,7 @@ await updateDoc(convRef, {
       const newGroup = await createUniversityGroup(db, {
         data: {
           name: "QUANTITY SURVEY YR1",
-          desc: "Year 1 Quantity Survey resources, updates, work groups, submissions, and class coordination.",
+          desc: "Year 1 Quantity Survey resources, updates, in-groups, submissions, and class coordination.",
           type: "class",
           visibility: "inviteOnly",
         },
