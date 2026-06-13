@@ -211,6 +211,8 @@ const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
 const AFRICASTALKING_API_KEY = defineSecret("AFRICASTALKING_API_KEY");
 const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
+const RAFIKISMS_API_KEY = defineSecret("RAFIKISMS_API_KEY");
+const RAFIKISMS_SENDER_ID = defineSecret("RAFIKISMS_SENDER_ID");
 const CLOUDCONVERT_API_KEY = defineSecret("CLOUDCONVERT_API_KEY");
 
 function assertAdmin(request) {
@@ -275,7 +277,32 @@ function otpHash(uid, phone, code, secret) {
     .digest("hex");
 }
 
-exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALKING_USERNAME] }, async (request) => {
+async function sendRafikiSms({ apiKey, senderId, phone, message }) {
+  const response = await fetch("https://api.rafikisms.co.tz/api/sms/send", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    body: JSON.stringify({
+      sender_id: senderId || "Kampasika",
+      recipient: phone,
+      recipients: [phone],
+      phone,
+      to: phone,
+      message,
+      text: message,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new HttpsError("internal", text || "RafikiSMS failed to send.");
+  }
+}
+
+exports.requestPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY, RAFIKISMS_SENDER_ID] }, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "You must be logged in.");
@@ -286,10 +313,10 @@ exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALK
     throw new HttpsError("invalid-argument", "Enter a valid Tanzania phone number.");
   }
 
-  const apiKey = AFRICASTALKING_API_KEY.value();
-  const username = AFRICASTALKING_USERNAME.value();
-  if (!apiKey || !username) {
-    throw new HttpsError("failed-precondition", "Africa's Talking secrets are not configured.");
+  const apiKey = RAFIKISMS_API_KEY.value();
+  const senderId = RAFIKISMS_SENDER_ID.value() || "Kampasika";
+  if (!apiKey) {
+    throw new HttpsError("failed-precondition", "RAFIKISMS_API_KEY is not configured.");
   }
 
   const code = String(crypto.randomInt(100000, 999999));
@@ -304,32 +331,12 @@ exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALK
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  const body = new URLSearchParams({
-    username,
-    to: phone,
+  await sendRafikiSms({
+    apiKey,
+    senderId,
+    phone,
     message: `Kampasika verification code: ${code}. Do not share this code.`,
   });
-
-  const response = await fetch("https://api.africastalking.com/version1/messaging", {
-    method: "POST",
-    headers: {
-      "apiKey": apiKey,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    const lower = text.toLowerCase();
-    if (response.status === 401 || lower.includes("authentication") || lower.includes("auth")) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Africa's Talking authentication failed. Check AFRICASTALKING_USERNAME and AFRICASTALKING_API_KEY belong to the same sandbox or live account."
-      );
-    }
-    throw new HttpsError("internal", text || "SMS failed to send.");
-  }
 
   await db.collection("users").doc(uid).set({
     phone,
@@ -340,7 +347,7 @@ exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALK
   return { success: true, phone };
 });
 
-exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (request) => {
+exports.verifyPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY] }, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "You must be logged in.");
@@ -351,7 +358,7 @@ exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (re
     throw new HttpsError("invalid-argument", "Enter the 6 digit code.");
   }
 
-  const apiKey = AFRICASTALKING_API_KEY.value();
+  const apiKey = RAFIKISMS_API_KEY.value();
   const db = getFirestore();
   const otpRef = db.collection("phoneOtps").doc(uid);
   const otpSnap = await otpRef.get();

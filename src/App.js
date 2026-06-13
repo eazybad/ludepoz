@@ -64,6 +64,23 @@ const UNIVERSITIES = [
 
 const DEFAULT_UNI = UNIVERSITIES[0];
 const ENABLE_PHONE_VERIFICATION = false;
+const USERNAME_AUTH_DOMAIN = "kampasika.local";
+
+function normalizeSignupUsername(value) {
+  return String(value || "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9._-]/g, "");
+}
+
+function usernameToAuthEmail(username) {
+  return `${normalizeSignupUsername(username)}@${USERNAME_AUTH_DOMAIN}`;
+}
+
+function normalizeTanzaniaPhoneInput(value) {
+  const compact = String(value || "").replace(/[\s-]/g, "");
+  if (/^0[67]\d{8}$/.test(compact)) return `+255${compact.slice(1)}`;
+  if (/^255[67]\d{8}$/.test(compact)) return `+${compact}`;
+  if (/^\+255[67]\d{8}$/.test(compact)) return compact;
+  return "";
+}
 
 // ========== FEATURE FLAGS ==========
 // Set to true to enable these features when ready
@@ -213,7 +230,23 @@ async function safeCompress(file, preset) {
   }
 }
 
-const QUICK_FILE_MAX_BYTES = 25 * 1024 * 1024;
+const QUICK_FILE_MAX_BYTES = 10 * 1024 * 1024;
+const QUICK_FILE_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.heic";
+const QUICK_ALLOWED_FILE_EXTENSIONS = /\.(pdf|docx?|xlsx?|csv|pptx?|jpe?g|png|webp|heic)$/i;
+const QUICK_ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+]);
 
 function inferQuickResourceType(value = "") {
   const text = String(value || "").toLowerCase();
@@ -226,6 +259,12 @@ function inferQuickResourceType(value = "") {
   if (/\.(mp3|wav|m4a|ogg)(\?|$)/.test(text)) return "Audio";
   if (/drive\.google\.com|docs\.google\.com/.test(text)) return "Drive";
   return "File";
+}
+
+function isAllowedQuickUploadFile(file) {
+  if (!file) return false;
+  if (file.type && QUICK_ALLOWED_MIME_TYPES.has(file.type)) return true;
+  return QUICK_ALLOWED_FILE_EXTENSIONS.test(file.name || "");
 }
 
 function quickSavedFileSection(item = {}) {
@@ -263,6 +302,11 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signupName, setSignupName] = useState("");
+  const [signupUsername, setSignupUsername] = useState("");
+  const [signupPhone, setSignupPhone] = useState("");
+  const [signupOtpCode, setSignupOtpCode] = useState("");
+  const [signupAwaitingOtp, setSignupAwaitingOtp] = useState(false);
+  const [signupOtpBusy, setSignupOtpBusy] = useState(false);
   const [isStudent, setIsStudent] = useState(true);
   const [signupLocation, setSignupLocation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -1979,7 +2023,7 @@ const requestNotificationPermission = async (currentUser) => {
     const userDoc = await getDoc(userDocRef);
     if (userDoc.exists()) {
       const userData = userDoc.data();
-      setUserName(userData.name || "");
+      setUserName(userData.username || userData.name || "");
       setUserAvatar(userData.avatarUrl || null);
       setUserBio(userData.bio || "");
       setUserServices(userData.services || []);
@@ -2892,7 +2936,7 @@ await updateDoc(convRef, {
       const newGroup = await createUniversityGroup(db, {
         data: createGroupData,
         user,
-        profile: { name: userName, avatarUrl: userAvatar },
+        profile: { name: userName, username: userName, phone: userPhone, avatarUrl: userAvatar },
         selectedUni,
       });
       setShowCreateGroup(false);
@@ -2931,7 +2975,7 @@ await updateDoc(convRef, {
     if (currentGroupMember) return;
     setJoiningGroup(true);
     try {
-      const joinStatus = await joinUniversityGroup(db, { group, user, profile: { name: userName, avatarUrl: userAvatar } });
+      const joinStatus = await joinUniversityGroup(db, { group, user, profile: { name: userName, username: userName, phone: userPhone, avatarUrl: userAvatar } });
       setSuccess(joinStatus === "pending" ? "Join request sent for admin approval." : "Joined group!");
       setTimeout(() => setSuccess(""), 2000);
     } catch (e) { setError("Failed to join group: " + e.message); }
@@ -3220,8 +3264,11 @@ await updateDoc(convRef, {
     try {
       for (let index = 0; index < quickUploadFiles.length; index += 1) {
         const file = quickUploadFiles[index];
+        if (!isAllowedQuickUploadFile(file)) {
+          throw new Error(`${file.name} is not supported. Upload PDF, DOC/DOCX, PPT/PPTX, spreadsheets, CSV, or images only.`);
+        }
         if (file.size > QUICK_FILE_MAX_BYTES) {
-          throw new Error(`${file.name} is too large. Use files under 25MB.`);
+          throw new Error(`${file.name} is too large. Use files under 10MB.`);
         }
         setQuickUploadStatus(`Uploading ${index + 1} of ${quickUploadFiles.length}: ${file.name}`);
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
@@ -3521,7 +3568,8 @@ useEffect(() => {
     }
   };
 
-    const handleSignup = async () => {
+    // eslint-disable-next-line no-unused-vars
+    const legacyHandleSignup = async () => {
     const cleanEmail = email.trim().toLowerCase();
 
     if (!signupName.trim()) {
@@ -3592,15 +3640,137 @@ useEffect(() => {
     }
   };
 
-  const handleLogin = async () => {
-    const cleanEmail = email.trim().toLowerCase();
+  const finishSignupFlow = (displayUsername, chosenUni = DEFAULT_UNI, verified = false) => {
+    setUserName(displayUsername);
+    setSelectedUni(chosenUni);
+    setPhoneVerified(verified);
+    setLoading(false);
+    setSignupOtpBusy(false);
+    setSignupAwaitingOtp(false);
+    setSignupOtpCode("");
+    setSuccess(verified ? "Phone verified. Account created!" : "Account created! Welcome to Kampasika.");
+    setTimeout(() => setSuccess(""), 4000);
+    const pendingGroup = pendingAuthGroupRef.current;
+    pendingAuthGroupRef.current = null;
+    setShowAuthModal(false);
+    if (pendingGroup?.group) {
+      openGroup(pendingGroup.group, pendingGroup.initialView || {});
+    } else if (viewingGroup) {
+      openGroup(viewingGroup, groupInitialView);
+    } else {
+      setPage("communities");
+    }
+  };
 
-    if (!cleanEmail) {
-      setError("Please enter your email address.");
+  const handleSignup = async () => {
+    const cleanUsername = normalizeSignupUsername(signupUsername || signupName);
+    const displayUsername = cleanUsername ? `@${cleanUsername}` : "";
+    const cleanPhone = normalizeTanzaniaPhoneInput(signupPhone);
+    const cleanEmail = usernameToAuthEmail(cleanUsername);
+    const chosenUni = DEFAULT_UNI;
+
+    if (!cleanUsername || cleanUsername.length < 3) {
+      setError("Please choose a username with at least 3 letters or numbers.");
       return;
     }
-    if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-      setError("Please enter a valid email address.");
+    if (!password.trim()) {
+      setError("Please create a password.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (!cleanPhone) {
+      setError("Please enter a valid Tanzania phone number.");
+      return;
+    }
+
+    try {
+      setError("");
+      setLoading(true);
+
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const userDoc = {
+        username: displayUsername,
+        usernameKey: cleanUsername,
+        name: displayUsername,
+        email: cleanEmail,
+        phone: cleanPhone,
+        phoneVerified: false,
+        accountType: "student",
+        avatarUrl: null,
+        bio: "",
+        services: [],
+        universityId: chosenUni.id,
+        universityName: chosenUni.short,
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, "users", userCredential.user.uid), userDoc);
+      setSignupName(displayUsername);
+      setUserPhone(cleanPhone);
+      setSignupOtpBusy(true);
+
+      try {
+        const sendOtp = httpsCallable(functions, "requestPhoneOtp");
+        await sendOtp({ phone: cleanPhone });
+        setSignupAwaitingOtp(true);
+        setSignupOtpCode("");
+        setLoading(false);
+        setSignupOtpBusy(false);
+      } catch (otpErr) {
+        console.error("Signup OTP send failed:", otpErr);
+        finishSignupFlow(displayUsername, chosenUni, false);
+      }
+    } catch (err) {
+      console.error("Signup error:", err);
+      setError(getAuthErrorMessage(err, "signup"));
+      setLoading(false);
+      setSignupOtpBusy(false);
+    }
+  };
+
+  const handleConfirmSignupOtp = async () => {
+    if (!/^\d{6}$/.test(signupOtpCode.trim())) {
+      setError("Enter the 6 digit OTP code.");
+      return;
+    }
+    try {
+      setError("");
+      setSignupOtpBusy(true);
+      const confirmOtp = httpsCallable(functions, "verifyPhoneOtp");
+      const result = await confirmOtp({ code: signupOtpCode.trim() });
+      setUserPhone(result.data?.phone || normalizeTanzaniaPhoneInput(signupPhone));
+      finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, DEFAULT_UNI, true);
+    } catch (err) {
+      console.error("Signup OTP verify failed:", err);
+      setError("Wrong or expired OTP. You can request another code or continue without verification for now.");
+      setSignupOtpBusy(false);
+    }
+  };
+
+  const resolveLoginEmail = async (loginId) => {
+    if (loginId.includes("@")) return loginId;
+
+    const normalizedPhone = normalizeTanzaniaPhoneInput(loginId);
+    if (normalizedPhone) {
+      const byPhone = await getDocs(query(collection(db, "users"), where("phone", "==", normalizedPhone)));
+      const match = byPhone.docs.find(userDoc => userDoc.data()?.email);
+      if (match) return match.data().email;
+      throw new Error("No account found for that phone number.");
+    }
+
+    const cleanUsername = normalizeSignupUsername(loginId);
+    if (!cleanUsername) throw new Error("Please enter your username, phone, or email.");
+    return usernameToAuthEmail(cleanUsername);
+  };
+
+  const handleLogin = async () => {
+    const loginId = email.trim().toLowerCase();
+
+    if (!loginId) {
+      setError("Please enter your username, phone, or email.");
       return;
     }
     if (!password.trim()) {
@@ -3612,6 +3782,7 @@ useEffect(() => {
       setError("");
       setLoading(true);
 
+      const cleanEmail = await resolveLoginEmail(loginId);
       const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
       const userSnap = await getDoc(doc(db, "users", credential.user.uid));
       const loggedInUser = userSnap.exists() ? userSnap.data() : {};
@@ -3633,7 +3804,7 @@ useEffect(() => {
       }
     } catch (err) {
       console.error("Login error:", err);
-      setError(getAuthErrorMessage(err, "login"));
+      setError(err?.code ? getAuthErrorMessage(err, "login") : (err?.message || "We could not log you in right now. Please try again."));
       setLoading(false);
     }
   };
@@ -10503,9 +10674,23 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
             {authMode==="signup"?(
               <>
-                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account to sell, message sellers, and save items</p>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. Amina Juma" value={signupName} onChange={e=>setSignupName(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email address</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                {signupAwaitingOtp ? (
+                  <>
+                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {signupPhone}. If the SMS is delayed, you can continue for now.</p>
+                    <div style={{marginBottom:'12px'}}>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
+                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
+                    </div>
+                    <button onClick={handleConfirmSignupOtp} disabled={signupOtpBusy || signupOtpCode.length !== 6} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:signupOtpBusy?'wait':'pointer',opacity:signupOtpCode.length===6?1:0.6}}>{signupOtpBusy?"Verifying...":"Verify and Create Account"}</button>
+                    <button onClick={() => finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, DEFAULT_UNI, false)} disabled={signupOtpBusy} style={{width:'100%',padding:'11px',background:'transparent',color:'#8a9bb0',border:'none',fontSize:'13px',fontWeight:'700',cursor:signupOtpBusy?'wait':'pointer',marginTop:'8px'}}>
+                      Continue without OTP for now
+                    </button>
+                  </>
+                ) : (
+                  <>
+                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account with a username, phone number, and password</p>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. amina_juma" value={signupUsername} onChange={e=>{setSignupUsername(e.target.value);setSignupName(e.target.value);}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Phone number</label><input type="tel" placeholder="0712345678" value={signupPhone} onChange={e=>setSignupPhone(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 {false && <>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Are you a student?</label>
                   <div style={{display:'flex',gap:'8px'}}>
@@ -10551,13 +10736,15 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   </div>
                 )}
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-                <button onClick={handleSignup} disabled={loading} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:loading?'not-allowed':'pointer'}}>{loading?"Creating...":"Create Account"}</button>
+                <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
+                  </>
+                )}
                 <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
               </>
             ):(
               <>
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Email</label><input type="email" placeholder="yourname@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username, phone, or email</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
                 <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
@@ -10738,7 +10925,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </select>
             <label style={{display:'block',fontSize:'12px',fontWeight:800,color:'#0f1b2d',marginBottom:'6px'}}>Folder</label>
             <input value={quickUploadFolder} onChange={event => setQuickUploadFolder(event.target.value)} placeholder="e.g. Topographical Surveying" style={{width:'100%',padding:'12px',border:'1.5px solid #dbe8e7',borderRadius:'10px',fontSize:'15px',marginBottom:'12px',boxSizing:'border-box'}} />
-            <input ref={quickUploadInputRef} type="file" multiple style={{display:'none'}} onChange={event => setQuickUploadFiles(Array.from(event.target.files || []))} />
+            <input ref={quickUploadInputRef} type="file" accept={QUICK_FILE_ACCEPT} multiple style={{display:'none'}} onChange={event => setQuickUploadFiles(Array.from(event.target.files || []))} />
             <button type="button" onClick={() => quickUploadInputRef.current?.click()} style={{width:'100%',padding:'13px',border:'1.5px dashed #0d9488',borderRadius:'10px',background:'#effefe',color:'#0f766e',fontSize:'15px',fontWeight:900,cursor:'pointer',marginBottom:'10px'}}>
               {quickUploadFiles.length ? `${quickUploadFiles.length} selected` : "Choose files from phone"}
             </button>

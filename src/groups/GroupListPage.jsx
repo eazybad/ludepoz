@@ -14,7 +14,7 @@ const groupTypes = {
 export function GroupListPage({
   groups,
   publicEvents = [],
-  legacyCollections,
+  legacyCollections = [],
   initialViewMode = "groups",
   onOpenGroup,
   onDeleteGroup,
@@ -151,22 +151,22 @@ export function GroupListPage({
 
       {viewMode === "events" && (
         <div className="group-section">
-          <div className="group-section-title">Public events</div>
+          <div className="group-section-title">Public events and orders</div>
           {filteredPublicEvents.length > 0 ? filteredPublicEvents.map(eventItem => (
             <button key={`${eventItem.groupId}-${eventItem.id}`} type="button" className="group-card" onClick={() => onOpenPublicEvent(eventItem)}>
               {eventItem.photoUrl ? <img className="group-event-thumb" src={eventItem.photoUrl} alt="" /> : <div className="group-avatar">EV</div>}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="group-card-title">{eventItem.title}</div>
                 <div className="group-card-subtitle">
-                  {eventItem.description || "Public group event"}
+                  {eventItem.description || (eventItem.collectionType === "order" ? "Public group order" : "Public group event")}
                   {eventItem.amount ? ` - ${Number(eventItem.amount).toLocaleString()} TSh` : " - Free"}
                 </div>
               </div>
-              <span className="group-role-pill">Public</span>
+              <span className="group-role-pill">{eventItem.collectionType === "order" ? "Order" : "Public"}</span>
             </button>
           )) : (
             <div className="group-empty">
-              {normalizedSearch ? "No public events match your search." : "No public events yet."}
+              {normalizedSearch ? "No public events or orders match your search." : "No public events or orders yet."}
             </div>
           )}
         </div>
@@ -234,7 +234,7 @@ export function GroupListPage({
         )}
       </div>}
 
-      {viewMode === "groups" && legacyCollections.length > 0 && (
+      {false && viewMode === "groups" && legacyCollections.length > 0 && (
         <div className="group-section">
           <div className="group-section-title">Legacy orders and events</div>
           {Object.values(legacyCollections.reduce((acc, item) => {

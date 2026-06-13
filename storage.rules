@@ -6,6 +6,27 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function groupMember(groupId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/groups/$(groupId)/members/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function allowedGroupFile() {
+      return request.resource.size < 10 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf'
+          || request.resource.contentType == 'application/msword'
+          || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          || request.resource.contentType == 'application/vnd.ms-powerpoint'
+          || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          || request.resource.contentType == 'application/vnd.ms-excel'
+          || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          || request.resource.contentType == 'text/csv'
+        );
+    }
+
     match /avatars/{uid}/{fileName} {
       allow read: if true;
       allow write: if signedIn()
@@ -36,15 +57,15 @@ service firebase.storage {
     }
 
     match /groups/{groupId}/resources/{fileName} {
-      allow read: if true;
-      allow write: if signedIn()
-        && request.resource.size < 25 * 1024 * 1024;
+      allow read: if groupMember(groupId);
+      allow write: if groupMember(groupId)
+        && allowedGroupFile();
     }
 
     match /groups/{groupId}/chat/{fileName} {
-      allow read: if true;
-      allow write: if signedIn()
-        && request.resource.size < 25 * 1024 * 1024;
+      allow read: if groupMember(groupId);
+      allow write: if groupMember(groupId)
+        && allowedGroupFile();
     }
 
     match /{allPaths=**} {

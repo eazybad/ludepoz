@@ -123,9 +123,25 @@ const emptyWorkSubmission = {
 };
 
 const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
-const MAX_RESOURCE_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_RESOURCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILE_MB = Math.round(MAX_RESOURCE_FILE_BYTES / (1024 * 1024));
 const ENABLE_DOCUMENT_PDF_PREVIEWS = false;
+const RESOURCE_FILE_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.heic";
+const ALLOWED_RESOURCE_FILE_EXTENSIONS = /\.(pdf|docx?|xlsx?|csv|pptx?|jpe?g|png|webp|heic)$/i;
+const ALLOWED_RESOURCE_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+]);
 
 function offlineResourceStoreKey(groupId) {
   return `kampasikaOfflineResources:${groupId || "unknown"}`;
@@ -324,6 +340,12 @@ function storagePathFromDownloadUrl(url = "") {
   }
 }
 
+function isAllowedResourceFile(file) {
+  if (!file) return false;
+  if (file.type && ALLOWED_RESOURCE_MIME_TYPES.has(file.type)) return true;
+  return ALLOWED_RESOURCE_FILE_EXTENSIONS.test(file.name || "");
+}
+
 export function GroupDetailPage({
   db,
   storage,
@@ -425,6 +447,7 @@ export function GroupDetailPage({
   const memberCanManage = canManageGroup(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanEditGroup = ["owner", "admin"].includes(currentMember?.role) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanVerify = canVerifyPayments(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
+  const memberCanSeePhone = memberCanEditGroup || memberCanManage;
   const memberCanChat = isGroupMember(currentMember) || memberCanManage;
   const canViewGroupContent = isGroupMember(currentMember) || memberCanManage;
   const groupInviteUrl = group.inviteLink?.startsWith("http")
@@ -452,6 +475,7 @@ export function GroupDetailPage({
       : myPayment
         ? "Payment submitted"
         : "";
+  const memberDisplayName = member => member?.username || member?.name || member?.email?.split("@")[0] || "Member";
   const filteredPayments = memberCanVerify
     ? payments.filter(payment => {
         const term = paymentSearch.trim().toLowerCase();
@@ -1461,6 +1485,9 @@ export function GroupDetailPage({
 
   const prepareResourceUploadFile = async (file) => {
     if (!file) return null;
+    if (!isAllowedResourceFile(file)) {
+      throw new Error(`${file.name} is not supported. Upload PDF, DOC/DOCX, PPT/PPTX, spreadsheets, CSV, or images only.`);
+    }
     if (file.size <= MAX_RESOURCE_FILE_BYTES) return file;
     if (file.type?.startsWith("image/")) {
       const { file: compressed } = await compressImage(file, {
@@ -1471,7 +1498,7 @@ export function GroupDetailPage({
       });
       if (compressed.size <= MAX_RESOURCE_FILE_BYTES) return compressed;
     }
-    throw new Error(`${file.name} is too large. Images can be compressed automatically, but PDF/DOC/PPT files must be under 25MB or shared as an exact Drive file link.`);
+    throw new Error(`${file.name} is too large. Keep files under ${MAX_UPLOAD_FILE_MB}MB. Videos and archive files are not allowed.`);
   };
 
   const uploadResourceFileToFolder = async (file, subject) => {
@@ -3119,11 +3146,11 @@ export function GroupDetailPage({
                   {pendingMembers.map(member => (
                     <div key={member.uid || member.id} className="member-request-row">
                       <div className="group-avatar" style={{ width: 34, height: 34, fontSize: 11, backgroundImage: member.avatarUrl ? `url(${member.avatarUrl})` : undefined, backgroundSize: "cover" }}>
-                        {!member.avatarUrl && groupAvatarText(member.name || member.email || "M")}
+                        {!member.avatarUrl && groupAvatarText(memberDisplayName(member))}
                       </div>
                       <div className="member-meta">
-                        <div className="member-name">{member.name || member.email || "Member"}</div>
-                        <div className="member-role">Requested to join</div>
+                        <div className="member-name">{memberDisplayName(member)}</div>
+                        <div className="member-role">Requested to join{memberCanSeePhone && member.phone ? ` - ${member.phone}` : ""}</div>
                       </div>
                       <button type="button" className="group-btn secondary compact" disabled={busy} onClick={() => handleApproveMember(member)}>Approve</button>
                       <button type="button" className="group-btn ghost compact" disabled={busy} onClick={() => handleRejectMember(member)}>Reject</button>
@@ -3134,11 +3161,11 @@ export function GroupDetailPage({
               {activeMembers.map(member => (
                 <div key={member.uid || member.id} className="member-row">
                   <div className="group-avatar" style={{ width: 38, height: 38, fontSize: 12, backgroundImage: member.avatarUrl ? `url(${member.avatarUrl})` : undefined, backgroundSize: "cover" }}>
-                    {!member.avatarUrl && groupAvatarText(member.name || member.email || "M")}
+                    {!member.avatarUrl && groupAvatarText(memberDisplayName(member))}
                   </div>
                   <div className="member-meta">
-                    <div className="member-name">{member.name || member.email || "Member"}</div>
-                    <div className="member-role">{member.role || "member"}</div>
+                    <div className="member-name">{memberDisplayName(member)}</div>
+                    <div className="member-role">{member.role || "member"}{memberCanSeePhone && member.phone ? ` - ${member.phone}` : ""}</div>
                   </div>
                   {memberCanEditGroup && member.role !== "owner" ? (
                     <select className="member-role-select" value={member.role || "member"} disabled={busy} onChange={event => handleRoleChange(member, event.target.value)}>
@@ -3321,7 +3348,7 @@ export function GroupDetailPage({
                     <input
                       type="file"
                       multiple
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
+                      accept={RESOURCE_FILE_ACCEPT}
                       onChange={handleSelectSimpleResourceFiles}
                       disabled={busy}
                     />
@@ -3380,11 +3407,11 @@ export function GroupDetailPage({
                   <input
                     type="file"
                     multiple
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.jpg,.jpeg,.png,.webp"
+                    accept={RESOURCE_FILE_ACCEPT}
                     onChange={handleSelectSimpleResourceFiles}
                   />
                 </label>
-                <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
+                <small className="field-hint">PDF, DOCX, PPTX, spreadsheets, CSV, or images only. Up to {MAX_UPLOAD_FILE_MB}MB each.</small>
                 {simpleResourceData.files.length > 0 && (
                   <div className="selected-file-list">
                     {simpleResourceData.files.map((file, index) => (
@@ -3444,7 +3471,7 @@ export function GroupDetailPage({
                 <span>{resourceData.files?.length || resourceData.fileName ? "Choose different file" : "Choose file"}</span>
                 <input type="file" multiple={!editingResourceId} onChange={event => selectResourceDataFiles(Array.from(event.target.files || []))} />
               </label>
-              <small className="field-hint">Any file type, up to {MAX_UPLOAD_FILE_MB}MB each. Larger files should be added as links.</small>
+              <small className="field-hint">PDF, DOCX, PPTX, spreadsheets, CSV, or images only. Up to {MAX_UPLOAD_FILE_MB}MB each.</small>
               {(resourceData.files?.length || resourceData.fileName) && (
                 <div className="selected-file-list">
                   {(resourceData.files?.length ? resourceData.files : [{ name: resourceData.fileName }]).map((file, index) => (

@@ -614,8 +614,10 @@ export async function createUniversityGroup(db, { data, user, profile, selectedU
 
   batch.set(memberRef, {
     uid: user.uid,
-    name: profile.name || user.email || "Group owner",
+    name: profile.username || profile.name || user.email || "Group owner",
+    fullName: profile.fullName || "",
     email: user.email || "",
+    phone: profile.phone || "",
     avatarUrl: profile.avatarUrl || null,
     role: "owner",
     status: "active",
@@ -707,8 +709,10 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
   if (group.joinPolicy === "approvalRequired") {
     await setDoc(doc(db, "groups", group.id, "members", user.uid), {
       uid: user.uid,
-      name: profile.name || user.email || "Member",
+      name: profile.username || profile.name || user.email || "Member",
+      fullName: profile.fullName || "",
       email: user.email || "",
+      phone: profile.phone || "",
       avatarUrl: profile.avatarUrl || null,
       role: "member",
       status: "pending",
@@ -718,8 +722,10 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
   }
   await setDoc(doc(db, "groups", group.id, "members", user.uid), {
     uid: user.uid,
-    name: profile.name || user.email || "Member",
+    name: profile.username || profile.name || user.email || "Member",
+    fullName: profile.fullName || "",
     email: user.email || "",
+    phone: profile.phone || "",
     avatarUrl: profile.avatarUrl || null,
     role: "member",
     status: "active",
@@ -1285,7 +1291,7 @@ export async function addManualGroupPayment(db, { groupId, collectionItem, data,
 export function subscribePublicGroupEvents(db, onNext, onError = console.error) {
   const q = query(
     collectionGroup(db, "collections"),
-    where("collectionType", "==", "event"),
+    where("collectionType", "in", ["event", "order"]),
     where("visibility", "==", "public")
   );
   return onSnapshot(q, snap => {
