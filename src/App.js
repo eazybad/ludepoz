@@ -37,7 +37,6 @@ import {
   joinUniversityGroup,
   seedDemoGroups,
   subscribeGroups,
-  subscribePublicGroupEvents,
 } from './groups/groupService';
 
 const firebaseConfig = {
@@ -65,6 +64,8 @@ const UNIVERSITIES = [
 const DEFAULT_UNI = UNIVERSITIES[0];
 const ENABLE_PHONE_VERIFICATION = false;
 const USERNAME_AUTH_DOMAIN = "kampasika.local";
+const DISCOVER_FEED_CACHE_KEY = "kampasikaDiscoverFeed:v1";
+const DISCOVER_FEED_CACHE_LIMIT = 80;
 
 function normalizeSignupUsername(value) {
   return String(value || "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9._-]/g, "");
@@ -80,6 +81,21 @@ function normalizeTanzaniaPhoneInput(value) {
   if (/^255[67]\d{8}$/.test(compact)) return `+${compact}`;
   if (/^\+255[67]\d{8}$/.test(compact)) return compact;
   return "";
+}
+
+function serializeDiscoverItem(item = {}) {
+  const createdAt = item.createdAt?.toDate ? item.createdAt.toDate() : item.createdAt;
+  return {
+    ...item,
+    createdAt: createdAt instanceof Date ? createdAt.toISOString() : createdAt || null,
+  };
+}
+
+function reviveDiscoverItem(item = {}) {
+  return {
+    ...item,
+    createdAt: item.createdAt ? new Date(item.createdAt) : null,
+  };
 }
 
 // ========== FEATURE FLAGS ==========
@@ -418,15 +434,13 @@ function App() {
   // Groups
   const [groups, setGroups] = useState([]);
   const [myGroupMemberships, setMyGroupMemberships] = useState({});
-  const [publicGroupEvents, setPublicGroupEvents] = useState([]);
   const [groupReadAt, setGroupReadAt] = useState(() => {
     try { return JSON.parse(localStorage.getItem("groupReadAt") || "{}"); }
     catch (_) { return {}; }
   });
   const [viewingGroup, setViewingGroup] = useState(null);
   const [groupInitialView, setGroupInitialView] = useState({ tab: "chats", collectionId: "", collection: null, source: "" });
-  const [groupsInitialMode, setGroupsInitialMode] = useState("groups");
-  const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "public" });
+  const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "inviteOnly" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupAnnouncements, setGroupAnnouncements] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
@@ -467,6 +481,14 @@ function App() {
   const [collections, setCollections] = useState([]);
   const [viewingCommunity, setViewingCommunity] = useState(null);
   const feedsHydratedRef = useRef(false);
+  const [discoverCacheLoaded, setDiscoverCacheLoaded] = useState(false);
+  const [cachedDiscoverFeed, setCachedDiscoverFeed] = useState({
+    listings: [],
+    services: [],
+    rooms: [],
+    collections: [],
+    savedAt: null,
+  });
   const [viewingCollection, setViewingCollection] = useState(null);
   const [collectionOrders, setCollectionOrders] = useState([]);
   const [createCollectionData, setCreateCollectionData] = useState({
@@ -529,6 +551,51 @@ useEffect(() => {
   const [myAllRooms, setMyAllRooms] = useState([]);
   const [roomSearchQ, setRoomSearchQ] = useState("");
   const [committedRoomSearchQ, setCommittedRoomSearchQ] = useState("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISCOVER_FEED_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setCachedDiscoverFeed({
+          listings: Array.isArray(parsed.listings) ? parsed.listings.map(reviveDiscoverItem) : [],
+          services: Array.isArray(parsed.services) ? parsed.services.map(reviveDiscoverItem) : [],
+          rooms: Array.isArray(parsed.rooms) ? parsed.rooms.map(reviveDiscoverItem) : [],
+          collections: Array.isArray(parsed.collections) ? parsed.collections.map(reviveDiscoverItem) : [],
+          savedAt: parsed.savedAt || null,
+        });
+      }
+    } catch (err) {
+      console.warn("Could not load saved Discover feed:", err);
+    } finally {
+      setDiscoverCacheLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOffline) return;
+    const total = listings.length + services.length + rooms.length + collections.length;
+    if (!total) return;
+    const nextCache = {
+      listings: listings.slice(0, DISCOVER_FEED_CACHE_LIMIT).map(serializeDiscoverItem),
+      services: services.slice(0, DISCOVER_FEED_CACHE_LIMIT).map(serializeDiscoverItem),
+      rooms: rooms.slice(0, DISCOVER_FEED_CACHE_LIMIT).map(serializeDiscoverItem),
+      collections: collections.slice(0, DISCOVER_FEED_CACHE_LIMIT).map(serializeDiscoverItem),
+      savedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(DISCOVER_FEED_CACHE_KEY, JSON.stringify(nextCache));
+      setCachedDiscoverFeed({
+        listings: nextCache.listings.map(reviveDiscoverItem),
+        services: nextCache.services.map(reviveDiscoverItem),
+        rooms: nextCache.rooms.map(reviveDiscoverItem),
+        collections: nextCache.collections.map(reviveDiscoverItem),
+        savedAt: nextCache.savedAt,
+      });
+    } catch (err) {
+      console.warn("Could not save Discover feed:", err);
+    }
+  }, [collections, isOffline, listings, rooms, services]);
 
   // Keep activeSearchRef in sync with whichever home-tab search is active.
   // Read by the back-button handler in the main popstate effect.
@@ -739,16 +806,28 @@ useEffect(() => {
   // Used by Enter key and the search icon click. Typing alone does NOT commit.
   const commitListingsSearch = (q) => {
     setCommittedSearchQ(q);
+    if (isOffline) {
+      clearAISearch();
+      return;
+    }
     if (q && q.trim()) runAISearch(q);
     else clearAISearch();
   };
   const commitServicesSearch = (q) => {
     setCommittedServiceSearchQ(q);
+    if (isOffline) {
+      clearAISearch();
+      return;
+    }
     if (q && q.trim()) runAISearch(q);
     else clearAISearch();
   };
   const commitRoomsSearch = (q) => {
     setCommittedRoomSearchQ(q);
+    if (isOffline) {
+      clearAISearch();
+      return;
+    }
     if (q && q.trim()) runAISearch(q);
     else clearAISearch();
   };
@@ -2940,7 +3019,7 @@ await updateDoc(convRef, {
         selectedUni,
       });
       setShowCreateGroup(false);
-      setCreateGroupData({ name: "", desc: "", type: "class", visibility: "public" });
+      setCreateGroupData({ name: "", desc: "", type: "class", visibility: "inviteOnly" });
       await loadGroups();
       openGroup(newGroup);
     } catch (e) { setError("Failed to create group: " + e.message); }
@@ -3142,11 +3221,6 @@ await updateDoc(convRef, {
       || !!myGroupMemberships[group.id]
     )
   );
-  const isGroupVisibleInDirectory = (group) => (
-    group.visibility !== "inviteOnly"
-    && group.joinPolicy !== "inviteOnly"
-  ) || canSeeInviteOnlyGroup(group);
-
   const markGroupRead = useCallback((group) => {
     if (!group?.id) return;
     const readAt = Date.now();
@@ -3161,7 +3235,7 @@ await updateDoc(convRef, {
   const groupUnreadCount = groups.filter(group => (
     group.active !== false
     && (group.uniId || currentUniId) === currentUniId
-    && isGroupVisibleInDirectory(group)
+    && canSeeInviteOnlyGroup(group)
     && group.lastActivityByUid !== user?.uid
     && group.activityAt?.toMillis
     && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
@@ -3324,7 +3398,7 @@ await updateDoc(convRef, {
         const groupId = memberDoc.ref.parent.parent?.id;
         if (!groupId) return;
         const data = memberDoc.data();
-        if (data.status !== "removed" && data.status !== "left" && data.status !== "rejected") {
+        if (data.status !== "removed" && data.status !== "left" && data.status !== "rejected" && data.status !== "blocked") {
           memberships[groupId] = data.status || "active";
         }
       });
@@ -3335,16 +3409,6 @@ await updateDoc(convRef, {
     });
     return () => unsubscribe();
   }, [user?.uid]);
-
-  useEffect(() => {
-    let unsubscribe;
-    try {
-      unsubscribe = subscribePublicGroupEvents(db, setPublicGroupEvents, (err) => console.error("public group events:", err));
-    } catch (err) {
-      console.error("public events listener setup:", err);
-    }
-    return () => { if (unsubscribe) unsubscribe(); };
-  }, []);
 
   // Handle /g/ invite link
   // PWA Install Prompt logic
@@ -3660,6 +3724,25 @@ useEffect(() => {
     } else {
       setPage("communities");
     }
+  };
+
+  const cachedDiscoverCount =
+    cachedDiscoverFeed.listings.length +
+    cachedDiscoverFeed.services.length +
+    cachedDiscoverFeed.rooms.length +
+    cachedDiscoverFeed.collections.length;
+  const offlineDiscoverActive = isOffline && discoverCacheLoaded && cachedDiscoverCount > 0;
+  const discoverListings = offlineDiscoverActive ? cachedDiscoverFeed.listings : listings;
+  const discoverServices = offlineDiscoverActive ? cachedDiscoverFeed.services : services;
+  const discoverRooms = offlineDiscoverActive ? cachedDiscoverFeed.rooms : rooms;
+  const savedDiscoverLabel = cachedDiscoverFeed.savedAt
+    ? new Date(cachedDiscoverFeed.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "";
+  const guardOfflineDiscoverAction = (label = "This action") => {
+    if (!isOffline) return false;
+    setError(`${label} is disabled while offline. Showing your saved Discover feed.`);
+    setTimeout(() => setError(""), 3000);
+    return true;
   };
 
   const handleSignup = async () => {
@@ -4772,13 +4855,8 @@ const loadSellerStats = useCallback(async (userId) => {
   const groupsForSelectedUni = groups.filter(group => (
     group.active !== false
     && (group.uniId || currentUniId) === currentUniId
-    && isGroupVisibleInDirectory(group)
+    && canSeeInviteOnlyGroup(group)
   ));
-  const publicEventsForGroups = publicGroupEvents.filter(eventItem => (
-    (eventItem.uniId || currentUniId) === currentUniId
-    && groupsForSelectedUni.some(group => group.id === eventItem.groupId)
-  ));
-
 if (loading) {
   return (
     <div style={{
@@ -5573,6 +5651,14 @@ return (
     ✨ AI is thinking...
   </div>
 )}
+{isOffline && (
+  <div style={{margin:'0 16px 12px 16px',padding:'10px 12px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'12px',fontSize:'12px',color:'#9a3412',lineHeight:1.45}}>
+    <strong>{offlineDiscoverActive ? 'Saved Discover feed' : 'Offline'}</strong>
+    {offlineDiscoverActive
+      ? ` - showing the last saved feed${savedDiscoverLabel ? ` from ${savedDiscoverLabel}` : ''}. Messaging, calls, sharing, and posting are disabled until you are back online.`
+      : ' - open Discover once while online to save recent posts for offline viewing.'}
+  </div>
+)}
 {featureFlagsLoaded && REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
   <div style={{margin:'0 16px 12px 16px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'14px',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',boxShadow:'0 2px 10px rgba(79,70,229,0.08)'}}>
     <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
@@ -5590,7 +5676,7 @@ return (
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
     {(() => {
-  let filteredListings = listings;
+  let filteredListings = discoverListings;
   if (activeCat !== "all") {
     filteredListings = filteredListings.filter(item => item.category === activeCat);
   }
@@ -5714,32 +5800,32 @@ return (
           <div style={{paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom: openListingId===item.id ? '10px' : '0'}}>
               <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',lineHeight:1.1}}>{item.price.toLocaleString()} TSh</div>
-              {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, listings, "listing")} compact />}
+              {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, discoverListings, "listing")} compact />}
               {openListingId!==item.id && <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>Tap for options</span>}
             </div>
 
             {openListingId===item.id && (
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(68px, 1fr))',gap:'6px',width:'100%'}}>
                 {item.whatsapp && item.userId !== user?.uid && (
-                  <button onClick={(e)=>{e.stopPropagation();const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{minWidth:0,padding:'9px 6px',background:'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                  <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("WhatsApp"))return;const num=item.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Hi! I'm interested in your listing "${item.title}" on Kampasika for ${item.price.toLocaleString()} TSh.`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
                     <WhatsAppIcon size={15} /><span>WhatsApp</span>
                   </button>
                 )}
-                <button onClick={(e)=>{e.stopPropagation();shareOnWhatsApp(item);}} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Sharing"))return;shareOnWhatsApp(item);}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
                   <span>📲</span><span>Share</span>
                 </button>
                 <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'#fff',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
                   <span>📋</span><span>Details</span>
                 </button>
                 {item.userId !== user?.uid && (
-                  <button onClick={(e)=>{e.stopPropagation();requireAuth("message",()=>startConversation(item));}} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
+                  <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Messaging"))return;requireAuth("message",()=>startConversation(item));}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:isOffline?'#8a9bb0':'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
                     <span>💬</span><span>Message</span>
                   </button>
                 )}
               </div>
             )}
           </div>
-                  {user && item.userId===user.uid&&!item.sold&&openListingId===item.id&&(<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>)}
+                  {user && item.userId===user.uid&&!item.sold&&openListingId===item.id&&(<button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Updating listing"))return;markAsSold(item.id);}} disabled={isOffline} style={{padding:'8px 16px',background:isOffline?'#d1d5db':'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer',marginTop:'8px'}}>✓ Mark as Sold</button>)}
                 </div>
               ))
             )}
@@ -5771,10 +5857,10 @@ return (
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px'}}>
-    <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+    <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} disabled={isOffline} style={{padding:'10px 18px',background:isOffline?'#d1d5db':'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ Offer a Service</button>
   </div>
   {(()=>{
-    let filtered = services;
+    let filtered = discoverServices;
     if (activeServiceCat !== "all") {
       filtered = filtered.filter(s => s.category === activeServiceCat);
     }
@@ -5796,7 +5882,7 @@ return (
               fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
             {!committedServiceSearchQ?.trim() && (
               <div style={{textAlign:'center',marginTop:'12px'}}>
-                <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} disabled={isOffline} style={{padding:'10px 20px',background:isOffline?'#d1d5db':'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ Offer a Service</button>
               </div>
             )}
           </div>
@@ -5858,8 +5944,8 @@ return (
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
-    <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
-    <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
+    <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{padding:'10px 16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ List a Room</button>
+    <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;setPage("roommates");}} disabled={isOffline} style={{padding:'10px 16px',background:'#f4f6f8',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>🤝 Find Roommate</button>
   </div>
   {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
   {roomFilterMaxPrice !== "" && (
@@ -5871,7 +5957,7 @@ return (
     </div>
   )}
   {(()=>{
-    let filtered = rooms;
+    let filtered = discoverRooms;
     if (roomFilterType !== "all") {
       filtered = filtered.filter(r => r.roomType === roomFilterType);
     }
@@ -5896,7 +5982,7 @@ return (
           fallbackTitle="No rooms listed yet" fallbackHint="Know a landlord? Help them list their room!" />
         {!committedRoomSearchQ?.trim() && (
           <div style={{textAlign:'center',marginTop:'12px'}}>
-            <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 20px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+            <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{padding:'10px 20px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ List a Room</button>
           </div>
         )}
       </div>
@@ -6935,12 +7021,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               <>
                 {viewingService.whatsapp ? (
                   <button onClick={()=>{
+                    if (guardOfflineDiscoverAction("WhatsApp")) return;
                     const num = viewingService.whatsapp.replace(/^0/,'255').replace(/[^0-9]/g,'');
                     const msg = `Hi! I'm interested in your service "${viewingService.title}" on Kampasika.`;
                     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
-                  }} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><WhatsAppIcon size={18} /> WhatsApp</button>
+                  }} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><WhatsAppIcon size={18} /> WhatsApp</button>
                 ) : null}
                 <button onClick={()=>{
+                  if (guardOfflineDiscoverAction("Messaging")) return;
                   // Create a dummy listing-like object for conversation
                   const svcAsListing = {
                     id: viewingService.id,
@@ -6953,7 +7041,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   };
                   setViewingService(null);
                   requireAuth("message",()=>startConversation(svcAsListing));
-                }} style={{flex:1,padding:'16px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>💬 Message</button>
+                }} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>💬 Message</button>
               </>
             ) : (
               <div style={{width:'100%',display:'flex',gap:'8px'}}>
@@ -6970,31 +7058,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <>
           <GroupListPage
             groups={groupsForSelectedUni}
-            publicEvents={publicEventsForGroups}
-            legacyCollections={collections}
-            initialViewMode={groupsInitialMode}
             onOpenGroup={(group) => {
-              setGroupsInitialMode("groups");
               openGroup(group);
             }}
             onDeleteGroup={handleArchiveGroup}
             onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
-            onCreateCollection={() => { user ? setPage("createCollection") : requireAuth("create collection", () => setPage("createCollection")); }}
             onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
             onSeedDemoGroups={handleSeedDemoGroups}
             onSeedQuantitySurveyGroup={handleSeedQuantitySurveyGroup}
             canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
             groupReadAt={groupReadAt}
             currentUserId={user?.uid || ""}
-            onOpenLegacyCommunity={(group) => { setViewingCommunity(group); setPage("communityDetail"); }}
-            onOpenPublicEvent={(eventItem) => {
-              const hostGroup = groupsForSelectedUni.find(g => g.id === eventItem.groupId);
-              if (hostGroup) {
-                setGroupsInitialMode("events");
-                openGroup(hostGroup, { tab: "events", collectionId: eventItem.id, collection: eventItem, source: "publicEvents" });
-              }
-              else setError("Open the host group to register for this event.");
-            }}
             isGroupAdmin={isGroupAdmin}
             seedingDemo={seedingDemoGroups}
             seedingQsGroup={seedingQsGroup}
@@ -8349,8 +8423,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
               {/* Contact buttons */}
               <div style={{padding:'0 16px 100px',display:'flex',gap:'8px'}}>
-                <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
-                <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
+                <button onClick={()=>{if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'14px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📱 WhatsApp</button>
+                <button onClick={()=>{if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'14px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📞 Call</button>
               </div>
             </>
           ) : (
@@ -8372,7 +8446,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               <div style={{padding:'20px'}}>
                 <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
                 <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#f59e0b',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
-                {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, rooms, "room")} />}
+                {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, discoverRooms, "room")} />}
                 <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
                 <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
 
@@ -8397,8 +8471,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
 
               <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
-                <button onClick={()=>{const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} style={{flex:1,padding:'16px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📱 WhatsApp</button>
-                <button onClick={()=>{window.open(`tel:${viewingRoom.landlordPhone}`);}} style={{flex:1,padding:'16px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer'}}>📞 Call</button>
+                <button onClick={()=>{if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📱 WhatsApp</button>
+                <button onClick={()=>{if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📞 Call</button>
               </div>
             </>
           )}
@@ -9004,7 +9078,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 You don&apos;t have a profile yet
               </h2>
               <p style={{fontSize:'14px',color:'#6b7280',lineHeight:1.6,margin:'0 0 24px',maxWidth:'280px',marginLeft:'auto',marginRight:'auto'}}>
-                Join Kampasika to create your campus profile — sell items, offer services, message buyers, and save listings.
+                Join your class or campus group and keep events, orders, payments, and files organized.
               </p>
               <button
                 type="button"
@@ -9046,9 +9120,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </button>
               <div style={{marginTop:'28px',paddingTop:'20px',borderTop:'1px solid #eef2f5',display:'flex',flexDirection:'column',gap:'10px',textAlign:'left'}}>
                 {[
-                  { icon:'🛍️', text:'Buy and sell on campus' },
-                  { icon:'💬', text:'Chat with sellers safely' },
-                  { icon:'✓', text:'Optional verified badge' },
+                  { icon:'👥', text:'Join your class or campus group' },
+                  { icon:'🧾', text:'Track events, orders, and payments' },
+                  { icon:'📚', text:'Keep files and resources in one place' },
                 ].map(row => (
                   <div key={row.text} style={{display:'flex',alignItems:'center',gap:'10px',fontSize:'13px',color:'#4a5568'}}>
                     <span style={{fontSize:'18px'}}>{row.icon}</span>
@@ -10021,6 +10095,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {viewingListing.whatsapp && (
               <div 
                 onClick={() => {
+                  if (guardOfflineDiscoverAction("WhatsApp")) return;
                   const num = viewingListing.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
                   const msg = `Hi! I'm interested in your listing "${viewingListing.title}" on Kampasika for ${viewingListing.price.toLocaleString()} TSh.`;
                   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -10028,12 +10103,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 style={{
                   marginTop:'12px',
                   padding:'10px 16px',
-                  background:'#f0fdf4',
+                  background:isOffline?'#f3f4f6':'#f0fdf4',
                   borderRadius:'10px',
                   display:'flex',
                   alignItems:'center',
                   gap:'8px',
-                  cursor:'pointer'
+                  cursor:isOffline?'not-allowed':'pointer'
                 }}
               >
                 <WhatsAppIcon size={22} color="#25D366" />
@@ -10092,19 +10167,20 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <>
           <button 
             onClick={() => {
+              if (guardOfflineDiscoverAction("Messaging")) return;
               setViewingListing(null);
               requireAuth("message", () => startConversation(viewingListing));
             }}
             style={{
               flex:2,
               padding:'16px',
-              background:'#06d6c7',
+              background:isOffline?'#d1d5db':'#06d6c7',
               color:'#0f1b2d',
               border:'none',
               borderRadius:'10px',
               fontSize:'15px',
               fontWeight:'600',
-              cursor:'pointer'
+              cursor:isOffline?'not-allowed':'pointer'
             }}
           >
             💬 Message Seller
@@ -10112,6 +10188,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {viewingListing.whatsapp && (
             <button 
               onClick={() => {
+                if (guardOfflineDiscoverAction("WhatsApp")) return;
                 const num = viewingListing.whatsapp.replace(/^0/, '255').replace(/[^0-9]/g, '');
                 const msg = `Hi! I'm interested in your listing "${viewingListing.title}" on Kampasika for ${viewingListing.price.toLocaleString()} TSh.`;
                 window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -10119,13 +10196,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               style={{
                 flex:2,
                 padding:'16px',
-                background:'#25D366',
+                background:isOffline?'#d1d5db':'#25D366',
                 color:'#fff',
                 border:'none',
                 borderRadius:'10px',
                 fontSize:'15px',
                 fontWeight:'600',
-                cursor:'pointer',
+                cursor:isOffline?'not-allowed':'pointer',
                 display:'flex',
                 alignItems:'center',
                 justifyContent:'center',
@@ -10136,16 +10213,16 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </button>
           )}
           <button 
-            onClick={() => toggleSave(viewingListing)}
+            onClick={() => { if (guardOfflineDiscoverAction("Saving")) return; toggleSave(viewingListing); }}
             style={{
               padding:'16px',
-              background:cart.some(c => c.id === viewingListing.id)?'#0d9488':'#f4f6f8',
-              color:cart.some(c => c.id === viewingListing.id)?'#fff':'#0f1b2d',
+              background:isOffline?'#f3f4f6':cart.some(c => c.id === viewingListing.id)?'#0d9488':'#f4f6f8',
+              color:isOffline?'#8a9bb0':cart.some(c => c.id === viewingListing.id)?'#fff':'#0f1b2d',
               border:'none',
               borderRadius:'10px',
               fontSize:'15px',
               fontWeight:'600',
-              cursor:'pointer'
+              cursor:isOffline?'not-allowed':'pointer'
             }}
           >
             🔖

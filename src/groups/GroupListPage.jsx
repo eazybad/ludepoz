@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import "./GroupComponents.css";
-import { DEMO_GROUPS, groupAvatarText } from "./groupService";
+import { groupAvatarText } from "./groupService";
 
 const groupTypes = {
   class: "Class",
@@ -13,18 +13,12 @@ const groupTypes = {
 
 export function GroupListPage({
   groups,
-  publicEvents = [],
-  legacyCollections = [],
-  initialViewMode = "groups",
   onOpenGroup,
   onDeleteGroup,
   onCreateGroup,
-  onCreateCollection,
   onOpenScanner,
   onSeedDemoGroups,
   onSeedQuantitySurveyGroup,
-  onOpenLegacyCommunity,
-  onOpenPublicEvent,
   isGroupAdmin,
   canSeedDemoGroups,
   seedingDemo,
@@ -33,16 +27,11 @@ export function GroupListPage({
   currentUserId = "",
 }) {
   const hasGroups = groups.length > 0;
-  const [viewMode, setViewMode] = useState(initialViewMode || "groups");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [searchText, setSearchText] = useState("");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const normalizedSearch = searchText.trim().toLowerCase();
-
-  useEffect(() => {
-    setViewMode(initialViewMode || "groups");
-  }, [initialViewMode]);
 
   const clearLongPress = () => {
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
@@ -83,13 +72,12 @@ export function GroupListPage({
       || groupTypes[group.type]?.toLowerCase().includes(normalizedSearch)
     ))
     : groups;
-  const filteredPublicEvents = normalizedSearch
-    ? publicEvents.filter(eventItem => (
-      eventItem.title?.toLowerCase().includes(normalizedSearch)
-      || eventItem.description?.toLowerCase().includes(normalizedSearch)
-    ))
-    : publicEvents;
   const selectedGroup = groups.find(group => group.id === selectedGroupId);
+  const recentGroups = filteredGroups.filter(group => (
+    group.lastActivityByUid !== currentUserId
+    && group.activityAt?.toMillis
+    && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
+  ));
 
   return (
     <div className="groups-page">
@@ -112,12 +100,12 @@ export function GroupListPage({
             type="search"
             value={searchText}
             onChange={event => setSearchText(event.target.value)}
-            placeholder="Search groups, events..."
+            placeholder="Search my groups..."
           />
         </div>
         <div className="group-actions">
           <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
-          <button className="group-btn secondary" type="button" onClick={onCreateCollection}>Create order / event</button>
+          <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
           {canSeedDemoGroups && (
             <button className="group-btn ghost" type="button" disabled={seedingDemo} onClick={onSeedDemoGroups}>
               {seedingDemo ? "Adding..." : "Add demo groups"}
@@ -129,51 +117,46 @@ export function GroupListPage({
             </button>
           )}
         </div>
-        <div className="groups-mode-grid" role="tablist" aria-label="Browse Kampasika">
-          <button
-            type="button"
-            className={`groups-mode-card ${viewMode === "groups" ? "active" : ""}`}
-            onClick={() => setViewMode("groups")}
-          >
-            <strong>Groups</strong>
-            <span>{filteredGroups.length} available</span>
-          </button>
-          <button
-            type="button"
-            className={`groups-mode-card ${viewMode === "events" ? "active" : ""}`}
-            onClick={() => setViewMode("events")}
-          >
-            <strong>Events</strong>
-            <span>{filteredPublicEvents.length} public</span>
-          </button>
+        <div className="groups-mode-grid" aria-label="Kampasika overview">
+          <div className="groups-mode-card active">
+            <strong>My Groups</strong>
+            <span>{filteredGroups.length} joined</span>
+          </div>
+          <div className="groups-mode-card">
+            <strong>Recent Updates</strong>
+            <span>{recentGroups.length} new</span>
+          </div>
         </div>
       </div>
 
-      {viewMode === "events" && (
+      <div className="group-section">
+        <div className="group-section-title">Quick actions</div>
+        <div className="group-actions">
+          <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
+          <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan QR / Join</button>
+        </div>
+      </div>
+
+      {recentGroups.length > 0 && (
         <div className="group-section">
-          <div className="group-section-title">Public events and orders</div>
-          {filteredPublicEvents.length > 0 ? filteredPublicEvents.map(eventItem => (
-            <button key={`${eventItem.groupId}-${eventItem.id}`} type="button" className="group-card" onClick={() => onOpenPublicEvent(eventItem)}>
-              {eventItem.photoUrl ? <img className="group-event-thumb" src={eventItem.photoUrl} alt="" /> : <div className="group-avatar">EV</div>}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="group-card-title">{eventItem.title}</div>
-                <div className="group-card-subtitle">
-                  {eventItem.description || (eventItem.collectionType === "order" ? "Public group order" : "Public group event")}
-                  {eventItem.amount ? ` - ${Number(eventItem.amount).toLocaleString()} TSh` : " - Free"}
-                </div>
+          <div className="group-section-title">Recent updates</div>
+          {recentGroups.slice(0, 3).map(group => (
+            <button key={group.id} type="button" className="group-card" onClick={() => handleGroupOpen(group)}>
+              <div className="group-avatar" style={{ backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
+                {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
               </div>
-              <span className="group-role-pill">{eventItem.collectionType === "order" ? "Order" : "Public"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="group-card-title">{group.name}</div>
+                <div className="group-card-subtitle">New activity in this group</div>
+              </div>
+              <span className="group-new-pill">New</span>
             </button>
-          )) : (
-            <div className="group-empty">
-              {normalizedSearch ? "No public events or orders match your search." : "No public events or orders yet."}
-            </div>
-          )}
+          ))}
         </div>
       )}
 
-      {viewMode === "groups" && <div className="group-section">
-        <div className="group-section-title">Groups</div>
+      <div className="group-section">
+        <div className="group-section-title">My Groups</div>
         {selectedGroup && canDeleteGroup(selectedGroup) && (
           <div className="group-selection-bar">
             <strong>{selectedGroup.name}</strong>
@@ -222,41 +205,17 @@ export function GroupListPage({
               </div>
               {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
               <span className="group-visibility-pill">
-                {group.joinPolicy === "approvalRequired" ? "Approval" : group.joinPolicy === "inviteOnly" || group.visibility === "inviteOnly" ? "Invite" : "Public"}
+                {group.joinPolicy === "approvalRequired" ? "Approval" : "Invite"}
               </span>
               {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
             </button>
           ))
         ) : (
           <div className="group-empty">
-            {hasGroups ? "No groups match your search." : `No groups yet. Start with one of the demo groups: ${DEMO_GROUPS.map(g => g.name).join(", ")}.`}
+            {hasGroups ? "No groups match your search." : "No groups yet. Create one or scan a group QR to join."}
           </div>
         )}
-      </div>}
-
-      {false && viewMode === "groups" && legacyCollections.length > 0 && (
-        <div className="group-section">
-          <div className="group-section-title">Legacy orders and events</div>
-          {Object.values(legacyCollections.reduce((acc, item) => {
-            const key = (item.communityName || item.universityName || "General").trim();
-            if (!acc[key]) acc[key] = { name: key, items: [], orders: 0, events: 0 };
-            acc[key].items.push(item);
-            if ((item.collectionType || "order") === "event") acc[key].events += 1;
-            else acc[key].orders += 1;
-            return acc;
-          }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
-            <button key={group.name} type="button" className="group-card" onClick={() => onOpenLegacyCommunity(group)}>
-              <div className="group-avatar" style={{ background: "#0d9488" }}>
-                {groupAvatarText(group.name)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="group-card-title">{group.name}</div>
-                <div className="group-card-subtitle">{group.orders} orders - {group.events} events - {group.items.length} total</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -329,8 +288,7 @@ export function CreateGroupModal({ data, onChange, onClose, onCreate, uploading 
             </div>
             <div className="group-field">
               <label>Who can join?</label>
-              <select value={data.visibility || "public"} onChange={event => onChange({ ...data, visibility: event.target.value })}>
-                <option value="public">Public - students can discover and join</option>
+              <select value={data.visibility || "inviteOnly"} onChange={event => onChange({ ...data, visibility: event.target.value })}>
                 <option value="inviteOnly">Invite only - link holders can join</option>
                 <option value="approvalRequired">Approval required - admins approve requests</option>
               </select>

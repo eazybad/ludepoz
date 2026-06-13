@@ -602,8 +602,8 @@ export async function createUniversityGroup(db, { data, user, profile, selectedU
     adminName: profile.name || user.email || "Group owner",
     memberCount: 1,
     mentionPermission: "admins",
-    visibility: data.visibility || "public",
-    joinPolicy: data.visibility === "approvalRequired" ? "approvalRequired" : data.visibility === "inviteOnly" ? "inviteOnly" : "public",
+    visibility: data.visibility || "inviteOnly",
+    joinPolicy: data.visibility === "approvalRequired" ? "approvalRequired" : "inviteOnly",
     uniId: selectedUni?.id || "aru",
     universityName: selectedUni?.short || "ARU",
     active: true,
@@ -632,7 +632,7 @@ export async function createUniversityGroup(db, { data, user, profile, selectedU
   });
 
   await batch.commit();
-  return { id: groupRef.id, name, desc: data.desc.trim(), type: data.type, inviteCode, memberCount: 1, visibility: data.visibility || "public" };
+  return { id: groupRef.id, name, desc: data.desc.trim(), type: data.type, inviteCode, memberCount: 1, visibility: data.visibility || "inviteOnly" };
 }
 
 export async function seedDemoGroups(db, { selectedUni, user, profile }) {
@@ -706,8 +706,13 @@ export async function seedDemoGroups(db, { selectedUni, user, profile }) {
 }
 
 export async function joinUniversityGroup(db, { group, user, profile }) {
+  const memberRef = doc(db, "groups", group.id, "members", user.uid);
+  const existingMember = await getDoc(memberRef);
+  if (existingMember.exists() && existingMember.data()?.status === "blocked") {
+    throw new Error("You cannot join this group right now.");
+  }
   if (group.joinPolicy === "approvalRequired") {
-    await setDoc(doc(db, "groups", group.id, "members", user.uid), {
+    await setDoc(memberRef, {
       uid: user.uid,
       name: profile.username || profile.name || user.email || "Member",
       fullName: profile.fullName || "",
@@ -720,7 +725,7 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
     }, { merge: true });
     return "pending";
   }
-  await setDoc(doc(db, "groups", group.id, "members", user.uid), {
+  await setDoc(memberRef, {
     uid: user.uid,
     name: profile.username || profile.name || user.email || "Member",
     fullName: profile.fullName || "",
@@ -1169,7 +1174,9 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     photoUrl: "",
     photoUploadStatus: "",
     photoUploadStartedAt: null,
-    visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
+    visibility: data.visibility || "groupOnly",
+    roundSourceId: data.roundSourceId || "",
+    roundStartedFromTitle: data.roundStartedFromTitle || "",
     createdByUid: user.uid,
     createdByName: profile.name || user.email || "Admin",
     groupId,
@@ -1238,7 +1245,7 @@ export async function updateGroupCollection(db, { groupId, collectionId, user, d
     paymentMethods: data.paymentMethods,
     deadline: data.deadline || null,
     photoUrl,
-    visibility: data.visibility || (data.collectionType === "event" ? "public" : "groupOnly"),
+    visibility: data.visibility || "groupOnly",
     updatedByUid: user.uid,
     updatedAt: serverTimestamp(),
   });
@@ -1499,6 +1506,25 @@ export async function updateMemberRole(db, { groupId, uid, role }) {
     role,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function updateGroupMemberStatus(db, { groupId, member, status }) {
+  if (!["removed", "blocked"].includes(status)) throw new Error("Invalid member action");
+  if (member?.role === "owner") throw new Error("The group owner cannot be removed or blocked.");
+  const update = {
+    status,
+    updatedAt: serverTimestamp(),
+  };
+  if (status === "removed") update.removedAt = serverTimestamp();
+  if (status === "blocked") update.blockedAt = serverTimestamp();
+  await updateDoc(doc(db, "groups", groupId, "members", member.uid), update);
+  if (["removed", "blocked"].includes(status) && (!member.status || member.status === "active")) {
+    await updateDoc(doc(db, "groups", groupId), {
+      memberCount: increment(-1),
+      activityAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
 }
 
 export async function updateGroupPaymentAmount(db, { groupId, collectionId, paymentId, amountPaid, verifier }) {
