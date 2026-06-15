@@ -124,6 +124,7 @@ const emptyWorkSubmission = {
 };
 
 const OFFLINE_RESOURCE_CACHE = "kampasika-offline-resources-v1";
+const OFFLINE_GROUP_MESSAGE_QUEUE = "kampasika-offline-group-message-queue-v1";
 const MAX_RESOURCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILE_MB = Math.round(MAX_RESOURCE_FILE_BYTES / (1024 * 1024));
 const ENABLE_DOCUMENT_PDF_PREVIEWS = false;
@@ -198,6 +199,39 @@ function writeGroupScreenCache(groupId, value) {
   } catch (_) {}
 }
 
+function readOfflineMessageQueue() {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_GROUP_MESSAGE_QUEUE) || "[]");
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeOfflineMessageQueue(items) {
+  try {
+    localStorage.setItem(OFFLINE_GROUP_MESSAGE_QUEUE, JSON.stringify(items));
+  } catch (_) {}
+}
+
+function queuedMessagesForGroup(groupId, uid) {
+  return readOfflineMessageQueue()
+    .filter(item => item.groupId === groupId && (!uid || item.authorUid === uid))
+    .map(item => ({
+      ...item,
+      createdAt: new Date(item.createdAt || Date.now()),
+      offlinePending: true,
+    }));
+}
+
+function saveQueuedGroupMessage(message) {
+  const queue = readOfflineMessageQueue();
+  writeOfflineMessageQueue([...queue.filter(item => item.id !== message.id), message]);
+}
+
+function removeQueuedGroupMessage(messageId) {
+  writeOfflineMessageQueue(readOfflineMessageQueue().filter(item => item.id !== messageId));
+}
+
 function MenuIcon({ name }) {
   const common = {
     width: "22",
@@ -217,6 +251,7 @@ function MenuIcon({ name }) {
     members: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.8" /><path d="M16 3.1a4 4 0 0 1 0 7.8" /></>,
     resources: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8" /><path d="M8 17h5" /></>,
     events: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4" /><path d="M8 2v4" /><path d="M3 10h18" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /></>,
+    overview: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /></>,
     edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,
     mute: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /><path d="M3 3l18 18" /></>,
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" /><path d="M10 21h4" /></>,
@@ -365,18 +400,21 @@ export function GroupDetailPage({
   onBackHandlerChange,
   onGroupUpdated,
   onOpenScanner,
-  initialTab = "chats",
+  initialTab = "overview",
   initialCollectionId = "",
   initialCollection = null,
   initialSource = "",
   groupHasUnread = false,
   groupReadAtValue = 0,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab || "chats");
+  const [activeTab, setActiveTab] = useState(initialTab || "overview");
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuActivitySeen, setMenuActivitySeen] = useState(false);
   const [members, setMembers] = useState([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [queuedMessages, setQueuedMessages] = useState([]);
   const [resources, setResources] = useState([]);
   const [workGroups, setWorkGroups] = useState([]);
   const [collections, setCollections] = useState(initialCollection ? [initialCollection] : []);
@@ -443,6 +481,18 @@ export function GroupDetailPage({
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const openedReadAtRef = useRef(groupReadAtValue || 0);
+  const syncingQueuedMessagesRef = useRef(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
@@ -503,9 +553,9 @@ export function GroupDetailPage({
   }, {}), [activeMembers]);
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
   const currentAction = group.currentAction || null;
-  const chatMessages = useMemo(() => [...messages].sort((a, b) => (
+  const chatMessages = useMemo(() => [...messages, ...queuedMessages].sort((a, b) => (
     (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0)
-  )), [messages]);
+  )), [messages, queuedMessages]);
   const unreadChatMessages = useMemo(() => chatMessages.filter(message => (
     message.authorUid !== user?.uid
     && message.createdAt?.getTime
@@ -559,10 +609,95 @@ export function GroupDetailPage({
     acc[key].push(resource);
     return acc;
   }, {}), [savedOfflineResourceList]);
+  const latestMessage = chatMessages[chatMessages.length - 1] || null;
+  const activePaymentItem = collections.find(item => item.id === currentAction?.targetId)
+    || paymentCollections.find(item => (item.collectionType || "") !== "event")
+    || null;
+  const upcomingActivity = eventCollections[0] || null;
+  const latestResource = visibleSortedResources[0] || null;
+  const groupScreenSavedAt = screenCacheRef.current?.savedAt || 0;
+  const showSubGroups = group.type === "class";
+  const groupMenuItems = [
+    ["overview", "Overview"],
+    ["chats", "Chat"],
+    ["payments", "Payments"],
+    ["events", "Activities"],
+    ["resources", "Files"],
+    ["members", "Members"],
+    ...(showSubGroups ? [["workgroups", "Sub-groups"]] : []),
+  ];
+  const showMenuActivityDot = groupHasUnread && !menuActivitySeen;
+  const channelLabels = {
+    overview: "Overview",
+    chats: "Chat",
+    payments: "Payments",
+    events: "Activities",
+    resources: "Files",
+    members: "Members",
+    workgroups: "Sub-groups",
+  };
+  const primaryGroupTabs = [
+    ["overview", "Overview"],
+    ["chats", "Chat"],
+    ["payments", "Payments"],
+    ["events", "Activities"],
+    ["resources", "Files"],
+    ["members", "Members"],
+  ];
+  const guardOfflineAction = (label = "This action") => {
+    if (!isOffline) return false;
+    onError(new Error(`${label} is disabled while offline. You can read the saved group view until you are back online.`));
+    return true;
+  };
 
   useEffect(() => {
     setSavedOfflineResources(readOfflineResourceStore(group.id));
   }, [group.id]);
+
+  useEffect(() => {
+    setQueuedMessages(queuedMessagesForGroup(group.id, user?.uid));
+  }, [group.id, user?.uid]);
+
+  useEffect(() => {
+    if (isOffline || !user || !group?.id || queuedMessages.length === 0 || syncingQueuedMessagesRef.current) return;
+    const syncQueuedMessages = async () => {
+      syncingQueuedMessagesRef.current = true;
+      const pending = queuedMessages.filter(item => item.groupId === group.id && item.authorUid === user.uid);
+      for (const item of pending) {
+        try {
+          await sendGroupMessage(db, {
+            groupId: group.id,
+            channelId: "chats",
+            text: item.text,
+            user,
+            profile,
+            kind: "message",
+            pinned: false,
+            group,
+            members,
+            replyTo: item.replyTo || null,
+            attachments: [],
+          });
+          removeQueuedGroupMessage(item.id);
+          setQueuedMessages(queuedMessagesForGroup(group.id, user.uid));
+          onMarkRead?.({ ...group, activityAt: { toMillis: () => Date.now() } });
+        } catch (_) {
+          break;
+        }
+      }
+      syncingQueuedMessagesRef.current = false;
+      setQueuedMessages(queuedMessagesForGroup(group.id, user.uid));
+    };
+    syncQueuedMessages();
+  }, [db, group, isOffline, members, onMarkRead, profile, queuedMessages, user]);
+
+  useEffect(() => {
+    setMenuActivitySeen(false);
+  }, [group.id, groupHasUnread]);
+
+  useEffect(() => {
+    if (!showSubGroups && activeTab === "workgroups") setActiveTab("overview");
+  }, [activeTab, showSubGroups]);
 
   const pushGroupHistory = () => {
     try {
@@ -667,8 +802,8 @@ export function GroupDetailPage({
       setSelectedResourceSubject("");
       return true;
     }
-    if (activeTab !== "chats") {
-      setActiveTab("chats");
+    if (activeTab !== "overview") {
+      setActiveTab("overview");
       setPaymentSearch("");
       return true;
     }
@@ -689,7 +824,7 @@ export function GroupDetailPage({
 
   useEffect(() => {
     if (!group?.id) return undefined;
-    setActiveTab(initialTab || "chats");
+    setActiveTab(initialTab || "overview");
     setMenuOpen(false);
     setCollections(initialCollection ? [initialCollection] : []);
     setSelectedCollectionId(initialCollectionId || "");
@@ -940,6 +1075,36 @@ export function GroupDetailPage({
   };
 
   const handlePost = async (kind = "message") => {
+    if (isOffline && kind === "message" && messageText.trim() && chatAttachments.length === 0 && user && group?.id) {
+      const queuedMessage = {
+        id: `offline-${group.id}-${user.uid}-${Date.now()}`,
+        groupId: group.id,
+        channelId: "chats",
+        text: messageText.trim(),
+        authorName: profile.name || user.email || "Member",
+        authorUid: user.uid,
+        kind: "message",
+        pinned: false,
+        replyTo: replyToMessage ? {
+          id: replyToMessage.id,
+          authorName: replyToMessage.authorName || "Member",
+          text: (replyToMessage.text || replyToMessage.attachments?.[0]?.name || "Attachment").slice(0, 140),
+        } : null,
+        attachments: [],
+        reactions: {},
+        createdAt: Date.now(),
+      };
+      saveQueuedGroupMessage(queuedMessage);
+      setQueuedMessages(queuedMessagesForGroup(group.id, user.uid));
+      setMessageText("");
+      setShowChatComposer(false);
+      setShowChatTools(false);
+      setReplyToMessage(null);
+      markCurrentGroupRead();
+      onSuccess("Message saved. It will send when you are online.");
+      return;
+    }
+    if (guardOfflineAction(kind === "announcement" ? "Pinning updates" : "Sending messages")) return;
     if ((!messageText.trim() && chatAttachments.length === 0) || !user || !group?.id) return;
     if (kind === "announcement" && !messageText.trim()) return;
     const hasMention = /(^|\s)@[a-zA-Z0-9._-]+/.test(messageText);
@@ -1023,6 +1188,7 @@ export function GroupDetailPage({
   };
 
   const handleReactToMessage = async (message, emoji) => {
+    if (guardOfflineAction("Reacting to messages")) return;
     try {
       await reactToGroupMessage(db, { groupId: group.id, messageId: message.id, emoji, user });
       setActiveMessageActions(null);
@@ -1032,6 +1198,7 @@ export function GroupDetailPage({
   };
 
   const handleDeleteMessage = async (message) => {
+    if (guardOfflineAction("Deleting messages")) return;
     const isOwnMessage = message.authorUid === user?.uid;
     if (!isOwnMessage && !memberCanManage) return;
     if (!window.confirm(isOwnMessage ? "Unsend this message?" : "Delete this message from the group?")) return;
@@ -1048,6 +1215,7 @@ export function GroupDetailPage({
   };
 
   const handlePinMessageUpdate = async (message) => {
+    if (guardOfflineAction("Pinning updates")) return;
     if (!memberCanManage || !user || !message?.text) return;
     setBusy(true);
     try {
@@ -1070,6 +1238,7 @@ export function GroupDetailPage({
   };
 
   const openResourceAddMenu = () => {
+    if (guardOfflineAction("Adding files")) return;
     setShowResourceAddMenu(true);
     setShowChatTools(false);
   };
@@ -1135,6 +1304,7 @@ export function GroupDetailPage({
   };
 
   const openCreateResourceForm = (subject = selectedResourceSubject) => {
+    if (guardOfflineAction("Adding files")) return;
     setEditingResourceId("");
     setResourceData({ ...emptyResource, subject: subject || "" });
     setShowResourceAddMenu(false);
@@ -1142,6 +1312,7 @@ export function GroupDetailPage({
   };
 
   const openEditResourceForm = (resource) => {
+    if (guardOfflineAction("Editing files")) return;
     setEditingResourceId(resource.id);
     setResourceData({
       title: resource.title || resource.text || "",
@@ -1159,6 +1330,7 @@ export function GroupDetailPage({
   };
 
   const handleSaveResource = async () => {
+    if (guardOfflineAction("Saving files")) return;
     if (!resourceData.title.trim() && !resourceData.url.trim() && !resourceData.file && (!resourceData.files || resourceData.files.length === 0)) {
       onError(new Error("Add a resource title, link, or file."));
       return;
@@ -1227,6 +1399,7 @@ export function GroupDetailPage({
   };
 
   const handleCreateResourceFolder = async () => {
+    if (guardOfflineAction("Creating folders")) return;
     if (!memberCanManage || !user) return;
     const folderName = window.prompt("Folder name", selectedResourceSubject || "");
     const cleanFolder = folderName?.trim();
@@ -1254,6 +1427,7 @@ export function GroupDetailPage({
   };
 
   const handleSaveSimpleResource = async () => {
+    if (guardOfflineAction("Saving files")) return;
     if (!memberCanManage || !user) return;
     const subject = simpleResourceData.mode === "files"
       ? (simpleResourceData.subject.trim() || selectedResourceSubject || "Files")
@@ -1304,6 +1478,7 @@ export function GroupDetailPage({
   };
 
   const handleDeleteResource = async (resource) => {
+    if (guardOfflineAction("Deleting files")) return;
     if (!window.confirm(`Delete "${resource.title || resource.text || "this resource"}"?`)) return;
     setBusy(true);
     try {
@@ -1567,12 +1742,13 @@ export function GroupDetailPage({
   };
 
   const handleSaveWorkGroup = async () => {
+    if (guardOfflineAction("Saving sub-groups")) return;
     if (!workGroupData.name.trim()) {
-      onError(new Error("In-group name is required."));
+      onError(new Error("Sub-group name is required."));
       return;
     }
     if (workGroupData.memberUids.length === 0) {
-      onError(new Error("Add at least one member to this in-group."));
+      onError(new Error("Add at least one member to this sub-group."));
       return;
     }
     setBusy(true);
@@ -1601,7 +1777,7 @@ export function GroupDetailPage({
       setEditingWorkGroupId("");
       setShowWorkGroupForm(false);
       markCurrentGroupRead();
-      onSuccess(editingWorkGroupId ? "In-group updated." : "In-group created.");
+      onSuccess(editingWorkGroupId ? "Sub-group updated." : "Sub-group created.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1610,11 +1786,12 @@ export function GroupDetailPage({
   };
 
   const handleDeleteWorkGroup = async (workGroup) => {
-    if (!window.confirm(`Delete "${workGroup.name || "this in-group"}"? Submissions for it will be removed from this view.`)) return;
+    if (guardOfflineAction("Deleting sub-groups")) return;
+    if (!window.confirm(`Delete "${workGroup.name || "this sub-group"}"? Submissions for it will be removed from this view.`)) return;
     setBusy(true);
     try {
       await deleteGroupWorkGroup(db, { groupId: group.id, workGroupId: workGroup.id, user });
-      onSuccess("In-group deleted.");
+      onSuccess("Sub-group deleted.");
     } catch (err) {
       onError(err);
     } finally {
@@ -1623,6 +1800,7 @@ export function GroupDetailPage({
   };
 
   const handleSubmitWork = async (workGroup) => {
+    if (guardOfflineAction("Submitting work")) return;
     if (!workSubmissionData.title.trim() && !workSubmissionData.url.trim() && !workSubmissionData.file) {
       onError(new Error("Add a submission title, link, or file."));
       return;
@@ -1659,6 +1837,7 @@ export function GroupDetailPage({
   };
 
   const handleUploadResourceFile = async (event) => {
+    if (guardOfflineAction("Uploading files")) return;
     const files = Array.from(event.target.files || []);
     event.target.value = "";
     if (files.length === 0 || !memberCanManage || !storage || !group?.id) return;
@@ -1677,6 +1856,7 @@ export function GroupDetailPage({
   };
 
   const handleCreateTracker = async () => {
+    if (guardOfflineAction("Creating payments or activities")) return;
     const effectiveCollectionType = activeTab === "events"
       ? (trackerData.collectionType === "order" ? "order" : "event")
       : trackerData.collectionType;
@@ -1750,6 +1930,7 @@ export function GroupDetailPage({
   };
 
   const handleDeleteTracker = async (item = selectedCollection) => {
+    if (guardOfflineAction("Deleting payments or activities")) return;
     if (!item || !memberCanManage || !user) return;
     const label = item.collectionType === "event" ? "event" : item.collectionType === "order" ? "order" : "payment tracker";
     if (!window.confirm(`Delete "${item.title || label}"? This will remove its registrations/payment records from this group.`)) return;
@@ -1774,6 +1955,7 @@ export function GroupDetailPage({
   };
 
   const handleStartNewTrackerRound = async (item = selectedCollection) => {
+    if (guardOfflineAction("Starting a new round")) return;
     if (!item || !memberCanManage || !user) return;
     const label = item.collectionType === "event" ? "event" : item.collectionType === "order" ? "order" : "contribution";
     if (!window.confirm(`Start a new ${label} from "${item.title}"? The current history will stay unchanged.`)) return;
@@ -1832,6 +2014,7 @@ export function GroupDetailPage({
   };
 
   const handleAddManualPayment = async () => {
+    if (guardOfflineAction("Adding paid people")) return;
     if (!selectedCollection || !memberCanVerify || !user) return;
     if (!manualPaymentData.studentName.trim()) {
       onError(new Error("Add the student's name."));
@@ -1856,6 +2039,7 @@ export function GroupDetailPage({
   };
 
   const handleSubmitPayment = async () => {
+    if (guardOfflineAction("Submitting payment proof")) return;
     if (!selectedCollection) return;
     const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
     if (needsOption && !paymentData.selectedOption) {
@@ -1895,6 +2079,7 @@ export function GroupDetailPage({
   };
 
   const handleRegisterEvent = async () => {
+    if (guardOfflineAction(selectedGroupOrder ? "Placing orders" : "Registering")) return;
     if (!selectedCollection || !user) return;
     const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
     if (needsOption && !paymentData.selectedOption) {
@@ -1921,6 +2106,7 @@ export function GroupDetailPage({
   };
 
   const handleVerify = async (payment, status) => {
+    if (guardOfflineAction("Verifying payments")) return;
     setBusy(true);
     try {
       await verifyGroupPayment(db, {
@@ -1939,6 +2125,7 @@ export function GroupDetailPage({
   };
 
   const handleRequestProof = async (payment) => {
+    if (guardOfflineAction("Requesting proof")) return;
     const message = window.prompt("Message to member", "Please upload a clearer payment screenshot proof.");
     if (message === null) return;
     setBusy(true);
@@ -1959,6 +2146,7 @@ export function GroupDetailPage({
   };
 
   const handleRoleChange = async (member, role) => {
+    if (guardOfflineAction("Changing member roles")) return;
     setBusy(true);
     try {
       await updateMemberRole(db, { groupId: group.id, uid: member.uid, role });
@@ -1971,6 +2159,7 @@ export function GroupDetailPage({
   };
 
   const handleMemberStatusAction = async (member, status) => {
+    if (guardOfflineAction(status === "blocked" ? "Blocking members" : "Removing members")) return;
     const label = status === "blocked" ? "block" : "remove";
     if (!memberCanEditGroup || !member?.uid || member.role === "owner") return;
     if (!window.confirm(`${label === "block" ? "Block" : "Remove"} ${memberDisplayName(member)} from this group?`)) return;
@@ -1987,6 +2176,7 @@ export function GroupDetailPage({
   };
 
   const handleAdjustAmount = async (payment) => {
+    if (guardOfflineAction("Adjusting payments")) return;
     const nextAmount = window.prompt("Amount paid so far", String(payment.amountPaid || ""));
     if (nextAmount === null) return;
     const cleanAmount = Number(nextAmount);
@@ -2067,6 +2257,7 @@ export function GroupDetailPage({
   };
 
   const handleMentionPermissionChange = async (nextMentionPermission) => {
+    if (guardOfflineAction("Changing tag permissions")) return;
     setBusy(true);
     try {
       setMentionPermission(nextMentionPermission);
@@ -2081,6 +2272,7 @@ export function GroupDetailPage({
   };
 
   const handleToggleMute = async () => {
+    if (guardOfflineAction("Changing mute settings")) return;
     if (!currentMember || !user) return;
     const nextMuted = !currentMember.notificationMuted;
     setBusy(true);
@@ -2105,6 +2297,7 @@ export function GroupDetailPage({
   };
 
   const handleSaveNotificationSettings = async () => {
+    if (guardOfflineAction("Saving notification settings")) return;
     if (!currentMember || !user) return;
     setBusy(true);
     try {
@@ -2123,6 +2316,7 @@ export function GroupDetailPage({
   };
 
   const handleSendDeadlineReminder = async () => {
+    if (guardOfflineAction("Sending reminders")) return;
     if (!selectedCollection || !user) return;
     if (!window.confirm(`Send one reminder for ${selectedCollection.title} to members who still need to act?`)) return;
     setBusy(true);
@@ -2141,6 +2335,7 @@ export function GroupDetailPage({
   };
 
   const openEditGroup = () => {
+    if (guardOfflineAction("Editing group")) return;
     setEditGroupData({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
     setShowEditGroup(true);
     setMenuOpen(false);
@@ -2165,6 +2360,7 @@ export function GroupDetailPage({
   };
 
   const handleSaveGroupProfile = async () => {
+    if (guardOfflineAction("Editing group")) return;
     if (!memberCanEditGroup) return;
     setBusy(true);
     try {
@@ -2184,6 +2380,7 @@ export function GroupDetailPage({
   };
 
   const handleLeaveGroup = async () => {
+    if (guardOfflineAction("Leaving groups")) return;
     if (!currentMember || !user) return;
     if (!window.confirm(`Leave ${group.name}?`)) return;
     setBusy(true);
@@ -2226,7 +2423,7 @@ export function GroupDetailPage({
       <div className="group-field"><label>Deadline</label><input type="date" value={trackerData.deadline} onChange={event => setTrackerData({ ...trackerData, deadline: event.target.value })} /></div>
       <div className="group-field"><label>Description</label><textarea value={trackerData.description} onChange={event => setTrackerData({ ...trackerData, description: event.target.value })} placeholder={trackerData.collectionType === "event" ? "Where, when, who can register, and what students should bring." : trackerData.collectionType === "order" ? "Fabric, pickup point, deadline, and order instructions." : "What this payment is for and how members should pay."} /></div>
       {busy && groupUploadStatus && <div className="group-upload-status">{groupUploadStatus}</div>}
-      <button className="group-btn primary" type="button" disabled={busy} onClick={handleCreateTracker}>{busy ? (groupUploadStatus || "Saving...") : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : trackerData.collectionType === "order" ? "Create order" : "Create order / contribution"}</button>
+      <button className="group-btn primary" type="button" disabled={busy || isOffline} onClick={handleCreateTracker}>{busy ? (groupUploadStatus || "Saving...") : editingTrackerId ? "Save changes" : trackerData.collectionType === "event" ? "Create event" : trackerData.collectionType === "order" ? "Create order" : "Create order / contribution"}</button>
       {editingTrackerId && <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowTrackerForm(false); setEditingTrackerId(""); setTrackerData(emptyTracker); }}>Cancel edit</button>}
     </div>
   );
@@ -2262,9 +2459,23 @@ export function GroupDetailPage({
               {currentMember?.role ? ` - ${currentMember.role}` : ""}
             </div>
           </button>
-          <button type="button" className="group-icon-btn" aria-label="Share group" onClick={onShareGroup}><MenuIcon name="share" /></button>
+          <button type="button" className="group-invite-btn" aria-label="Invite to group" onClick={onShareGroup}>
+            <MenuIcon name="share" />
+            <span>Invite</span>
+          </button>
           <div className="group-menu-wrap">
-            <button type="button" className="group-icon-btn" aria-label="Open group menu" onClick={() => setMenuOpen(value => !value)}><MenuIcon name="more" /></button>
+            <button
+              type="button"
+              className={`group-icon-btn ${showMenuActivityDot ? "has-activity" : ""}`}
+              aria-label="Open group menu"
+              onClick={() => {
+                setMenuOpen(value => !value);
+                setMenuActivitySeen(true);
+              }}
+            >
+              <MenuIcon name="more" />
+              {showMenuActivityDot && <span className="group-menu-activity-dot" aria-hidden="true" />}
+            </button>
             {menuOpen && (
               <>
                 <button type="button" className="group-menu-scrim" aria-label="Close group menu" onClick={() => setMenuOpen(false)} />
@@ -2272,13 +2483,7 @@ export function GroupDetailPage({
                   <div className="group-side-menu-title">{group.name}</div>
                   {canViewGroupContent && (
                     <>
-                      {[
-                        ["chats", "Chats"],
-                        ["payments", "Payments"],
-                        ["workgroups", "In-groups"],
-                        ["members", "Members"],
-                        ["resources", "Resources"],
-                      ].map(([id, label]) => (
+                      {groupMenuItems.map(([id, label]) => (
                         <button
                           key={id}
                           type="button"
@@ -2287,18 +2492,9 @@ export function GroupDetailPage({
                         >
                           <span><MenuIcon name={id} /></span>
                           <strong>{label}</strong>
-                          {groupHasUnread && ["chats", "payments", "workgroups", "resources"].includes(id) && <em className="group-menu-new">New</em>}
+                          {groupHasUnread && ["chats", "payments", "events", "workgroups", "resources"].includes(id) && <em className="group-menu-new">New</em>}
                         </button>
                       ))}
-                      <button
-                        type="button"
-                        className={`group-menu-item ${activeTab === "events" ? "active" : ""}`}
-                        onClick={() => switchGroupTab("events")}
-                      >
-                        <span><MenuIcon name="events" /></span>
-                        <strong>Events</strong>
-                        {groupHasUnread && <em className="group-menu-new">New</em>}
-                      </button>
                     </>
                   )}
                   <button
@@ -2310,7 +2506,7 @@ export function GroupDetailPage({
                     }}
                   >
                     <span><MenuIcon name="qr" /></span>
-                    <strong>Group QR</strong>
+                    <strong>Invite / QR</strong>
                   </button>
                   {isGroupMember(currentMember) && (
                     <>
@@ -2357,8 +2553,17 @@ export function GroupDetailPage({
             </button>
           </div>
         )}
-        {(canViewGroupContent || canViewPublicSelectedEvent) && <div className="group-current-channel">{activeTab}</div>}
+        {(canViewGroupContent || canViewPublicSelectedEvent) && <div className="group-current-channel">{channelLabels[activeTab] || activeTab}</div>}
       </div>
+
+      {isOffline && canViewGroupContent && (
+        <div className="group-offline-banner">
+          <strong>Saved group view</strong>
+          <span>
+            Reading last saved content{groupScreenSavedAt ? ` from ${new Date(groupScreenSavedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}. Actions are disabled until you are online.
+          </span>
+        </div>
+      )}
 
       {(!user || membersLoaded) && !canViewGroupContent && !canViewPublicSelectedEvent && (
         <div className="group-panel">
@@ -2368,7 +2573,7 @@ export function GroupDetailPage({
               <>
                 <div className="group-preview-stats">
                   <span><strong>{sortedResources.length}</strong><small>Resources</small></span>
-                  <span><strong>{workGroups.length}</strong><small>In-groups</small></span>
+                  {showSubGroups && <span><strong>{workGroups.length}</strong><small>Sub-groups</small></span>}
                   <span><strong>{collections.filter(item => (item.collectionType || "") === "event").length}</strong><small>Events</small></span>
                 </div>
                 {sortedResources.length > 0 && (
@@ -2382,9 +2587,9 @@ export function GroupDetailPage({
                     ))}
                   </div>
                 )}
-                {workGroups.length > 0 && (
+                {showSubGroups && workGroups.length > 0 && (
                   <div className="group-preview-section">
-                    <strong>In-groups</strong>
+                    <strong>Sub-groups</strong>
                     {workGroups.slice(0, 3).map(workGroup => (
                       <div key={workGroup.id} className="group-preview-row">
                         <span>{workGroup.name}</span>
@@ -2415,6 +2620,95 @@ export function GroupDetailPage({
         </div>
       )}
 
+      {canViewGroupContent && activeTab === "overview" && (
+        <div className="group-panel group-overview-panel">
+          {currentAction?.description && (
+            <div className="group-overview-active">
+              <div>
+                <small>Active now</small>
+                <strong>{currentAction.title || "Pinned update"}</strong>
+                <span>{currentAction.description}</span>
+              </div>
+              <button
+                type="button"
+                className="group-btn primary compact"
+                onClick={() => {
+                  const target = collections.find(item => item.id === currentAction.targetId);
+                  if (target) {
+                    switchGroupTab(["event", "order"].includes(target.collectionType || "") ? "events" : "payments");
+                    openTracker(target.id);
+                  } else {
+                    switchGroupTab("chats");
+                  }
+                }}
+              >
+                Open
+              </button>
+            </div>
+          )}
+
+          <div className="group-overview-grid">
+            <button type="button" className="group-overview-card" onClick={() => switchGroupTab("chats")}>
+              <small>Latest chat</small>
+              <strong>{latestMessage?.authorName || "Chat"}</strong>
+              <span>{latestMessage?.text || latestMessage?.attachments?.[0]?.name || "No messages yet."}</span>
+            </button>
+            <button
+              type="button"
+              className="group-overview-card"
+              onClick={() => {
+                switchGroupTab("payments");
+                if (activePaymentItem) openTracker(activePaymentItem.id);
+              }}
+            >
+              <small>Latest payment</small>
+              <strong>{activePaymentItem?.title || "No active payment"}</strong>
+              <span>{activePaymentItem?.amount ? `${Number(activePaymentItem.amount).toLocaleString()} TSh` : activePaymentItem ? "Registration / tracking" : "Create one when members need to pay."}</span>
+            </button>
+            <button
+              type="button"
+              className="group-overview-card"
+              onClick={() => {
+                switchGroupTab("events");
+                if (upcomingActivity) openTracker(upcomingActivity.id);
+              }}
+            >
+              <small>Latest activity</small>
+              <strong>{upcomingActivity?.title || "No activity yet"}</strong>
+              <span>{upcomingActivity?.deadline ? `Deadline: ${upcomingActivity.deadline}` : upcomingActivity?.collectionType === "order" ? "Group order" : "Events and orders live here."}</span>
+            </button>
+            <button
+              type="button"
+              className="group-overview-card"
+              onClick={() => {
+                switchGroupTab("resources");
+                if (latestResource?.subject) openResourceSubject((latestResource.subject || "General").trim() || "General");
+              }}
+            >
+              <small>Latest file</small>
+              <strong>{latestResource?.title || latestResource?.text || "No files yet"}</strong>
+              <span>{latestResource?.subject || "Files and resources for this group."}</span>
+            </button>
+          </div>
+
+          <div className="group-overview-actions">
+            {primaryGroupTabs.slice(1).map(([id, label]) => (
+              <button key={id} type="button" className="group-btn secondary compact" onClick={() => switchGroupTab(id)}>
+                {label}
+              </button>
+            ))}
+            <button type="button" className="group-btn ghost compact" onClick={onShareGroup}>
+              Invite
+            </button>
+          </div>
+
+          <div className="group-overview-members">
+            <strong>{activeMembers.length || members.length || group.memberCount || 0}</strong>
+            <span>members coordinating in this group</span>
+          </div>
+        </div>
+      )}
+
       {canViewGroupContent && activeTab === "chats" && (
         <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
           {currentAction?.description && (
@@ -2423,7 +2717,7 @@ export function GroupDetailPage({
               <span>{currentAction.description}</span>
             </div>
           )}
-          {messages.length === 0 ? (
+          {chatMessages.length === 0 ? (
             <div className="group-empty">No messages yet.</div>
           ) : (
             <div className="message-list" ref={messageListRef} onScroll={handleChatScroll}>
@@ -2440,11 +2734,11 @@ export function GroupDetailPage({
                   <div
                     role="button"
                     tabIndex={0}
-                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""}`}
-                    onMouseDown={() => startMessageHold(message)}
+                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.offlinePending ? "pending" : ""}`}
+                    onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
                     onMouseLeave={clearMessageHold}
-                    onTouchStart={(e) => startMessageHold(message, e)}
+                    onTouchStart={(e) => !message.offlinePending && startMessageHold(message, e)}
                     onTouchMove={cancelMessageHoldIfMoved}
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
@@ -2493,7 +2787,9 @@ export function GroupDetailPage({
                         ))}
                       </div>
                     )}
-                    <div className="message-time">{formatDate(message.createdAt)}</div>
+                    <div className={`message-time ${message.offlinePending ? "pending" : ""}`}>
+                      {message.offlinePending ? "Pending" : formatDate(message.createdAt)}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2878,12 +3174,12 @@ export function GroupDetailPage({
         </div>
       )}
 
-      {canViewGroupContent && activeTab === "workgroups" && (
+      {canViewGroupContent && showSubGroups && activeTab === "workgroups" && (
         <div className="group-panel">
           <div className="class-board-header">
             <div>
-              <strong>In-groups</strong>
-              <span>Create teams, assign tasks, and receive submissions from each group.</span>
+              <strong>Sub-groups</strong>
+              <span>Create smaller class groups, assign tasks, and receive submissions.</span>
             </div>
             {memberCanManage && (
               <button type="button" className="group-btn primary compact" onClick={openCreateWorkGroupForm}>
@@ -2893,7 +3189,7 @@ export function GroupDetailPage({
           </div>
 
           {workGroups.length === 0 ? (
-            <div className="resource-box">No in-groups yet. Leaders can create Group 01, Group 02, assign members, and collect submissions here.</div>
+            <div className="resource-box">No sub-groups yet. Leaders can create Group 01, Group 02, assign members, and collect submissions here.</div>
           ) : (
             <div className="workgroup-list">
               {workGroups.map(workGroup => {
@@ -3621,7 +3917,7 @@ export function GroupDetailPage({
       {showWorkGroupForm && (
         <div className="group-modal-backdrop" onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); setShowWorkGroupMembers(false); setShowWorkGroupMore(false); }}>
           <div className="group-modal" onClick={event => event.stopPropagation()}>
-            <h3>{editingWorkGroupId ? "Edit Work Group" : "Create Work Group"}</h3>
+            <h3>{editingWorkGroupId ? "Edit Sub-group" : "Create Sub-group"}</h3>
             <div className="group-field">
               <label>Group name</label>
               <input value={workGroupData.name} onChange={event => setWorkGroupData({ ...workGroupData, name: event.target.value })} placeholder="Group 01" />
@@ -3683,7 +3979,7 @@ export function GroupDetailPage({
             )}
             <div className="group-inline-actions">
               <button className="group-btn primary" type="button" disabled={busy} onClick={handleSaveWorkGroup}>
-                {busy ? "Saving..." : editingWorkGroupId ? "Update in-group" : "Create in-group"}
+                {busy ? "Saving..." : editingWorkGroupId ? "Update sub-group" : "Create sub-group"}
               </button>
               <button className="group-btn ghost" type="button" disabled={busy} onClick={() => { setShowWorkGroupForm(false); setEditingWorkGroupId(""); setShowWorkGroupMembers(false); setShowWorkGroupMore(false); }}>
                 Cancel

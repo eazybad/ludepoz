@@ -439,7 +439,7 @@ function App() {
     catch (_) { return {}; }
   });
   const [viewingGroup, setViewingGroup] = useState(null);
-  const [groupInitialView, setGroupInitialView] = useState({ tab: "chats", collectionId: "", collection: null, source: "" });
+  const [groupInitialView, setGroupInitialView] = useState({ tab: "overview", collectionId: "", collection: null, source: "" });
   const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "inviteOnly" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupAnnouncements, setGroupAnnouncements] = useState([]);
@@ -3029,7 +3029,7 @@ await updateDoc(convRef, {
   const openGroup = (group, initialView = {}) => {
     setViewingGroup(group);
     setGroupInitialView({
-      tab: initialView.tab || "chats",
+      tab: initialView.tab || "overview",
       collectionId: initialView.collectionId || "",
       collection: initialView.collection || null,
       source: initialView.source || "",

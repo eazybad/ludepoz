@@ -129,14 +129,6 @@ export function GroupListPage({
         </div>
       </div>
 
-      <div className="group-section">
-        <div className="group-section-title">Quick actions</div>
-        <div className="group-actions">
-          <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
-          <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan QR / Join</button>
-        </div>
-      </div>
-
       {recentGroups.length > 0 && (
         <div className="group-section">
           <div className="group-section-title">Recent updates</div>

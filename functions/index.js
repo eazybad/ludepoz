@@ -202,6 +202,9 @@ exports.sendInAppNotificationPush = onDocumentCreated(
 );
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
+const snippeCollectionPayments = require("./snippeCollectionPayments");
+exports.createSnippeCollectionPayment = snippeCollectionPayments.createSnippeCollectionPayment;
+exports.snippePaymentWebhook = snippeCollectionPayments.snippePaymentWebhook;
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
