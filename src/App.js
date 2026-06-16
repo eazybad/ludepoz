@@ -7058,23 +7058,63 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ COMMUNITIES INDEX ============ */}
       {page==="communities"&&(
         <>
-          <GroupListPage
-            groups={groupsForSelectedUni}
-            onOpenGroup={(group) => {
-              openGroup(group);
-            }}
-            onDeleteGroup={handleArchiveGroup}
-            onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
-            onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
-            onSeedDemoGroups={handleSeedDemoGroups}
-            onSeedQuantitySurveyGroup={handleSeedQuantitySurveyGroup}
-            canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
-            groupReadAt={groupReadAt}
-            currentUserId={user?.uid || ""}
-            isGroupAdmin={isGroupAdmin}
-            seedingDemo={seedingDemoGroups}
-            seedingQsGroup={seedingQsGroup}
-          />
+          {!user ? (
+            <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'18px 16px 110px',background:'#f6f8fb'}}>
+              <div style={{background:'#fff',border:'1px solid #dbe8e7',borderRadius:'8px',padding:'20px 16px',marginBottom:'14px'}}>
+                <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'800',color:'#0f1b2d',marginBottom:'8px'}}>
+                  Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+                </div>
+                <div style={{fontSize:'18px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.25,marginBottom:'8px'}}>
+                  Campus groups for money, events, files, and members.
+                </div>
+                <div style={{fontSize:'13px',color:'#536173',lineHeight:1.45}}>
+                  Sign in to see your groups, join invites, coordinate contributions, and keep class or organization resources in one place.
+                </div>
+              </div>
+
+              <div style={{display:'grid',gap:'8px',marginBottom:'14px'}}>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("signup"); setShowAuthModal(true); setError(""); }}
+                  style={{width:'100%',padding:'13px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'15px',fontWeight:'900',cursor:'pointer'}}
+                >
+                  Create account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("login"); setShowAuthModal(true); setError(""); }}
+                  style={{width:'100%',padding:'13px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'15px',fontWeight:'900',cursor:'pointer'}}
+                >
+                  Sign in
+                </button>
+              </div>
+
+              <div style={{border:'1px solid #dbe8e7',borderRadius:'8px',background:'#fff',padding:'14px'}}>
+                <div style={{fontSize:'13px',fontWeight:'900',color:'#0f1b2d',marginBottom:'5px'}}>Joining a group?</div>
+                <div style={{fontSize:'12px',color:'#667085',lineHeight:1.45}}>
+                  Open the invite link from your class rep, club leader, or group admin, then sign in to request access.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <GroupListPage
+              groups={groupsForSelectedUni}
+              onOpenGroup={(group) => {
+                openGroup(group);
+              }}
+              onDeleteGroup={handleArchiveGroup}
+              onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
+              onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
+              onSeedDemoGroups={handleSeedDemoGroups}
+              onSeedQuantitySurveyGroup={handleSeedQuantitySurveyGroup}
+              canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
+              groupReadAt={groupReadAt}
+              currentUserId={user?.uid || ""}
+              isGroupAdmin={isGroupAdmin}
+              seedingDemo={seedingDemoGroups}
+              seedingQsGroup={seedingQsGroup}
+            />
+          )}
           {showCreateGroup && (
             <CreateGroupModal
               data={createGroupData}
