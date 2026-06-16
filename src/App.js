@@ -3804,7 +3804,9 @@ useEffect(() => {
         setSignupOtpBusy(false);
       } catch (otpErr) {
         console.error("Signup OTP send failed:", otpErr);
-        finishSignupFlow(displayUsername, chosenUni, false);
+        setError("Could not send OTP. Please check the phone number and try again.");
+        setLoading(false);
+        setSignupOtpBusy(false);
       }
     } catch (err) {
       console.error("Signup error:", err);
@@ -3828,7 +3830,7 @@ useEffect(() => {
       finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, DEFAULT_UNI, true);
     } catch (err) {
       console.error("Signup OTP verify failed:", err);
-      setError("Wrong or expired OTP. You can request another code or continue without verification for now.");
+      setError("Wrong or expired OTP. Please request another code and try again.");
       setSignupOtpBusy(false);
     }
   };
@@ -10753,15 +10755,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <>
                 {signupAwaitingOtp ? (
                   <>
-                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {signupPhone}. If the SMS is delayed, you can continue for now.</p>
+                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {signupPhone} to finish creating your account.</p>
                     <div style={{marginBottom:'12px'}}>
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
                       <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
                     </div>
                     <button onClick={handleConfirmSignupOtp} disabled={signupOtpBusy || signupOtpCode.length !== 6} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:signupOtpBusy?'wait':'pointer',opacity:signupOtpCode.length===6?1:0.6}}>{signupOtpBusy?"Verifying...":"Verify and Create Account"}</button>
-                    <button onClick={() => finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, DEFAULT_UNI, false)} disabled={signupOtpBusy} style={{width:'100%',padding:'11px',background:'transparent',color:'#8a9bb0',border:'none',fontSize:'13px',fontWeight:'700',cursor:signupOtpBusy?'wait':'pointer',marginTop:'8px'}}>
-                      Continue without OTP for now
-                    </button>
                   </>
                 ) : (
                   <>
