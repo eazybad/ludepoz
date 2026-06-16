@@ -202,9 +202,6 @@ exports.sendInAppNotificationPush = onDocumentCreated(
 );
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
-const snippeCollectionPayments = require("./snippeCollectionPayments");
-exports.createSnippeCollectionPayment = snippeCollectionPayments.createSnippeCollectionPayment;
-exports.snippePaymentWebhook = snippeCollectionPayments.snippePaymentWebhook;
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
@@ -214,9 +211,6 @@ const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
 const AFRICASTALKING_API_KEY = defineSecret("AFRICASTALKING_API_KEY");
 const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
-const RAFIKISMS_API_KEY = defineSecret("RAFIKISMS_API_KEY");
-const RAFIKISMS_SENDER_ID = defineSecret("RAFIKISMS_SENDER_ID");
-const CLOUDCONVERT_API_KEY = defineSecret("CLOUDCONVERT_API_KEY");
 
 function assertAdmin(request) {
   const callerUid = request.auth && request.auth.uid;
@@ -280,32 +274,41 @@ function otpHash(uid, phone, code, secret) {
     .digest("hex");
 }
 
-async function sendRafikiSms({ apiKey, senderId, phone, message }) {
-  const response = await fetch("https://api.rafikisms.co.tz/api/sms/send", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-    },
-    body: JSON.stringify({
-      sender_id: senderId || "Kampasika",
-      recipient: phone,
-      recipients: [phone],
-      phone,
-      to: phone,
-      message,
-      text: message,
-    }),
+async function sendAfricasTalkingSms({ apiKey, username, phone, message }) {
+  const body = new URLSearchParams({
+    username,
+    to: phone,
+    message,
+    from: "KAMPASIKA",
   });
 
+  const response = await fetch("https://api.africastalking.com/version1/messaging", {
+    method: "POST",
+    headers: {
+      "apiKey": apiKey,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+    },
+    body,
+  });
+
+  const text = await response.text().catch(() => "");
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new HttpsError("internal", text || "RafikiSMS failed to send.");
+    throw new HttpsError("internal", text || "Africa's Talking failed to send SMS.");
+  }
+
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch (_) {}
+  const recipient = payload?.SMSMessageData?.Recipients?.[0];
+  const status = String(recipient?.status || "").toLowerCase();
+  if (status && !["success", "sent", "submitted", "queued"].includes(status)) {
+    throw new HttpsError("internal", recipient?.status || "Africa's Talking did not accept the SMS.");
   }
 }
 
-exports.requestPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY, RAFIKISMS_SENDER_ID] }, async (request) => {
+exports.requestPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALKING_USERNAME] }, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "You must be logged in.");
@@ -316,10 +319,10 @@ exports.requestPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY, RAFIKISMS_SENDER
     throw new HttpsError("invalid-argument", "Enter a valid Tanzania phone number.");
   }
 
-  const apiKey = RAFIKISMS_API_KEY.value();
-  const senderId = RAFIKISMS_SENDER_ID.value() || "Kampasika";
-  if (!apiKey) {
-    throw new HttpsError("failed-precondition", "RAFIKISMS_API_KEY is not configured.");
+  const apiKey = AFRICASTALKING_API_KEY.value();
+  const username = AFRICASTALKING_USERNAME.value();
+  if (!apiKey || !username) {
+    throw new HttpsError("failed-precondition", "Africa's Talking SMS credentials are not configured.");
   }
 
   const code = String(crypto.randomInt(100000, 999999));
@@ -334,9 +337,9 @@ exports.requestPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY, RAFIKISMS_SENDER
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  await sendRafikiSms({
+  await sendAfricasTalkingSms({
     apiKey,
-    senderId,
+    username,
     phone,
     message: `Kampasika verification code: ${code}. Do not share this code.`,
   });
@@ -350,7 +353,7 @@ exports.requestPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY, RAFIKISMS_SENDER
   return { success: true, phone };
 });
 
-exports.verifyPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY] }, async (request) => {
+exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "You must be logged in.");
@@ -361,7 +364,7 @@ exports.verifyPhoneOtp = onCall({ secrets: [RAFIKISMS_API_KEY] }, async (request
     throw new HttpsError("invalid-argument", "Enter the 6 digit code.");
   }
 
-  const apiKey = RAFIKISMS_API_KEY.value();
+  const apiKey = AFRICASTALKING_API_KEY.value();
   const db = getFirestore();
   const otpRef = db.collection("phoneOtps").doc(uid);
   const otpSnap = await otpRef.get();
@@ -476,138 +479,3 @@ async function assertGroupManager(db, groupId, uid) {
   }
   return group;
 }
-
-exports.convertGroupResourceToPdf = onCall({
-  secrets: [CLOUDCONVERT_API_KEY],
-  timeoutSeconds: 540,
-  memory: "1GiB",
-}, async (request) => {
-  const uid = request.auth && request.auth.uid;
-  if (!uid) {
-    throw new HttpsError("unauthenticated", "You must be logged in.");
-  }
-
-  const groupId = String(request.data && request.data.groupId || "").trim();
-  const resourceId = String(request.data && request.data.resourceId || "").trim();
-  if (!groupId || !resourceId) {
-    throw new HttpsError("invalid-argument", "Missing group or resource id.");
-  }
-
-  const apiKey = CLOUDCONVERT_API_KEY.value();
-  if (!apiKey) {
-    throw new HttpsError("failed-precondition", "Set CLOUDCONVERT_API_KEY before converting documents.");
-  }
-
-  const db = admin.firestore();
-  await assertGroupManager(db, groupId, uid);
-
-  const resourceRef = db
-    .collection("groups").doc(groupId)
-    .collection("channels").doc("resources")
-    .collection("messages").doc(resourceId);
-  const resourceSnap = await resourceRef.get();
-  if (!resourceSnap.exists) {
-    throw new HttpsError("not-found", "Resource not found.");
-  }
-  const resource = resourceSnap.data() || {};
-  if (!resource.url) {
-    throw new HttpsError("failed-precondition", "This resource does not have a file URL.");
-  }
-  if (!isConvertibleDocumentResource(resource)) {
-    throw new HttpsError("failed-precondition", "Only PPT/PPTX/DOC/DOCX resources can be converted.");
-  }
-  if (resource.previewPdfUrl && resource.previewStatus === "ready") {
-    return { previewPdfUrl: resource.previewPdfUrl, status: "ready" };
-  }
-
-  await resourceRef.update({
-    previewStatus: "processing",
-    previewError: admin.firestore.FieldValue.delete(),
-    previewRequestedByUid: uid,
-    previewRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  try {
-    const createJobResponse = await fetch("https://api.cloudconvert.com/v2/jobs", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        tasks: {
-          "import-file": {
-            operation: "import/url",
-            url: resource.url,
-          },
-          "convert-file": {
-            operation: "convert",
-            input: "import-file",
-            output_format: "pdf",
-          },
-          "export-file": {
-            operation: "export/url",
-            input: "convert-file",
-          },
-        },
-      }),
-    });
-    const created = await createJobResponse.json();
-    if (!createJobResponse.ok) {
-      throw new Error(created?.message || created?.data?.message || "Could not start conversion.");
-    }
-    const jobId = created?.data?.id;
-    if (!jobId) throw new Error("Conversion job id missing.");
-
-    const waitResponse = await fetch(`https://sync.api.cloudconvert.com/v2/jobs/${jobId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    const finished = await waitResponse.json();
-    if (!waitResponse.ok || finished?.data?.status !== "finished") {
-      throw new Error(finished?.message || "Document conversion did not finish.");
-    }
-    const exportTask = (finished.data.tasks || []).find(task => task.name === "export-file");
-    const exportUrl = exportTask?.result?.files?.[0]?.url;
-    if (!exportUrl) throw new Error("Converted PDF URL missing.");
-
-    const pdfResponse = await fetch(exportUrl);
-    if (!pdfResponse.ok) throw new Error("Could not download converted PDF.");
-    const pdfBytes = Buffer.from(await pdfResponse.arrayBuffer());
-
-    const bucket = admin.storage().bucket();
-    const token = crypto.randomUUID();
-    const fileName = `${safeFileName(resource.fileName || resource.title)}.pdf`;
-    const previewPath = `groups/${groupId}/resources/previews/${resourceId}_${Date.now()}_${fileName}`;
-    const file = bucket.file(previewPath);
-    await file.save(pdfBytes, {
-      resumable: false,
-      contentType: "application/pdf",
-      metadata: {
-        metadata: {
-          firebaseStorageDownloadTokens: token,
-          originalResourceId: resourceId,
-        },
-      },
-    });
-
-    const previewPdfUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(previewPath)}?alt=media&token=${token}`;
-    await resourceRef.update({
-      previewPdfUrl,
-      previewFilePath: previewPath,
-      previewStatus: "ready",
-      previewError: admin.firestore.FieldValue.delete(),
-      previewGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
-      previewGeneratedByUid: uid,
-    });
-
-    return { previewPdfUrl, status: "ready" };
-  } catch (error) {
-    console.error("convertGroupResourceToPdf failed:", error);
-    await resourceRef.update({
-      previewStatus: "failed",
-      previewError: String(error.message || error).slice(0, 300),
-      previewFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    throw new HttpsError("internal", error.message || "Could not convert this document.");
-  }
-});
