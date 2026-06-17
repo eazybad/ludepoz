@@ -330,7 +330,9 @@ function App() {
   const [success, setSuccess] = useState("");
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [page, setPageRaw] = useState("communities");
-  const [ENABLE_ROOMS, setEnableRooms] = useState(false);
+  const [ENABLE_ROOMS, setEnableRooms] = useState(true);
+  const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
+  const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["communities"]);
@@ -386,7 +388,7 @@ function App() {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
-  const [homeTab, setHomeTab] = useState("goods");
+  const [homeTab, setHomeTab] = useState("rooms");
   const [tabIconsVisible, setTabIconsVisible] = useState(false);
   const homeScrollRef = useRef(null);
   const lastScrollY = useRef(0);
@@ -615,7 +617,6 @@ useEffect(() => {
     }
   }, [page, homeTab, committedSearchQ, committedServiceSearchQ, committedRoomSearchQ]);
 
-  const [roomFilterType, setRoomFilterType] = useState("all");
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
   // eslint-disable-next-line no-unused-vars
@@ -1675,6 +1676,33 @@ useEffect(() => {
     setError("Failed to update feature");
   }
 };
+  const toggleDiscoverGoodsFeature = async () => {
+    try {
+      const newValue = !ENABLE_DISCOVER_GOODS;
+      await setDoc(doc(db, "system", "features"), { discoverGoods: newValue }, { merge: true });
+      setEnableDiscoverGoods(newValue);
+      if (!newValue && homeTab === "goods") setHomeTab("rooms");
+      setSuccess(newValue ? "Goods enabled in Discover" : "Goods hidden from Discover");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Failed to update goods visibility");
+    }
+  };
+
+  const toggleDiscoverServicesFeature = async () => {
+    try {
+      const newValue = !ENABLE_DISCOVER_SERVICES;
+      await setDoc(doc(db, "system", "features"), { discoverServices: newValue }, { merge: true });
+      setEnableDiscoverServices(newValue);
+      if (!newValue && homeTab === "services") setHomeTab("rooms");
+      setSuccess(newValue ? "Services enabled in Discover" : "Services hidden from Discover");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Failed to update services visibility");
+    }
+  };
   const toggleIdentityVerificationRequirement = async () => {
     try {
       const newValue = !REQUIRE_IDENTITY_VERIFICATION;
@@ -1870,16 +1898,22 @@ useEffect(() => {
 
     if (snap.exists()) {
       const data = snap.data();
-      setEnableRooms(data.rooms === true);
+      setEnableRooms(true);
+      setEnableDiscoverGoods(data.discoverGoods === true);
+      setEnableDiscoverServices(data.discoverServices === true);
       // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
     } else {
-      setEnableRooms(false);
+      setEnableRooms(true);
+      setEnableDiscoverGoods(false);
+      setEnableDiscoverServices(false);
       setRequireIdentityVerification(false);
     }
   } catch (err) {
     console.error("Error loading feature flags:", err);
-    setEnableRooms(false);
+    setEnableRooms(true);
+    setEnableDiscoverGoods(false);
+    setEnableDiscoverServices(false);
     setRequireIdentityVerification(false);
   } finally {
     setFeatureFlagsLoaded(true);
@@ -2286,6 +2320,12 @@ const requestNotificationPermission = async (currentUser) => {
     if (homeScrollRef.current) homeScrollRef.current.scrollTop = 0;
     setTimeout(() => { tabLocked.current = false; }, 800);
   };
+
+  useEffect(() => {
+    if ((homeTab === "goods" && !ENABLE_DISCOVER_GOODS) || (homeTab === "services" && !ENABLE_DISCOVER_SERVICES) || (homeTab === "rooms" && !ENABLE_ROOMS)) {
+      setHomeTab(ENABLE_ROOMS ? "rooms" : ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : "rooms");
+    }
+  }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
 
   useEffect(() => {
     if (!user) return;
@@ -5377,22 +5417,35 @@ return (
       
         <input
           type="text"
-          placeholder={SEARCH_EXAMPLES[placeholderIdx]}
-          value={searchQ}
+          placeholder={homeTab === "rooms" ? "Tafuta room kwa eneo, bei, au amenity..." : homeTab === "services" ? "Tafuta huduma..." : SEARCH_EXAMPLES[placeholderIdx]}
+          value={homeTab === "rooms" ? roomSearchQ : homeTab === "services" ? serviceSearchQ : searchQ}
           onChange={e => {
-            setSearchQ(e.target.value);
-            // If user clears the box, clear any committed search & AI state too
+            const nextValue = e.target.value;
+            if (homeTab === "rooms") setRoomSearchQ(nextValue);
+            else if (homeTab === "services") setServiceSearchQ(nextValue);
+            else setSearchQ(nextValue);
             if (!e.target.value.trim()) {
-              setCommittedSearchQ("");
+              if (homeTab === "rooms") setCommittedRoomSearchQ("");
+              else if (homeTab === "services") setCommittedServiceSearchQ("");
+              else setCommittedSearchQ("");
               clearAISearch();
             }
           }}
-          onKeyDown={e => { if (e.key === 'Enter') commitListingsSearch(searchQ); }}
+          onKeyDown={e => {
+            if (e.key !== 'Enter') return;
+            if (homeTab === "rooms") commitRoomsSearch(roomSearchQ);
+            else if (homeTab === "services") commitServicesSearch(serviceSearchQ);
+            else commitListingsSearch(searchQ);
+          }}
           style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'#0f1b2d'}}
         />
         <button
           type="button"
-          onClick={() => commitListingsSearch(searchQ)}
+          onClick={() => {
+            if (homeTab === "rooms") commitRoomsSearch(roomSearchQ);
+            else if (homeTab === "services") commitServicesSearch(serviceSearchQ);
+            else commitListingsSearch(searchQ);
+          }}
           aria-label="Search"
           style={{
             width:'30px',height:'30px',borderRadius:'50%',
@@ -5585,8 +5638,8 @@ return (
   </div>
 )}
 
-{/* ===== AIRBNB-STYLE TOP TAB BAR ===== */}
-<div style={{
+{/* ===== DISCOVER CATEGORY TABS ===== */}
+{(ENABLE_DISCOVER_GOODS || ENABLE_DISCOVER_SERVICES) && <div style={{
   display:'flex',
   justifyContent:'center',
   gap:'0',
@@ -5599,8 +5652,8 @@ return (
   transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)'
 }}>
   {[
-    {id:'goods',label:'Goods',icon:'🛍️'},
-    {id:'services',label:'Services',icon:'⚡'},
+    ...(ENABLE_DISCOVER_GOODS ? [{id:'goods',label:'Goods',icon:'🛍️'}] : []),
+    ...(ENABLE_DISCOVER_SERVICES ? [{id:'services',label:'Services',icon:'⚡'}] : []),
     ...(ENABLE_ROOMS ? [{id:'rooms',label:'Rooms',icon:'🏠'}] : [])
   ].map(tab=>(
     <button key={tab.id} onClick={()=>handleTabTap(tab.id)} style={{
@@ -5642,11 +5695,23 @@ return (
 </span>
     </button>
   ))}
-</div>
+</div>}
 <AISearchBadge
   parsed={aiParsed}
   isAIActive={isAIActive}
-  onClear={() => { clearAISearch(); setSearchQ(""); setCommittedSearchQ(""); }}
+  onClear={() => {
+    clearAISearch();
+    if (homeTab === "rooms") {
+      setRoomSearchQ("");
+      setCommittedRoomSearchQ("");
+    } else if (homeTab === "services") {
+      setServiceSearchQ("");
+      setCommittedServiceSearchQ("");
+    } else {
+      setSearchQ("");
+      setCommittedSearchQ("");
+    }
+  }}
 />
 {aiSearching && (
   <div style={{padding:'8px 16px',fontSize:'12px',color:'#0d9488'}}>
@@ -5674,7 +5739,7 @@ return (
   </div>
 )}
 {/* ===== GOODS TAB CONTENT ===== */}
-<div style={{display: homeTab==="goods" ? "block" : "none"}}>
+<div style={{display: ENABLE_DISCOVER_GOODS && homeTab==="goods" ? "block" : "none"}}>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
     {(() => {
@@ -5837,7 +5902,7 @@ return (
 </div>
 
 {/* ===== SERVICES TAB CONTENT ===== */}
-<div style={{display: homeTab==="services" ? "block" : "none"}}>
+<div style={{display: ENABLE_DISCOVER_SERVICES && homeTab==="services" ? "block" : "none"}}>
   <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
     <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
       onChange={e => {
@@ -5925,26 +5990,8 @@ return (
 
 {/* ===== ROOMS TAB CONTENT ===== */}
 <div style={{display: ENABLE_ROOMS && homeTab==="rooms" ? "block" : "none"}}>
-  <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-    <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
-      onChange={e => {
-        setRoomSearchQ(e.target.value);
-        if (!e.target.value.trim()) {
-          setCommittedRoomSearchQ("");
-          clearAISearch();
-        }
-      }}
-      onKeyDown={e => { if (e.key === 'Enter') commitRoomsSearch(roomSearchQ); }}
-      style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-    <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
-  </div>
   <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
-  <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
-    {ROOM_TYPES.map(t=>(
-      <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#06d6c7':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
-    ))}
-  </div>
   <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
     <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{padding:'10px 16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ List a Room</button>
     <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;setPage("roommates");}} disabled={isOffline} style={{padding:'10px 16px',background:'#f4f6f8',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>🤝 Find Roommate</button>
@@ -5960,9 +6007,6 @@ return (
   )}
   {(()=>{
     let filtered = discoverRooms;
-    if (roomFilterType !== "all") {
-      filtered = filtered.filter(r => r.roomType === roomFilterType);
-    }
     if (roomFilterMaxPrice) {
       filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
     }
@@ -8150,11 +8194,6 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           </div>
           <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
           {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
-          <div style={{display:'flex',gap:'6px',overflowX:'auto',margin:'0 16px 10px 16px'}}>
-            {ROOM_TYPES.map(t=>(
-              <button key={t.id} onClick={()=>setRoomFilterType(t.id)} style={{padding:'6px 14px',background:roomFilterType===t.id?'#06d6c7':'#fff',color:roomFilterType===t.id?'#fff':'#0f1b2d',border:roomFilterType===t.id?'none':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{t.icon} {t.name}</button>
-            ))}
-          </div>
           {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
           {roomFilterMaxPrice !== "" && (
             <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
@@ -8168,9 +8207,6 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {/* Room Cards */}
           {(() => {
             let filtered = rooms;
-            if (roomFilterType !== "all") {
-              filtered = filtered.filter(r => r.roomType === roomFilterType);
-            }
             if (roomFilterMaxPrice) {
               filtered = filtered.filter(r => r.price <= parseInt(roomFilterMaxPrice));
             }
@@ -8868,9 +8904,33 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     >
       {ENABLE_ROOMS ? 'ON' : 'OFF'}
     </button>
-  </div>
+</div>}
 </div>
 
+
+                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Goods</div>
+                      <div style={{fontSize:'13px',color:'#6b7280'}}>Show or hide goods listings in public Discover</div>
+                    </div>
+                    <button onClick={toggleDiscoverGoodsFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_GOODS?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
+                      {ENABLE_DISCOVER_GOODS ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Services</div>
+                      <div style={{fontSize:'13px',color:'#6b7280'}}>Show or hide services in public Discover</div>
+                    </div>
+                    <button onClick={toggleDiscoverServicesFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_SERVICES?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
+                      {ENABLE_DISCOVER_SERVICES ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
 
                 <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
@@ -11115,7 +11175,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
           {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount}</span>}
         </button>
-        <button onClick={()=>{setPage("home");handleTabTap("goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
+        <button onClick={()=>{setPage("home");handleTabTap("rooms");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
         <button onClick={()=>setShowQuickActions(true)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>+</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Add</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>

@@ -1970,6 +1970,15 @@
   line-height: 1.35;
 }
 
+.azam-pay-box.expanded {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.azam-pay-box.expanded .payment-meta {
+  margin: 0;
+}
+
 .payment-divider {
   display: flex;
   align-items: center;

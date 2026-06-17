@@ -85,6 +85,7 @@ const AZAMPAY_PROVIDERS = [
   { value: "Halopesa", label: "HaloPesa" },
   { value: "Azampesa", label: "AzamPesa" },
 ];
+const ENABLE_AZAMPAY_PAYMENTS = false;
 
 const emptyManualPayment = {
   studentName: "",
@@ -463,6 +464,7 @@ export function GroupDetailPage({
   const [expandedPaymentIds, setExpandedPaymentIds] = useState({});
   const [memberActionMenuId, setMemberActionMenuId] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showAzamPayOptions, setShowAzamPayOptions] = useState(false);
   const [expandedProofUrl, setExpandedProofUrl] = useState("");
   const [convertingResourceId, setConvertingResourceId] = useState("");
   const [groupUploadStatus, setGroupUploadStatus] = useState("");
@@ -1027,6 +1029,10 @@ export function GroupDetailPage({
   useEffect(() => {
     setPaymentData(prev => ({ ...prev, studentName: prev.studentName || userName || "" }));
   }, [userName]);
+
+  useEffect(() => {
+    setShowAzamPayOptions(false);
+  }, [selectedCollectionId]);
 
   useEffect(() => {
     if (!myPayment) return;
@@ -2112,12 +2118,44 @@ export function GroupDetailPage({
         selectedOption: paymentData.selectedOption,
       });
       setShowPaymentForm(false);
+      setShowAzamPayOptions(false);
       onSuccess(result.data?.message || "AzamPay payment started. Confirm it on your phone.");
     } catch (err) {
       onError(err);
     } finally {
       setBusy(false);
     }
+  };
+
+  const renderAzamPayChoice = ({ includeOrderOption = false } = {}) => {
+    if (!ENABLE_AZAMPAY_PAYMENTS || !selectedNeedsPayment) return null;
+    const amount = Number(selectedCollection?.amount || 0);
+    return (
+      <div className={`azam-pay-box ${showAzamPayOptions ? "expanded" : ""}`}>
+        {!showAzamPayOptions ? (
+          <>
+            <button className="group-btn primary" type="button" disabled={busy} onClick={() => setShowAzamPayOptions(true)}>
+              Pay with AzamPay
+            </button>
+            <span>Automatic mobile money confirmation. Choose this first if you want the group to update after payment.</span>
+          </>
+        ) : (
+          <>
+            {includeOrderOption && selectedGroupOrder && selectedOrderOptions.length > 0 && (
+              <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+            )}
+            <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{AZAMPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
+            <div className="group-field"><label>Payment phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="0712345678" /></div>
+            <div className="group-field"><label>Amount</label><input value={`${amount.toLocaleString()} TSh`} readOnly /></div>
+            <div className="payment-meta">Use a sandbox-enabled number from AzamPay, or your real number if sandbox allows live prompts. The AzamPay token is only for backend authorization; it is not a phone number.</div>
+            <div className="group-inline-actions">
+              <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartAzamPayCheckout}>{busy ? "Starting..." : `Pay ${amount.toLocaleString()} TSh`}</button>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowAzamPayOptions(false)}>Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   const handleRegisterEvent = async () => {
@@ -3144,27 +3182,27 @@ export function GroupDetailPage({
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
                         <>
-                          <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{AZAMPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
-                          <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
-                          <div className="azam-pay-box">
-                            <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartAzamPayCheckout}>{busy ? "Starting..." : "Pay with AzamPay"}</button>
-                            <span>Confirm on your phone. The group will update automatically after AzamPay confirms.</span>
-                          </div>
-                          <div className="payment-divider"><span>or submit proof manually</span></div>
-                          <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
-                          <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
-                          <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
-                            const file = event.target.files?.[0] || null;
-                            setPaymentData({ ...paymentData, paymentProofFile: file, paymentProofPreview: file ? URL.createObjectURL(file) : "" });
-                          }} /></div>
-                          {paymentData.paymentProofPreview && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(paymentData.paymentProofPreview)}><img className="payment-proof-thumb large" src={paymentData.paymentProofPreview} alt="Selected payment proof preview" /></button>}
+                          {renderAzamPayChoice()}
+                          {!showAzamPayOptions && (
+                            <>
+                              <div className="payment-divider"><span>or submit proof manually</span></div>
+                              <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
+                              <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
+                              <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
+                              <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
+                                const file = event.target.files?.[0] || null;
+                                setPaymentData({ ...paymentData, paymentProofFile: file, paymentProofPreview: file ? URL.createObjectURL(file) : "" });
+                              }} /></div>
+                              {paymentData.paymentProofPreview && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(paymentData.paymentProofPreview)}><img className="payment-proof-thumb large" src={paymentData.paymentProofPreview} alt="Selected payment proof preview" /></button>}
+                            </>
+                          )}
                         </>
                       )}
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Pay / submit proof" : "Submit proof") : "Register"}</button>
+                      {(!selectedNeedsPayment || !showAzamPayOptions) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Submit proof" : "Submit proof") : "Register"}</button>}
                     </>
-                  ) : myPayment?.status === "paid" ? null : (
+                  ) : myPayment && myPayment.status !== "paid" ? (
                     <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
-                  )}
+                  ) : null}
                 </div>
               )}
 
@@ -3439,11 +3477,17 @@ export function GroupDetailPage({
                   )}
                   {selectedGroupOrder && !myPayment && !showPaymentForm ? (
                     <>
-                      {selectedOrderOptions.length > 0 && (
-                        <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                      {renderAzamPayChoice({ includeOrderOption: true })}
+                      {!showAzamPayOptions && (
+                        <>
+                          <div className="payment-divider"><span>or place order without paying now</span></div>
+                          {selectedOrderOptions.length > 0 && (
+                            <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+                          )}
+                          <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>
+                          <button className="group-btn primary" type="button" disabled={busy} onClick={handleRegisterEvent}>{busy ? "Placing..." : "Place order"}</button>
+                        </>
                       )}
-                      <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={handleRegisterEvent}>{busy ? "Placing..." : "Place order"}</button>
                     </>
                   ) : (!myPayment && !selectedPaidEvent) || showPaymentForm || myPayment?.proofRequested ? (
                     <>
@@ -3453,26 +3497,26 @@ export function GroupDetailPage({
                           {selectedGroupOrder && selectedOrderOptions.length > 0 && (
                             <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
                           )}
-                          <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{AZAMPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
-                          <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
-                          <div className="azam-pay-box">
-                            <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartAzamPayCheckout}>{busy ? "Starting..." : "Pay with AzamPay"}</button>
-                            <span>Confirm on your phone. The group will update automatically after AzamPay confirms.</span>
-                          </div>
-                          <div className="payment-divider"><span>or submit proof manually</span></div>
-                          <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
-                          <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
-                          <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
-                            const file = event.target.files?.[0] || null;
-                            setPaymentData({ ...paymentData, paymentProofFile: file, paymentProofPreview: file ? URL.createObjectURL(file) : "" });
-                          }} /></div>
+                          {renderAzamPayChoice()}
+                          {!showAzamPayOptions && (
+                            <>
+                              <div className="payment-divider"><span>or submit proof manually</span></div>
+                              <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
+                              <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
+                              <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
+                              <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
+                                const file = event.target.files?.[0] || null;
+                                setPaymentData({ ...paymentData, paymentProofFile: file, paymentProofPreview: file ? URL.createObjectURL(file) : "" });
+                              }} /></div>
+                            </>
+                          )}
                         </>
                       )}
-                      <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Submit / update payment proof" : selectedGroupOrder ? "Submit order proof" : selectedNeedsPayment ? "Pay / submit proof" : "Register"}</button>
+                      {(!selectedNeedsPayment || !showAzamPayOptions) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Submit / update payment proof" : selectedGroupOrder ? "Submit order proof" : selectedNeedsPayment ? "Submit proof" : "Register"}</button>}
                     </>
-                  ) : myPayment?.status === "paid" ? null : (
+                  ) : myPayment && myPayment.status !== "paid" ? (
                     <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedGroupOrder ? "Update order / proof" : selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
-                  )}
+                  ) : null}
                 </div>
               )}
               {!user && (
