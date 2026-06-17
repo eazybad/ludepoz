@@ -69,6 +69,7 @@ const emptyTracker = {
 const emptyPayment = {
   studentName: "",
   phone: "",
+  provider: "Mpesa",
   payerName: "",
   paymentRef: "",
   amountPaid: "",
@@ -76,6 +77,14 @@ const emptyPayment = {
   paymentProofFile: null,
   paymentProofPreview: "",
 };
+
+const AZAMPAY_PROVIDERS = [
+  { value: "Mpesa", label: "M-Pesa" },
+  { value: "Airtel", label: "Airtel Money" },
+  { value: "Tigo", label: "Tigo Pesa / Yas" },
+  { value: "Halopesa", label: "HaloPesa" },
+  { value: "Azampesa", label: "AzamPesa" },
+];
 
 const emptyManualPayment = {
   studentName: "",
@@ -297,7 +306,7 @@ function formatMessageDay(value) {
 
 function statusClass(status) {
   if (status === "paid") return "paid";
-  if (status === "rejected") return "rejected";
+  if (status === "rejected" || status === "failed") return "rejected";
   if (status === "registered") return "registered";
   return "pending";
 }
@@ -2080,6 +2089,37 @@ export function GroupDetailPage({
     }
   };
 
+  const handleStartAzamPayCheckout = async () => {
+    if (guardOfflineAction("Starting AzamPay payment")) return;
+    if (!selectedCollection || !user) return;
+    const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
+    if (needsOption && !paymentData.selectedOption) {
+      onError(new Error("Choose an option or size first."));
+      return;
+    }
+    if (!paymentData.phone.trim()) {
+      onError(new Error("Enter the mobile money phone number first."));
+      return;
+    }
+    setBusy(true);
+    try {
+      const startCheckout = httpsCallable(getFunctions(), "createAzamPayCheckout");
+      const result = await startCheckout({
+        groupId: group.id,
+        collectionId: selectedCollection.id,
+        provider: paymentData.provider || "Mpesa",
+        phone: paymentData.phone,
+        selectedOption: paymentData.selectedOption,
+      });
+      setShowPaymentForm(false);
+      onSuccess(result.data?.message || "AzamPay payment started. Confirm it on your phone.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRegisterEvent = async () => {
     if (guardOfflineAction(selectedGroupOrder ? "Placing orders" : "Registering")) return;
     if (!selectedCollection || !user) return;
@@ -3104,7 +3144,13 @@ export function GroupDetailPage({
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
                         <>
+                          <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{AZAMPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
                           <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
+                          <div className="azam-pay-box">
+                            <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartAzamPayCheckout}>{busy ? "Starting..." : "Pay with AzamPay"}</button>
+                            <span>Confirm on your phone. The group will update automatically after AzamPay confirms.</span>
+                          </div>
+                          <div className="payment-divider"><span>or submit proof manually</span></div>
                           <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
                           <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
                           <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
@@ -3140,6 +3186,7 @@ export function GroupDetailPage({
                             <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
                             {payment.selectedOption ? <span><small>Option</small><strong>{payment.selectedOption}</strong></span> : null}
                             {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
+                            {payment.paymentProvider ? <span><small>Provider</small><strong>{payment.paymentProvider}</strong></span> : null}
                             {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
                             {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
                           </div>
@@ -3406,7 +3453,13 @@ export function GroupDetailPage({
                           {selectedGroupOrder && selectedOrderOptions.length > 0 && (
                             <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
                           )}
+                          <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{AZAMPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
                           <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
+                          <div className="azam-pay-box">
+                            <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartAzamPayCheckout}>{busy ? "Starting..." : "Pay with AzamPay"}</button>
+                            <span>Confirm on your phone. The group will update automatically after AzamPay confirms.</span>
+                          </div>
+                          <div className="payment-divider"><span>or submit proof manually</span></div>
                           <div className="group-field"><label>Amount paid *</label><input type="number" value={paymentData.amountPaid} onChange={event => setPaymentData({ ...paymentData, amountPaid: event.target.value })} placeholder={String(selectedCollection.amount || "")} /></div>
                           <div className="group-field"><label>Sender name / reference *</label><input value={paymentData.paymentRef} onChange={event => setPaymentData({ ...paymentData, paymentRef: event.target.value })} placeholder="Transaction ID or payer name" /></div>
                           <div className="group-field"><label>Screenshot proof {myPayment?.proofRequested ? "*" : ""}</label><input type="file" accept="image/*" onChange={event => {
@@ -3448,6 +3501,7 @@ export function GroupDetailPage({
                               <span><small>Amount</small><strong>{(payment.amountPaid || 0).toLocaleString()} TSh</strong></span>
                               {payment.selectedOption ? <span><small>Option</small><strong>{payment.selectedOption}</strong></span> : null}
                               {selectedNeedsPayment ? <span><small>Remaining</small><strong>{Math.max(0, Number(selectedCollection.amount || 0) - Number(payment.amountPaid || 0)).toLocaleString()} TSh</strong></span> : null}
+                              {payment.paymentProvider ? <span><small>Provider</small><strong>{payment.paymentProvider}</strong></span> : null}
                               {payment.phone ? <span><small>Phone</small><strong>{payment.phone}</strong></span> : null}
                               {payment.paymentRef ? <span><small>Reference</small><strong>{payment.paymentRef}</strong></span> : null}
                             </div>

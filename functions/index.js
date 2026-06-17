@@ -203,7 +203,7 @@ exports.sendInAppNotificationPush = onDocumentCreated(
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
 const admin = require("firebase-admin");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const crypto = require("crypto");
 
@@ -211,6 +211,9 @@ const ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const KAMPASIKA_WEB_API_KEY = defineSecret("KAMPASIKA_WEB_API_KEY");
 const AFRICASTALKING_API_KEY = defineSecret("AFRICASTALKING_API_KEY");
 const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
+const AZAMPAY_APP_NAME = defineSecret("AZAMPAY_APP_NAME");
+const AZAMPAY_CLIENT_ID = defineSecret("AZAMPAY_CLIENT_ID");
+const AZAMPAY_CLIENT_SECRET = defineSecret("AZAMPAY_CLIENT_SECRET");
 
 function assertAdmin(request) {
   const callerUid = request.auth && request.auth.uid;
@@ -401,6 +404,337 @@ exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (re
   await otpRef.delete();
 
   return { success: true, phone: otp.phone };
+});
+
+const AZAMPAY_AUTH_BASE_URL = "https://authenticator-sandbox.azampay.co.tz";
+const AZAMPAY_CHECKOUT_BASE_URL = "https://sandbox.azampay.co.tz";
+const AZAMPAY_CALLBACK_PUBLIC_KEY_CACHE_MS = 60 * 60 * 1000;
+let azamPayTokenCache = { token: "", expiresAt: 0 };
+let azamPayPublicKeyCache = { key: "", loadedAt: 0 };
+
+function normalizeAzamPayPhone(rawPhone) {
+  const compact = String(rawPhone || "").replace(/\s+/g, "").replace(/-/g, "").replace(/^\+/, "");
+  if (/^0[67]\d{8}$/.test(compact)) return `255${compact.slice(1)}`;
+  if (/^255[67]\d{8}$/.test(compact)) return compact;
+  return "";
+}
+
+function normalizeAzamPayProvider(value) {
+  const clean = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  const providers = {
+    airtel: "Airtel",
+    airtelmoney: "Airtel",
+    tigo: "Tigo",
+    tigopesa: "Tigo",
+    yas: "Tigo",
+    halopesa: "Halopesa",
+    halo: "Halopesa",
+    azampesa: "Azampesa",
+    azam: "Azampesa",
+    mpesa: "Mpesa",
+    vodacom: "Mpesa",
+    "m-pesa": "Mpesa",
+  };
+  return providers[clean] || "";
+}
+
+function azamPayPaymentPath({ groupId, collectionId, paymentId }) {
+  return admin.firestore()
+    .collection("groups").doc(groupId)
+    .collection("collections").doc(collectionId)
+    .collection("payments").doc(paymentId);
+}
+
+async function getAzamPayToken() {
+  if (azamPayTokenCache.token && Date.now() < azamPayTokenCache.expiresAt - 60000) {
+    return azamPayTokenCache.token;
+  }
+
+  const appName = AZAMPAY_APP_NAME.value();
+  const clientId = AZAMPAY_CLIENT_ID.value();
+  const clientSecret = AZAMPAY_CLIENT_SECRET.value();
+  if (!appName || !clientId || !clientSecret) {
+    throw new HttpsError("failed-precondition", "AzamPay credentials are not configured.");
+  }
+
+  const response = await fetch(`${AZAMPAY_AUTH_BASE_URL}/AppRegistration/GenerateToken`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ appName, clientId, clientSecret }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success || !payload?.data?.accessToken) {
+    throw new HttpsError("internal", payload?.message || "AzamPay token generation failed.");
+  }
+
+  const expiresAt = payload.data.expire ? new Date(payload.data.expire).getTime() : Date.now() + 20 * 60 * 1000;
+  azamPayTokenCache = { token: payload.data.accessToken, expiresAt };
+  return azamPayTokenCache.token;
+}
+
+async function getAzamPayPublicKey() {
+  if (azamPayPublicKeyCache.key && Date.now() - azamPayPublicKeyCache.loadedAt < AZAMPAY_CALLBACK_PUBLIC_KEY_CACHE_MS) {
+    return azamPayPublicKeyCache.key;
+  }
+  const response = await fetch(`${AZAMPAY_CHECKOUT_BASE_URL}/azampay/v1/public-key?format=Pem`);
+  const text = await response.text().catch(() => "");
+  if (!response.ok || !text) return "";
+  azamPayPublicKeyCache = { key: text, loadedAt: Date.now() };
+  return text;
+}
+
+async function verifyAzamPayCallbackSignature(payload) {
+  const signature = payload.signature || payload.Signature;
+  if (!signature) return false;
+  const publicKey = await getAzamPayPublicKey();
+  if (!publicKey) return false;
+  const signedText = [
+    payload.utilityref || payload.utilityRef || payload.UtilityRef,
+    payload.externalreference || payload.externalReference || payload.ExternalReference,
+    payload.transactionstatus || payload.transactionStatus || payload.TransactionStatus,
+    payload.operator || payload.Operator,
+  ].filter(value => value !== undefined && value !== null).join("");
+  if (!signedText) return false;
+  try {
+    return crypto.verify(
+      "RSA-SHA256",
+      Buffer.from(signedText),
+      publicKey,
+      Buffer.from(signature, "base64")
+    );
+  } catch (err) {
+    console.error("AzamPay signature verification failed:", err);
+    return false;
+  }
+}
+
+exports.createAzamPayCheckout = onCall({
+  secrets: [AZAMPAY_APP_NAME, AZAMPAY_CLIENT_ID, AZAMPAY_CLIENT_SECRET],
+}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const groupId = String(request.data?.groupId || "").trim();
+  const collectionId = String(request.data?.collectionId || "").trim();
+  const provider = normalizeAzamPayProvider(request.data?.provider);
+  const accountNumber = normalizeAzamPayPhone(request.data?.phone);
+  const selectedOption = String(request.data?.selectedOption || "").trim();
+
+  if (!groupId || !collectionId) {
+    throw new HttpsError("invalid-argument", "Missing group or collection.");
+  }
+  if (!provider) {
+    throw new HttpsError("invalid-argument", "Choose a valid mobile money provider.");
+  }
+  if (!accountNumber) {
+    throw new HttpsError("invalid-argument", "Enter a valid Tanzania mobile money number.");
+  }
+
+  const db = admin.firestore();
+  const [groupSnap, collectionSnap, memberSnap, userSnap] = await Promise.all([
+    db.collection("groups").doc(groupId).get(),
+    db.collection("groups").doc(groupId).collection("collections").doc(collectionId).get(),
+    db.collection("groups").doc(groupId).collection("members").doc(uid).get(),
+    db.collection("users").doc(uid).get(),
+  ]);
+
+  if (!groupSnap.exists || !collectionSnap.exists) {
+    throw new HttpsError("not-found", "Group payment was not found.");
+  }
+  const group = groupSnap.data() || {};
+  const member = memberSnap.exists ? memberSnap.data() || {} : {};
+  if (group.ownerUid !== uid && group.adminUid !== uid && !["active", "pending"].includes(member.status)) {
+    throw new HttpsError("permission-denied", "Join this group before paying.");
+  }
+
+  const collectionItem = collectionSnap.data() || {};
+  const amount = Number(collectionItem.amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new HttpsError("failed-precondition", "This item does not require payment.");
+  }
+
+  const options = String(collectionItem.options || "").split(",").map(item => item.trim()).filter(Boolean);
+  if (collectionItem.collectionType === "order" && options.length > 0 && !selectedOption) {
+    throw new HttpsError("invalid-argument", "Choose an option or size first.");
+  }
+
+  const token = await getAzamPayToken();
+  const externalId = `kp_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+  const userProfile = userSnap.exists ? userSnap.data() || {} : {};
+  const studentName = userProfile.username || userProfile.name || request.auth.token?.name || request.auth.token?.email || "Member";
+  const paymentRef = azamPayPaymentPath({ groupId, collectionId, paymentId: uid });
+  const transactionRef = db.collection("azamPayTransactions").doc(externalId);
+
+  await paymentRef.set({
+    uid,
+    studentName,
+    phone: accountNumber,
+    payerName: studentName,
+    paymentRef: externalId,
+    selectedOption,
+    amountDue: amount,
+    amountPaid: 0,
+    provider,
+    status: "pending",
+    paymentProvider: "AzamPay",
+    azamPayExternalId: externalId,
+    submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  await transactionRef.set({
+    externalId,
+    groupId,
+    collectionId,
+    paymentId: uid,
+    uid,
+    amount,
+    currency: "TZS",
+    provider,
+    accountNumber,
+    status: "pending",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const response = await fetch(`${AZAMPAY_CHECKOUT_BASE_URL}/azampay/mno/checkout`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      accountNumber,
+      amount: String(amount),
+      currency: "TZS",
+      externalId,
+      provider,
+      additionalProperties: {
+        groupId,
+        collectionId,
+        paymentId: uid,
+        collectionTitle: collectionItem.title || "KAMPASIKA payment",
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.success === false) {
+    await transactionRef.set({
+      status: "failed_to_start",
+      azamPayResponse: payload || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await paymentRef.set({
+      status: "pending",
+      paymentProvider: "AzamPay",
+      azamPayStartError: payload?.message || "AzamPay could not start checkout.",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    throw new HttpsError("internal", payload?.message || "AzamPay could not start checkout.");
+  }
+
+  await transactionRef.set({
+    status: "checkout_started",
+    azamPayTransactionId: payload?.transactionId || "",
+    azamPayResponse: payload || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await paymentRef.set({
+    status: "pending",
+    azamPayTransactionId: payload?.transactionId || "",
+    azamPayMessage: payload?.message || "Confirm payment on your phone.",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    success: true,
+    externalId,
+    transactionId: payload?.transactionId || "",
+    message: payload?.message || "Confirm payment on your phone.",
+  };
+});
+
+exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  const payload = req.body || {};
+  const externalId = String(
+    payload.externalreference ||
+    payload.externalReference ||
+    payload.ExternalReference ||
+    payload.externalId ||
+    ""
+  ).trim();
+
+  if (!externalId) {
+    res.status(400).json({ success: false, message: "Missing external reference." });
+    return;
+  }
+
+  const signatureOk = await verifyAzamPayCallbackSignature(payload);
+  const db = admin.firestore();
+  const transactionRef = db.collection("azamPayTransactions").doc(externalId);
+  const transactionSnap = await transactionRef.get();
+  if (!transactionSnap.exists) {
+    await transactionRef.set({
+      externalId,
+      status: "unknown_reference",
+      callback: payload,
+      signatureVerified: signatureOk,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    res.status(200).json({ success: true });
+    return;
+  }
+
+  const transaction = transactionSnap.data() || {};
+  const statusText = String(
+    payload.transactionstatus ||
+    payload.transactionStatus ||
+    payload.TransactionStatus ||
+    payload.status ||
+    ""
+  ).toLowerCase();
+  const paid = ["success", "successful", "completed", "paid", "approved"].some(item => statusText.includes(item));
+  const failed = ["fail", "failed", "cancel", "cancelled", "rejected", "timeout"].some(item => statusText.includes(item));
+  const nextStatus = paid ? "paid" : failed ? "failed" : "pending";
+  const paymentRef = azamPayPaymentPath({
+    groupId: transaction.groupId,
+    collectionId: transaction.collectionId,
+    paymentId: transaction.paymentId,
+  });
+
+  await db.runTransaction(async tx => {
+    tx.set(transactionRef, {
+      callback: payload,
+      signatureVerified: signatureOk,
+      callbackStatus: statusText,
+      status: nextStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    tx.set(paymentRef, {
+      status: nextStatus,
+      amountPaid: paid ? Number(transaction.amount || 0) : 0,
+      paymentProvider: "AzamPay",
+      paymentRef: externalId,
+      azamPayExternalId: externalId,
+      azamPayCallbackStatus: statusText,
+      azamPayOperator: payload.operator || payload.Operator || transaction.provider || "",
+      azamPayUtilityRef: payload.utilityref || payload.utilityRef || payload.UtilityRef || "",
+      azamPaySignatureVerified: signatureOk,
+      verifiedAt: paid ? admin.firestore.FieldValue.serverTimestamp() : null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  res.status(200).json({ success: true });
 });
 
 exports.adminDeleteUser = onCall(async (request) => {
