@@ -1176,6 +1176,9 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     photoUploadStartedAt: null,
     visibility: data.visibility || "groupOnly",
     roundSourceId: data.roundSourceId || "",
+    roundRootId: data.roundRootId || data.roundSourceId || "",
+    roundNumber: Number(data.roundNumber || 1),
+    roundBaseTitle: data.roundBaseTitle || data.roundStartedFromTitle || data.title.trim(),
     roundStartedFromTitle: data.roundStartedFromTitle || "",
     createdByUid: user.uid,
     createdByName: profile.name || user.email || "Admin",
@@ -1219,6 +1222,19 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     }
   });
   return docRef;
+}
+
+export async function archiveGroupCollectionRound(db, { groupId, collectionId, user, roundRootId, roundNumber = 1 }) {
+  if (!groupId || !collectionId || !user?.uid) return;
+  await updateDoc(doc(db, "groups", groupId, "collections", collectionId), {
+    status: "archived",
+    roundRootId: roundRootId || collectionId,
+    roundNumber: Number(roundNumber || 1),
+    archivedRound: true,
+    archivedAt: serverTimestamp(),
+    archivedByUid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function updateGroupCollection(db, { groupId, collectionId, user, data, storage = null }) {

@@ -22,6 +22,7 @@ import {
   leaveUniversityGroup,
   paymentSummary,
   addGroupResource,
+  archiveGroupCollectionRound,
   approveGroupMember,
   reactToGroupMessage,
   rejectGroupMember,
@@ -526,12 +527,22 @@ export function GroupDetailPage({
   const groupInviteUrl = group.inviteLink?.startsWith("http")
     ? group.inviteLink
     : `${window.location.origin}/g/${group.inviteCode || group.id}`;
-  const selectedCollection = collections.find(item => item.id === selectedCollectionId) || null;
-  const eventCollections = collections.filter(item => ["event", "order"].includes(item.collectionType || ""));
+  const canSeeCollection = item => item?.status !== "archived" || memberCanManage || item.createdByUid === user?.uid;
+  const collectionDisplayTitle = item => {
+    if (!item) return "";
+    const roundNumber = Number(item.roundNumber || 0);
+    const baseTitle = item.roundBaseTitle || item.roundStartedFromTitle || item.title || "";
+    if (roundNumber > 1) return item.title || `${baseTitle} ${roundNumber}`;
+    if (item.status === "archived" && roundNumber === 1) return `${baseTitle || item.title} 1`;
+    return item.title || baseTitle;
+  };
+  const visibleCollections = collections.filter(canSeeCollection);
+  const selectedCollection = visibleCollections.find(item => item.id === selectedCollectionId) || null;
+  const eventCollections = visibleCollections.filter(item => ["event", "order"].includes(item.collectionType || ""));
   const visibleEventCollections = ["event", "order"].includes(selectedCollection?.collectionType || "")
     ? eventCollections.filter(item => item.id !== selectedCollection.id)
     : eventCollections;
-  const paymentCollections = collections.filter(item => (item.collectionType || "") !== "event" || Number(item.amount || 0) > 0);
+  const paymentCollections = visibleCollections.filter(item => (item.collectionType || "") !== "event" || Number(item.amount || 0) > 0);
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
   const selectedPaidEvent = selectedCollection?.collectionType === "event" && selectedNeedsPayment;
   const selectedGroupOrder = selectedCollection?.collectionType === "order";
@@ -1988,13 +1999,27 @@ export function GroupDetailPage({
     if (!window.confirm(`Start a new ${label} from "${item.title}"? The current history will stay unchanged.`)) return;
     setBusy(true);
     try {
+      const roundRootId = item.roundRootId || item.roundSourceId || item.id;
+      const baseTitle = item.roundBaseTitle || item.roundStartedFromTitle || item.title || "";
+      const relatedRounds = collections.filter(collectionItem => {
+        const collectionRootId = collectionItem.roundRootId || collectionItem.roundSourceId || collectionItem.id;
+        return collectionRootId === roundRootId || collectionItem.id === roundRootId;
+      });
+      const nextRound = Math.max(1, ...relatedRounds.map(collectionItem => Number(collectionItem.roundNumber || 1))) + 1;
+      await archiveGroupCollectionRound(db, {
+        groupId: group.id,
+        collectionId: item.id,
+        user,
+        roundRootId,
+        roundNumber: Number(item.roundNumber || 1),
+      });
       const createdTracker = await createGroupCollection(db, {
         groupId: group.id,
         user,
         profile,
         storage,
         data: {
-          title: item.title || "",
+          title: `${baseTitle} ${nextRound}`.trim(),
           description: item.description || "",
           collectionType: item.collectionType || "contribution",
           amount: item.amount || "",
@@ -2004,7 +2029,10 @@ export function GroupDetailPage({
           visibility: "groupOnly",
           deadline: item.deadline || "",
           roundSourceId: item.id,
-          roundStartedFromTitle: item.title || "",
+          roundRootId,
+          roundNumber: nextRound,
+          roundBaseTitle: baseTitle,
+          roundStartedFromTitle: baseTitle,
           photoFile: null,
         },
       });
@@ -3149,7 +3177,7 @@ export function GroupDetailPage({
                       <button key={item.id} type="button" className="tracker-card" onClick={() => openTracker(item.id)}>
                         {item.photoUrl && <img className="tracker-card-photo" src={item.photoUrl} alt="" />}
                         <div>
-                          <strong>{item.title}</strong>
+                          <strong>{collectionDisplayTitle(item)}</strong>
                           <span>{item.collectionType === "event" ? "Event" : item.collectionType === "order" ? "Group order" : "Contribution"}</span>
                         </div>
                         <p>{item.description || "No description added."}</p>
@@ -3177,7 +3205,7 @@ export function GroupDetailPage({
               {selectedCollection && (
                 <div className="payment-card">
                   {selectedCollection.photoUrl && <img className="tracker-card-photo" src={selectedCollection.photoUrl} alt="" />}
-                  <h4>{selectedCollection.title}</h4>
+                  <h4>{collectionDisplayTitle(selectedCollection)}</h4>
                   <div className="payment-meta">
                     {selectedNeedsPayment ? `${(selectedCollection.amount || 0).toLocaleString()} TSh per member` : "Registration only"}
                     {selectedCollection.expectedPeople ? ` - ${selectedCollection.expectedPeople} expected` : ""}
@@ -3239,7 +3267,7 @@ export function GroupDetailPage({
                   {myPayment && (
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
-                      <strong>{selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
+                      <strong>{selectedGroupOrder ? "Your order is on record." : selectedNeedsPayment && myPaymentRemaining > 0 ? "You are already registered, waiting for your payment." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedGroupOrder ? "Payment proof not submitted yet" : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       {myPayment.paymentProofUrl && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(myPayment.paymentProofUrl)}><img className="payment-proof-thumb" src={myPayment.paymentProofUrl} alt="Your payment proof" /></button>}
@@ -3263,8 +3291,9 @@ export function GroupDetailPage({
                       {!selectedNeedsPayment && <div className="group-field"><label>Phone number</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="Optional contact number" /></div>}
                       {selectedNeedsPayment && (
                         <>
+                          {renderPawaPayChoice()}
                           {renderAzamPayChoice()}
-                          {!showAzamPayOptions && (
+                          {!showAzamPayOptions && !showPawaPayOptions && (
                             <>
                               <div className="payment-divider"><span>or submit proof manually</span></div>
                               <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
@@ -3279,7 +3308,7 @@ export function GroupDetailPage({
                           )}
                         </>
                       )}
-                      {(!selectedNeedsPayment || !showAzamPayOptions) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Submit proof" : "Submit proof") : "Register"}</button>}
+                      {(!selectedNeedsPayment || (!showAzamPayOptions && !showPawaPayOptions)) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Update payment details" : selectedNeedsPayment ? (selectedCollection.collectionType === "event" ? "Submit proof" : "Submit proof") : "Register"}</button>}
                     </>
                   ) : myPayment && myPayment.status !== "paid" ? (
                     <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>
@@ -3481,7 +3510,7 @@ export function GroupDetailPage({
               <div className="payment-card">
                 {(selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]) && <img className="tracker-card-photo" src={selectedCollection.photoUrl || pendingEventPhotoPreviews[selectedCollection.id]} alt="" />}
                 {eventPosterStatus(selectedCollection) && <div className={`tracker-photo-status ${eventPosterStatus(selectedCollection).kind}`}>{eventPosterStatus(selectedCollection).text}</div>}
-                <h4>{selectedCollection.title}</h4>
+                <h4>{collectionDisplayTitle(selectedCollection)}</h4>
                 <div className="payment-meta">
                   {selectedCollection.description || (selectedGroupOrder ? "Order details" : "Event details")}
                   {selectedCollection.deadline ? ` - Deadline: ${selectedCollection.deadline}` : ""}
@@ -3534,7 +3563,7 @@ export function GroupDetailPage({
                   {myPayment && (
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
-                      <strong>{selectedGroupOrder ? "Your order is on record." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
+                      <strong>{selectedGroupOrder ? "Your order is on record." : selectedNeedsPayment && myPaymentRemaining > 0 ? "You are already registered, waiting for your payment." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
                       {myPayment.selectedOption && <span>Option: {myPayment.selectedOption}</span>}
                       <span>{myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
@@ -3656,7 +3685,7 @@ export function GroupDetailPage({
               {(eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]) && <img className="tracker-card-photo" src={eventItem.photoUrl || pendingEventPhotoPreviews[eventItem.id]} alt="" />}
               {eventPosterStatus(eventItem) && <div className={`tracker-photo-status ${eventPosterStatus(eventItem).kind}`}>{eventPosterStatus(eventItem).text}</div>}
               <div>
-                <strong>{eventItem.title}</strong>
+                <strong>{collectionDisplayTitle(eventItem)}</strong>
                 <span>{Number(eventItem.amount || 0) > 0 ? `${Number(eventItem.amount || 0).toLocaleString()} TSh` : eventItem.collectionType === "order" ? "Price not set" : "Free"}</span>
               </div>
               {eventItem.collectionType === "order" && <span className="group-role-pill">Group order</span>}
