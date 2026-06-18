@@ -683,8 +683,6 @@ useEffect(() => {
   const [adminStats, setAdminStats] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminFilter, setAdminFilter] = useState("inbox"); // "inbox" | "routed" | "fulfilled" | "all"
-  const [pawaPayTestBusy, setPawaPayTestBusy] = useState(false);
-  const [pawaPayTestResult, setPawaPayTestResult] = useState(null);
   // Verification queue state
   const [adminVerifications, setAdminVerifications] = useState([]);
   const [verificationFilter, setVerificationFilter] = useState("pending"); // "pending" | "approved" | "rejected"
@@ -1701,31 +1699,6 @@ useEffect(() => {
     } catch (err) {
       console.error("Toggle failed:", err);
       setError("Failed to update services visibility");
-    }
-  };
-  const runPawaPaySandboxDepositTest = async () => {
-    if (!isAdmin || pawaPayTestBusy) return;
-    setPawaPayTestBusy(true);
-    setPawaPayTestResult(null);
-    try {
-      const createTestDeposit = httpsCallable(functions, "createPawaPayTestDeposit");
-      const result = await createTestDeposit({
-        provider: "AIRTEL_TZA",
-        phone: "255683456789",
-        amount: 1000,
-        customerMessage: "KAMPASIKA TEST",
-      });
-      setPawaPayTestResult(result.data);
-      setSuccess(`PawaPay test ${result.data?.status || "sent"}`);
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (err) {
-      console.error("PawaPay test failed:", err);
-      const message = err?.message || "PawaPay test failed.";
-      setPawaPayTestResult({ success: false, error: message });
-      setError(message);
-      setTimeout(() => setError(""), 5000);
-    } finally {
-      setPawaPayTestBusy(false);
     }
   };
   const toggleIdentityVerificationRequirement = async () => {
@@ -8949,25 +8922,6 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {ENABLE_DISCOVER_SERVICES ? 'ON' : 'OFF'}
                     </button>
                   </div>
-                </div>
-
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>PawaPay Sandbox</div>
-                      <div style={{fontSize:'13px',color:'#6b7280'}}>Test Airtel deposit: 255683456789, 1,000 TZS</div>
-                    </div>
-                    <button onClick={runPawaPaySandboxDepositTest} disabled={pawaPayTestBusy} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:pawaPayTestBusy?'wait':'pointer',fontWeight:'700',background:pawaPayTestBusy?'#9ca3af':'#0d9488',color:'#fff',flexShrink:0}}>
-                      {pawaPayTestBusy ? 'Testing...' : 'Test'}
-                    </button>
-                  </div>
-                  {pawaPayTestResult && (
-                    <div style={{marginTop:'12px',padding:'10px 12px',background:pawaPayTestResult.success === false ? '#fef2f2' : '#f0fdf4',border:`1px solid ${pawaPayTestResult.success === false ? '#fecaca' : '#bbf7d0'}`,borderRadius:'10px',fontSize:'12px',color:pawaPayTestResult.success === false ? '#991b1b' : '#166534',lineHeight:1.45,wordBreak:'break-word'}}>
-                      {pawaPayTestResult.success === false
-                        ? pawaPayTestResult.error
-                        : `Deposit ${pawaPayTestResult.depositId || ''} ${pawaPayTestResult.status || ''}`}
-                    </div>
-                  )}
                 </div>
 
                 <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
