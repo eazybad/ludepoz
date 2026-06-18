@@ -214,6 +214,7 @@ const AFRICASTALKING_USERNAME = defineSecret("AFRICASTALKING_USERNAME");
 const AZAMPAY_APP_NAME = defineSecret("AZAMPAY_APP_NAME");
 const AZAMPAY_CLIENT_ID = defineSecret("AZAMPAY_CLIENT_ID");
 const AZAMPAY_CLIENT_SECRET = defineSecret("AZAMPAY_CLIENT_SECRET");
+const PAWAPAY_API_TOKEN = defineSecret("PAWAPAY_API_TOKEN");
 
 function assertAdmin(request) {
   const callerUid = request.auth && request.auth.uid;
@@ -408,6 +409,7 @@ exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (re
 
 const AZAMPAY_AUTH_BASE_URL = "https://authenticator-sandbox.azampay.co.tz";
 const AZAMPAY_CHECKOUT_BASE_URL = "https://sandbox.azampay.co.tz";
+const PAWAPAY_SANDBOX_BASE_URL = "https://api.sandbox.pawapay.io";
 const AZAMPAY_CALLBACK_PUBLIC_KEY_CACHE_MS = 60 * 60 * 1000;
 let azamPayTokenCache = { token: "", expiresAt: 0 };
 let azamPayPublicKeyCache = { key: "", loadedAt: 0 };
@@ -436,6 +438,36 @@ function normalizeAzamPayProvider(value) {
     "m-pesa": "Mpesa",
   };
   return providers[clean] || "";
+}
+
+function normalizePawaPayProvider(value) {
+  const clean = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  const providers = {
+    airtel: "AIRTEL_TZA",
+    airtelmoney: "AIRTEL_TZA",
+    vodacom: "VODACOM_TZA",
+    mpesa: "VODACOM_TZA",
+    "mpesatz": "VODACOM_TZA",
+    tigo: "TIGO_TZA",
+    tigopesa: "TIGO_TZA",
+    yas: "TIGO_TZA",
+    halotel: "HALOTEL_TZA",
+    halopesa: "HALOTEL_TZA",
+  };
+  return providers[clean] || String(value || "").trim().toUpperCase();
+}
+
+function normalizePawaPayPhone(rawPhone) {
+  const compact = String(rawPhone || "").replace(/\s+/g, "").replace(/-/g, "").replace(/^\+/, "");
+  if (/^0[67]\d{8}$/.test(compact)) return `255${compact.slice(1)}`;
+  if (/^255[67]\d{8}$/.test(compact)) return compact;
+  return "";
+}
+
+function cleanPawaPayAmount(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return amount % 1 === 0 ? String(amount) : amount.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function azamPayPaymentPath({ groupId, collectionId, paymentId }) {
@@ -658,6 +690,108 @@ exports.createAzamPayCheckout = onCall({
   };
 });
 
+exports.createPawaPayTestDeposit = onCall({
+  secrets: [PAWAPAY_API_TOKEN],
+}, async (request) => {
+  assertAdmin(request);
+
+  const token = PAWAPAY_API_TOKEN.value();
+  if (!token) {
+    throw new HttpsError("failed-precondition", "PawaPay API token is not configured.");
+  }
+
+  const phoneNumber = normalizePawaPayPhone(request.data?.phone || "255683456789");
+  const provider = normalizePawaPayProvider(request.data?.provider || "AIRTEL_TZA");
+  const amount = cleanPawaPayAmount(request.data?.amount || 1000);
+  const clientReferenceId = String(request.data?.clientReferenceId || `KP-TEST-${Date.now()}`).trim().slice(0, 50);
+  const customerMessage = String(request.data?.customerMessage || "KAMPASIKA TEST").replace(/[^a-zA-Z0-9 ]+/g, "").trim().slice(0, 22);
+
+  if (!phoneNumber) {
+    throw new HttpsError("invalid-argument", "Enter a valid Tanzania sandbox phone number.");
+  }
+  if (!provider) {
+    throw new HttpsError("invalid-argument", "Choose a valid PawaPay Tanzania provider.");
+  }
+  if (!amount) {
+    throw new HttpsError("invalid-argument", "Enter a valid amount.");
+  }
+  if (customerMessage.length < 4) {
+    throw new HttpsError("invalid-argument", "Customer message must be at least 4 characters.");
+  }
+
+  const depositId = crypto.randomUUID();
+  const db = admin.firestore();
+  const testDepositRef = db.collection("pawaPayTestDeposits").doc(depositId);
+  const body = {
+    depositId,
+    payer: {
+      type: "MMO",
+      accountDetails: {
+        phoneNumber,
+        provider,
+      },
+    },
+    amount,
+    currency: "TZS",
+    clientReferenceId,
+    customerMessage,
+    metadata: [
+      { app: "KAMPASIKA" },
+      { purpose: "sandbox-test-deposit" },
+      { requestedBy: request.auth.uid },
+    ],
+  };
+
+  await testDepositRef.set({
+    depositId,
+    provider,
+    phoneNumber,
+    amount,
+    currency: "TZS",
+    clientReferenceId,
+    customerMessage,
+    status: "creating",
+    request: body,
+    createdBy: request.auth.uid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const response = await fetch(`${PAWAPAY_SANDBOX_BASE_URL}/v2/deposits`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  const nextStatus = payload?.status || (response.ok ? "UNKNOWN" : "REQUEST_FAILED");
+
+  await testDepositRef.set({
+    status: nextStatus,
+    responseStatus: response.status,
+    responseOk: response.ok,
+    response: payload || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  if (!response.ok) {
+    throw new HttpsError("internal", payload?.message || "PawaPay sandbox deposit request failed.", {
+      depositId,
+      status: response.status,
+      response: payload,
+    });
+  }
+
+  return {
+    success: true,
+    depositId,
+    status: nextStatus,
+    response: payload,
+  };
+});
+
 exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
@@ -733,6 +867,59 @@ exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
   });
+
+  res.status(200).json({ success: true });
+});
+
+exports.pawapayCallback = onRequest({ cors: false }, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  const payload = req.body || {};
+  const operationType = String(
+    payload.operationType ||
+    payload.type ||
+    payload.eventType ||
+    payload.event ||
+    payload.statusType ||
+    "unknown"
+  ).trim().toLowerCase();
+  const referenceId = String(
+    payload.depositId ||
+    payload.payoutId ||
+    payload.refundId ||
+    payload.transactionId ||
+    payload.paymentId ||
+    payload.id ||
+    ""
+  ).trim();
+  const statusText = String(
+    payload.status ||
+    payload.transactionStatus ||
+    payload.paymentStatus ||
+    ""
+  ).trim().toLowerCase();
+
+  const db = admin.firestore();
+  const eventRef = referenceId
+    ? db.collection("pawaPayWebhookEvents").doc(referenceId)
+    : db.collection("pawaPayWebhookEvents").doc();
+
+  await eventRef.set({
+    provider: "PawaPay",
+    operationType,
+    referenceId,
+    status: statusText || "unknown",
+    payload,
+    headers: {
+      userAgent: req.get("user-agent") || "",
+      contentType: req.get("content-type") || "",
+    },
+    receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 
   res.status(200).json({ success: true });
 });
