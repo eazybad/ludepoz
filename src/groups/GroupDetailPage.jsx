@@ -86,6 +86,13 @@ const AZAMPAY_PROVIDERS = [
   { value: "Azampesa", label: "AzamPesa" },
 ];
 const ENABLE_AZAMPAY_PAYMENTS = false;
+const PAWAPAY_PROVIDERS = [
+  { value: "AIRTEL_TZA", label: "Airtel Money" },
+  { value: "VODACOM_TZA", label: "M-Pesa" },
+  { value: "TIGO_TZA", label: "Tigo Pesa / Yas" },
+  { value: "HALOTEL_TZA", label: "HaloPesa" },
+];
+const ENABLE_PAWAPAY_PAYMENTS = true;
 
 const emptyManualPayment = {
   studentName: "",
@@ -465,6 +472,7 @@ export function GroupDetailPage({
   const [memberActionMenuId, setMemberActionMenuId] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showAzamPayOptions, setShowAzamPayOptions] = useState(false);
+  const [showPawaPayOptions, setShowPawaPayOptions] = useState(false);
   const [expandedProofUrl, setExpandedProofUrl] = useState("");
   const [convertingResourceId, setConvertingResourceId] = useState("");
   const [groupUploadStatus, setGroupUploadStatus] = useState("");
@@ -735,6 +743,7 @@ export function GroupDetailPage({
     if (collectionId !== selectedCollectionId) pushGroupHistory();
     setSelectedCollectionId(collectionId);
     setShowPaymentForm(false);
+    setShowPawaPayOptions(false);
     setPaymentSearch("");
   };
 
@@ -757,6 +766,7 @@ export function GroupDetailPage({
     }
     if (showPaymentForm) {
       setShowPaymentForm(false);
+      setShowPawaPayOptions(false);
       return true;
     }
     if (showManualPaymentForm) {
@@ -843,6 +853,7 @@ export function GroupDetailPage({
     setPayments([]);
     setPaymentSearch("");
     setShowPaymentForm(false);
+    setShowPawaPayOptions(false);
     setShowManualPaymentForm(false);
     setShowTrackerForm(false);
     setEditingTrackerId("");
@@ -2087,6 +2098,7 @@ export function GroupDetailPage({
       });
       setPaymentData({ ...emptyPayment, studentName: userName || "" });
       setShowPaymentForm(false);
+      setShowPawaPayOptions(false);
       onSuccess("Payment submitted for treasurer/admin verification.");
     } catch (err) {
       onError(err);
@@ -2119,12 +2131,81 @@ export function GroupDetailPage({
       });
       setShowPaymentForm(false);
       setShowAzamPayOptions(false);
+      setShowPawaPayOptions(false);
       onSuccess(result.data?.message || "AzamPay payment started. Confirm it on your phone.");
     } catch (err) {
       onError(err);
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleStartPawaPayDeposit = async () => {
+    if (guardOfflineAction("Starting PawaPay payment")) return;
+    if (!selectedCollection || !user) return;
+    const needsOption = selectedCollection.collectionType === "order" && selectedOrderOptions.length > 0;
+    if (needsOption && !paymentData.selectedOption) {
+      onError(new Error("Choose an option or size first."));
+      return;
+    }
+    if (!paymentData.phone.trim()) {
+      onError(new Error("Enter the mobile money phone number first."));
+      return;
+    }
+    setBusy(true);
+    try {
+      const startDeposit = httpsCallable(getFunctions(), "createPawaPayGroupDeposit");
+      const result = await startDeposit({
+        groupId: group.id,
+        collectionId: selectedCollection.id,
+        provider: paymentData.provider || "AIRTEL_TZA",
+        phone: paymentData.phone,
+        selectedOption: paymentData.selectedOption,
+      });
+      setShowPaymentForm(false);
+      setShowPawaPayOptions(false);
+      onSuccess(result.data?.message || "PawaPay payment started. Wait for confirmation.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderPawaPayChoice = ({ includeOrderOption = false } = {}) => {
+    if (!ENABLE_PAWAPAY_PAYMENTS || !selectedNeedsPayment) return null;
+    const amount = Number(selectedCollection?.amount || 0);
+    return (
+      <div className={`azam-pay-box ${showPawaPayOptions ? "expanded" : ""}`}>
+        {!showPawaPayOptions ? (
+          <>
+            <button className="group-btn primary" type="button" disabled={busy} onClick={() => {
+              const hasPawaPayProvider = PAWAPAY_PROVIDERS.some(provider => provider.value === paymentData.provider);
+              if (!hasPawaPayProvider) setPaymentData(prev => ({ ...prev, provider: "AIRTEL_TZA" }));
+              setShowAzamPayOptions(false);
+              setShowPawaPayOptions(true);
+            }}>
+              Pay with PawaPay
+            </button>
+            <span>Automatic mobile money confirmation through PawaPay. The group updates when payment is confirmed.</span>
+          </>
+        ) : (
+          <>
+            {includeOrderOption && selectedGroupOrder && selectedOrderOptions.length > 0 && (
+              <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
+            )}
+            <div className="group-field"><label>Mobile money provider</label><select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>{PAWAPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}</select></div>
+            <div className="group-field"><label>Payment phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="0712345678" /></div>
+            <div className="group-field"><label>Amount</label><input value={`${amount.toLocaleString()} TSh`} readOnly /></div>
+            <div className="payment-meta">For sandbox, try Airtel 255683456789, Vodacom 255763456789, Tigo/Yas 255713456789, or Halotel 255623456789.</div>
+            <div className="group-inline-actions">
+              <button className="group-btn primary" type="button" disabled={busy} onClick={handleStartPawaPayDeposit}>{busy ? "Starting..." : `Pay ${amount.toLocaleString()} TSh`}</button>
+              <button className="group-btn ghost" type="button" disabled={busy} onClick={() => setShowPawaPayOptions(false)}>Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   const renderAzamPayChoice = ({ includeOrderOption = false } = {}) => {
@@ -2134,7 +2215,7 @@ export function GroupDetailPage({
       <div className={`azam-pay-box ${showAzamPayOptions ? "expanded" : ""}`}>
         {!showAzamPayOptions ? (
           <>
-            <button className="group-btn primary" type="button" disabled={busy} onClick={() => setShowAzamPayOptions(true)}>
+            <button className="group-btn primary" type="button" disabled={busy} onClick={() => { setShowPawaPayOptions(false); setShowAzamPayOptions(true); }}>
               Pay with AzamPay
             </button>
             <span>Automatic mobile money confirmation. Choose this first if you want the group to update after payment.</span>
@@ -3477,8 +3558,9 @@ export function GroupDetailPage({
                   )}
                   {selectedGroupOrder && !myPayment && !showPaymentForm ? (
                     <>
+                      {renderPawaPayChoice({ includeOrderOption: true })}
                       {renderAzamPayChoice({ includeOrderOption: true })}
-                      {!showAzamPayOptions && (
+                      {!showAzamPayOptions && !showPawaPayOptions && (
                         <>
                           <div className="payment-divider"><span>or place order without paying now</span></div>
                           {selectedOrderOptions.length > 0 && (
@@ -3497,8 +3579,9 @@ export function GroupDetailPage({
                           {selectedGroupOrder && selectedOrderOptions.length > 0 && (
                             <div className="group-field"><label>Choose option / size *</label><select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}><option value="">Choose option</option>{selectedOrderOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></div>
                           )}
+                          {renderPawaPayChoice()}
                           {renderAzamPayChoice()}
-                          {!showAzamPayOptions && (
+                          {!showAzamPayOptions && !showPawaPayOptions && (
                             <>
                               <div className="payment-divider"><span>or submit proof manually</span></div>
                               <div className="group-field"><label>Phone number *</label><input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} /></div>
@@ -3512,7 +3595,7 @@ export function GroupDetailPage({
                           )}
                         </>
                       )}
-                      {(!selectedNeedsPayment || !showAzamPayOptions) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Submit / update payment proof" : selectedGroupOrder ? "Submit order proof" : selectedNeedsPayment ? "Submit proof" : "Register"}</button>}
+                      {(!selectedNeedsPayment || (!showAzamPayOptions && !showPawaPayOptions)) && <button className="group-btn primary" type="button" disabled={busy} onClick={selectedNeedsPayment ? handleSubmitPayment : handleRegisterEvent}>{myPayment ? "Submit / update payment proof" : selectedGroupOrder ? "Submit order proof" : selectedNeedsPayment ? "Submit proof" : "Register"}</button>}
                     </>
                   ) : myPayment && myPayment.status !== "paid" ? (
                     <button className="group-btn ghost" type="button" onClick={() => setShowPaymentForm(true)}>{selectedGroupOrder ? "Update order / proof" : selectedNeedsPayment ? (myPayment?.status === "registered" ? "Pay / submit proof" : "Resubmit proof") : "Update registration"}</button>

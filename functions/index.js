@@ -477,6 +477,15 @@ function azamPayPaymentPath({ groupId, collectionId, paymentId }) {
     .collection("payments").doc(paymentId);
 }
 
+function pawaPayMetadataValue(metadata, key) {
+  if (!metadata) return "";
+  if (Array.isArray(metadata)) {
+    const row = metadata.find(item => item && Object.prototype.hasOwnProperty.call(item, key));
+    return row ? String(row[key] || "") : "";
+  }
+  return String(metadata[key] || "");
+}
+
 async function getAzamPayToken() {
   if (azamPayTokenCache.token && Date.now() < azamPayTokenCache.expiresAt - 60000) {
     return azamPayTokenCache.token;
@@ -792,6 +801,170 @@ exports.createPawaPayTestDeposit = onCall({
   };
 });
 
+exports.createPawaPayGroupDeposit = onCall({
+  secrets: [PAWAPAY_API_TOKEN],
+}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const token = PAWAPAY_API_TOKEN.value();
+  if (!token) {
+    throw new HttpsError("failed-precondition", "PawaPay API token is not configured.");
+  }
+
+  const groupId = String(request.data?.groupId || "").trim();
+  const collectionId = String(request.data?.collectionId || "").trim();
+  const provider = normalizePawaPayProvider(request.data?.provider || "AIRTEL_TZA");
+  const phoneNumber = normalizePawaPayPhone(request.data?.phone);
+  const selectedOption = String(request.data?.selectedOption || "").trim();
+
+  if (!groupId || !collectionId) {
+    throw new HttpsError("invalid-argument", "Missing group or collection.");
+  }
+  if (!phoneNumber) {
+    throw new HttpsError("invalid-argument", "Enter a valid Tanzania mobile money number.");
+  }
+  if (!provider) {
+    throw new HttpsError("invalid-argument", "Choose a valid mobile money provider.");
+  }
+
+  const db = admin.firestore();
+  const [groupSnap, collectionSnap, memberSnap, userSnap] = await Promise.all([
+    db.collection("groups").doc(groupId).get(),
+    db.collection("groups").doc(groupId).collection("collections").doc(collectionId).get(),
+    db.collection("groups").doc(groupId).collection("members").doc(uid).get(),
+    db.collection("users").doc(uid).get(),
+  ]);
+
+  if (!groupSnap.exists || !collectionSnap.exists) {
+    throw new HttpsError("not-found", "Group payment was not found.");
+  }
+  const group = groupSnap.data() || {};
+  const member = memberSnap.exists ? memberSnap.data() || {} : {};
+  if (group.ownerUid !== uid && group.adminUid !== uid && !["active", "pending"].includes(member.status)) {
+    throw new HttpsError("permission-denied", "Join this group before paying.");
+  }
+
+  const collectionItem = collectionSnap.data() || {};
+  const amount = cleanPawaPayAmount(collectionItem.amount || 0);
+  if (!amount) {
+    throw new HttpsError("failed-precondition", "This item does not require payment.");
+  }
+
+  const options = String(collectionItem.options || "").split(",").map(item => item.trim()).filter(Boolean);
+  if (collectionItem.collectionType === "order" && options.length > 0 && !selectedOption) {
+    throw new HttpsError("invalid-argument", "Choose an option or size first.");
+  }
+
+  const depositId = crypto.randomUUID();
+  const amountNumber = Number(amount);
+  const userProfile = userSnap.exists ? userSnap.data() || {} : {};
+  const studentName = userProfile.username || userProfile.name || request.auth.token?.name || request.auth.token?.email || "Member";
+  const paymentRef = azamPayPaymentPath({ groupId, collectionId, paymentId: uid });
+  const transactionRef = db.collection("pawaPayTransactions").doc(depositId);
+  const clientReferenceId = `KP-${groupId.slice(0, 8)}-${Date.now()}`.slice(0, 50);
+  const customerMessage = "KAMPASIKA PAY";
+  const body = {
+    depositId,
+    payer: {
+      type: "MMO",
+      accountDetails: {
+        phoneNumber,
+        provider,
+      },
+    },
+    amount,
+    currency: "TZS",
+    clientReferenceId,
+    customerMessage,
+    metadata: [
+      { app: "KAMPASIKA" },
+      { purpose: "group-payment" },
+      { groupId },
+      { collectionId },
+      { paymentId: uid },
+      { requestedBy: uid },
+    ],
+  };
+
+  await paymentRef.set({
+    uid,
+    studentName,
+    phone: phoneNumber,
+    payerName: studentName,
+    paymentRef: depositId,
+    selectedOption,
+    amountDue: amountNumber,
+    amountPaid: 0,
+    provider,
+    status: "pending",
+    paymentProvider: "PawaPay",
+    pawaPayDepositId: depositId,
+    submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  await transactionRef.set({
+    depositId,
+    groupId,
+    collectionId,
+    paymentId: uid,
+    uid,
+    amount: amountNumber,
+    currency: "TZS",
+    provider,
+    phoneNumber,
+    clientReferenceId,
+    status: "pending",
+    request: body,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const response = await fetch(`${PAWAPAY_SANDBOX_BASE_URL}/v2/deposits`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  const nextStatus = payload?.status || (response.ok ? "UNKNOWN" : "REQUEST_FAILED");
+
+  await transactionRef.set({
+    status: nextStatus,
+    responseStatus: response.status,
+    responseOk: response.ok,
+    response: payload || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  if (!response.ok || nextStatus === "REJECTED") {
+    await paymentRef.set({
+      status: "pending",
+      pawaPayStartError: payload?.failureReason?.message || payload?.message || "PawaPay could not start payment.",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    throw new HttpsError("internal", payload?.failureReason?.message || payload?.message || "PawaPay could not start payment.", {
+      depositId,
+      status: response.status,
+      response: payload,
+    });
+  }
+
+  return {
+    success: true,
+    depositId,
+    status: nextStatus,
+    message: "Payment request accepted. Wait for confirmation.",
+    response: payload,
+  };
+});
+
 exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
@@ -878,12 +1051,14 @@ exports.pawapayCallback = onRequest({ cors: false }, async (req, res) => {
   }
 
   const payload = req.body || {};
+  const inferredOperationType = payload.depositId ? "deposit" : payload.payoutId ? "payout" : payload.refundId ? "refund" : "";
   const operationType = String(
     payload.operationType ||
     payload.type ||
     payload.eventType ||
     payload.event ||
     payload.statusType ||
+    inferredOperationType ||
     "unknown"
   ).trim().toLowerCase();
   const referenceId = String(
@@ -920,6 +1095,47 @@ exports.pawapayCallback = onRequest({ cors: false }, async (req, res) => {
     receivedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  if (referenceId && operationType === "deposit") {
+    const transactionRef = db.collection("pawaPayTransactions").doc(referenceId);
+    const transactionSnap = await transactionRef.get();
+    const statusCompleted = ["completed", "success", "successful", "paid", "approved"].includes(statusText);
+    const statusFailed = ["failed", "rejected", "cancelled", "canceled", "expired"].includes(statusText);
+    const nextStatus = statusCompleted ? "paid" : statusFailed ? "failed" : "pending";
+
+    if (transactionSnap.exists) {
+      const transaction = transactionSnap.data() || {};
+      const groupId = transaction.groupId || pawaPayMetadataValue(payload.metadata, "groupId");
+      const collectionId = transaction.collectionId || pawaPayMetadataValue(payload.metadata, "collectionId");
+      const paymentId = transaction.paymentId || pawaPayMetadataValue(payload.metadata, "paymentId");
+      const paymentRef = groupId && collectionId && paymentId
+        ? azamPayPaymentPath({ groupId, collectionId, paymentId })
+        : null;
+
+      await db.runTransaction(async tx => {
+        tx.set(transactionRef, {
+          callback: payload,
+          callbackStatus: statusText,
+          status: nextStatus,
+          providerTransactionId: payload.providerTransactionId || "",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        if (paymentRef) {
+          tx.set(paymentRef, {
+            status: nextStatus,
+            amountPaid: statusCompleted ? Number(transaction.amount || payload.amount || 0) : 0,
+            paymentProvider: "PawaPay",
+            paymentRef: referenceId,
+            pawaPayDepositId: referenceId,
+            pawaPayCallbackStatus: statusText,
+            pawaPayProviderTransactionId: payload.providerTransactionId || "",
+            verifiedAt: statusCompleted ? admin.firestore.FieldValue.serverTimestamp() : null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+      });
+    }
+  }
 
   res.status(200).json({ success: true });
 });
