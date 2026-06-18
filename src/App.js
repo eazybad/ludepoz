@@ -330,7 +330,7 @@ function App() {
   const [success, setSuccess] = useState("");
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [page, setPageRaw] = useState("communities");
-  const [ENABLE_ROOMS, setEnableRooms] = useState(true);
+  const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
   const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
@@ -388,7 +388,7 @@ function App() {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
-  const [homeTab, setHomeTab] = useState("rooms");
+  const [homeTab, setHomeTab] = useState("goods");
   const [tabIconsVisible, setTabIconsVisible] = useState(false);
   const homeScrollRef = useRef(null);
   const lastScrollY = useRef(0);
@@ -1681,7 +1681,6 @@ useEffect(() => {
       const newValue = !ENABLE_DISCOVER_GOODS;
       await setDoc(doc(db, "system", "features"), { discoverGoods: newValue }, { merge: true });
       setEnableDiscoverGoods(newValue);
-      if (!newValue && homeTab === "goods") setHomeTab("rooms");
       setSuccess(newValue ? "Goods enabled in Discover" : "Goods hidden from Discover");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -1695,7 +1694,6 @@ useEffect(() => {
       const newValue = !ENABLE_DISCOVER_SERVICES;
       await setDoc(doc(db, "system", "features"), { discoverServices: newValue }, { merge: true });
       setEnableDiscoverServices(newValue);
-      if (!newValue && homeTab === "services") setHomeTab("rooms");
       setSuccess(newValue ? "Services enabled in Discover" : "Services hidden from Discover");
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -1898,20 +1896,20 @@ useEffect(() => {
 
     if (snap.exists()) {
       const data = snap.data();
-      setEnableRooms(true);
+      setEnableRooms(data.rooms === true);
       setEnableDiscoverGoods(data.discoverGoods === true);
       setEnableDiscoverServices(data.discoverServices === true);
       // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
     } else {
-      setEnableRooms(true);
+      setEnableRooms(false);
       setEnableDiscoverGoods(false);
       setEnableDiscoverServices(false);
       setRequireIdentityVerification(false);
     }
   } catch (err) {
     console.error("Error loading feature flags:", err);
-    setEnableRooms(true);
+    setEnableRooms(false);
     setEnableDiscoverGoods(false);
     setEnableDiscoverServices(false);
     setRequireIdentityVerification(false);
@@ -2323,7 +2321,7 @@ const requestNotificationPermission = async (currentUser) => {
 
   useEffect(() => {
     if ((homeTab === "goods" && !ENABLE_DISCOVER_GOODS) || (homeTab === "services" && !ENABLE_DISCOVER_SERVICES) || (homeTab === "rooms" && !ENABLE_ROOMS)) {
-      setHomeTab(ENABLE_ROOMS ? "rooms" : ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : "rooms");
+      setHomeTab(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
 
@@ -3775,6 +3773,7 @@ useEffect(() => {
   const discoverListings = offlineDiscoverActive ? cachedDiscoverFeed.listings : listings;
   const discoverServices = offlineDiscoverActive ? cachedDiscoverFeed.services : services;
   const discoverRooms = offlineDiscoverActive ? cachedDiscoverFeed.rooms : rooms;
+  const discoverHasEnabledSection = ENABLE_DISCOVER_GOODS || ENABLE_DISCOVER_SERVICES || ENABLE_ROOMS;
   const savedDiscoverLabel = cachedDiscoverFeed.savedAt
     ? new Date(cachedDiscoverFeed.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : "";
@@ -5398,7 +5397,7 @@ return (
   )}
 </div>
 
-    {page==="home" && (
+    {page==="home" && discoverHasEnabledSection && (
      <div style={{
   flex:1,
   minWidth:0,
@@ -5738,6 +5737,12 @@ return (
     <button type="button" onClick={()=>setShowVerifyModal(true)} style={{padding:'7px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
   </div>
 )}
+{featureFlagsLoaded && !discoverHasEnabledSection && (
+  <div style={{margin:'18px 16px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'18px 16px',textAlign:'center',boxShadow:'0 2px 10px rgba(15,27,45,0.05)'}}>
+    <div style={{fontSize:'16px',fontWeight:'800',color:'#0f1b2d',marginBottom:'6px'}}>Discover is being prepared</div>
+    <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.45}}>Rooms, goods, and services will appear here when they are switched on.</div>
+  </div>
+)}
 {/* ===== GOODS TAB CONTENT ===== */}
 <div style={{display: ENABLE_DISCOVER_GOODS && homeTab==="goods" ? "block" : "none"}}>
 <div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
@@ -5903,19 +5908,6 @@ return (
 
 {/* ===== SERVICES TAB CONTENT ===== */}
 <div style={{display: ENABLE_DISCOVER_SERVICES && homeTab==="services" ? "block" : "none"}}>
-  <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-    <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
-      onChange={e => {
-        setServiceSearchQ(e.target.value);
-        if (!e.target.value.trim()) {
-          setCommittedServiceSearchQ("");
-          clearAISearch();
-        }
-      }}
-      onKeyDown={e => { if (e.key === 'Enter') commitServicesSearch(serviceSearchQ); }}
-      style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-    <button type="button" onClick={() => commitServicesSearch(serviceSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'16px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
-  </div>
   <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
@@ -11175,7 +11167,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
           {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount}</span>}
         </button>
-        <button onClick={()=>{setPage("home");handleTabTap("rooms");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
+        <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
         <button onClick={()=>setShowQuickActions(true)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>+</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Add</span></button>
         <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
