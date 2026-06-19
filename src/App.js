@@ -466,7 +466,6 @@ function App() {
   const [showAboutBanner, setShowAboutBanner] = useState(false);
   const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
   const [showGetVerifiedBanner, setShowGetVerifiedBanner] = useState(false);
-  const [showSafetyMessage, setShowSafetyMessage] = useState(() => localStorage.getItem("safetyMessageDismissed") !== "true");
   const [showChatTip, setShowChatTip] = useState(true);
   // Services state
   const [services, setServices] = useState([]);
@@ -539,6 +538,8 @@ useEffect(() => {
   const [lastCreatedCollectionId, setLastCreatedCollectionId] = useState(null);
   const [showEntryQR, setShowEntryQR] = useState(false);
   const [showRoomIndoor, setShowRoomIndoor] = useState(false);
+  const [roomIndoorPhotoIndex, setRoomIndoorPhotoIndex] = useState(0);
+  const roomPhotoTouchStartX = useRef(null);
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "", paymentProofFile: null, paymentProofPreview: null });
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
@@ -2324,6 +2325,11 @@ const requestNotificationPermission = async (currentUser) => {
       setHomeTab(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
+
+  useEffect(() => {
+    if (!viewingRoom) return;
+    setRoomIndoorPhotoIndex(viewingRoom.photos?.length > 1 ? 1 : 0);
+  }, [viewingRoom, showRoomIndoor]);
 
   useEffect(() => {
     if (!user) return;
@@ -5388,6 +5394,8 @@ return (
     </>
   ) : page==="chat" && activeConversation ? (
     activeConversation.listingTitle.substring(0,20) + (activeConversation.listingTitle.length > 20 ? "..." : "")
+  ) : page==="messages" ? (
+    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Messages</div>
   ) : page==="groupDetail" || page==="home" ? (
     null
   ) : (
@@ -6374,13 +6382,7 @@ return (
     boxSizing:'border-box',
     paddingBottom:'100px'
   }}>
-          {showSafetyMessage && (
-            <div style={{background:'#fff3cd',padding:'12px 16px',borderRadius:'10px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'start',fontSize:'13px',lineHeight:'1.5'}}>
-              <span>⚠️ <strong>Safety First:</strong> Meet in public campus places. Never send money before inspecting items.</span>
-              <button onClick={() => { setShowSafetyMessage(false); localStorage.setItem("safetyMessageDismissed", "true"); }} style={{background:'none',border:'none',fontSize:'18px',cursor:'pointer',flexShrink:0}}>×</button>
-            </div>
-          )}
-          <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Messages {unreadCount>0&&`(${unreadCount})`}</h2>
+          {unreadCount > 0 && <div style={{fontSize:'12px',fontWeight:'700',color:'#0d9488',marginBottom:'12px',padding:'0 2px'}}>{unreadCount} unread</div>}
           {conversations.length===0?(
             <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
               <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
@@ -8449,20 +8451,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
 
               {/* Outdoor / Indoor cards */}
-              <div style={{padding:'16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+              <div style={{padding:'16px',display:'grid',gridTemplateColumns:viewingRoom.photos?.[0]?'1fr 1fr':'1fr',gap:'12px'}}>
 
                 {/* OUTDOOR card */}
+                {viewingRoom.photos?.[0] && (
                 <div style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'1px solid #e2e6ea',cursor:'default'}}>
-                  {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
                     <img src={viewingRoom.photos[0]} alt="Outdoor" style={{width:'100%',height:'130px',objectFit:'cover'}} onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}}/>
-                  ) : (
-                    <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#a8edea,#fed6e3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>🏠</div>
-                  )}
                   <div style={{padding:'10px 12px'}}>
                     <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Outdoor</div>
                     <div style={{fontSize:'11px',color:'#8a9bb0'}}>Exterior view</div>
                   </div>
                 </div>
+                )}
 
                 {/* INDOOR card — tappable */}
                 <div onClick={()=>setShowRoomIndoor(true)} style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
@@ -8502,10 +8502,25 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <>
               {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
                 <div>
-                  <img src={viewingRoom.photos[viewingRoom.photos.length > 1 ? 1 : 0]} alt="" onClick={()=>{setFullScreenImage(viewingRoom.photos[1]||viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(viewingRoom.photos.length>1?1:0);}} style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer'}}/>
+                  <img
+                    src={viewingRoom.photos[Math.min(roomIndoorPhotoIndex, viewingRoom.photos.length - 1)]}
+                    alt=""
+                    onTouchStart={event => { roomPhotoTouchStartX.current = event.touches?.[0]?.clientX || null; }}
+                    onTouchEnd={event => {
+                      const startX = roomPhotoTouchStartX.current;
+                      const endX = event.changedTouches?.[0]?.clientX || null;
+                      roomPhotoTouchStartX.current = null;
+                      if (startX === null || endX === null || viewingRoom.photos.length <= 1) return;
+                      const diff = startX - endX;
+                      if (Math.abs(diff) < 35) return;
+                      setRoomIndoorPhotoIndex(index => diff > 0 ? Math.min(viewingRoom.photos.length - 1, index + 1) : Math.max(0, index - 1));
+                    }}
+                    onClick={()=>{const index=Math.min(roomIndoorPhotoIndex, viewingRoom.photos.length - 1);setFullScreenImage(viewingRoom.photos[index]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(index);}}
+                    style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer',touchAction:'pan-y'}}
+                  />
                   {viewingRoom.photos.length > 1 && (
                     <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto'}}>
-                      {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(i);}} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>)}
+                      {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>setRoomIndoorPhotoIndex(i)} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0,border:i===roomIndoorPhotoIndex?'2px solid #06d6c7':'2px solid transparent'}}/>)}
                     </div>
                   )}
                 </div>
