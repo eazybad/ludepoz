@@ -832,6 +832,9 @@ export function GroupDetailPage({
     if (initialSource === "publicEvents" && activeTab === "events") {
       return false;
     }
+    if (selectedCollectionId && initialSource === "profileCollections") {
+      return false;
+    }
     if (selectedCollectionId) {
       setSelectedCollectionId("");
       setPayments([]);

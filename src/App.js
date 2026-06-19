@@ -37,6 +37,7 @@ import {
   joinUniversityGroup,
   seedDemoGroups,
   subscribeGroups,
+  subscribeGroupCollections,
 } from './groups/groupService';
 
 const firebaseConfig = {
@@ -392,7 +393,7 @@ function App() {
   const [tabIconsVisible, setTabIconsVisible] = useState(false);
   const homeScrollRef = useRef(null);
   const lastScrollY = useRef(0);
-  const [profileTab, setProfileTab] = useState("listings");
+  const [profileTab, setProfileTab] = useState("collections");
   const [activeCat, setActiveCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
   const [committedSearchQ, setCommittedSearchQ] = useState("");
@@ -1871,39 +1872,58 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.uid || groups.length === 0) {
       setMyCollections([]);
       return undefined;
     }
 
-    const q = query(collectionGroup(db, "collections"), where("createdByUid", "==", user.uid));
-    const unsub = onSnapshot(q, (snap) => {
-      const createdCollections = snap.docs
-        .map((d) => {
-          const data = d.data();
-          const createdAt = data.createdAt?.toDate?.() || data.createdAt || null;
-          const groupRef = d.ref.parent.parent;
-          return {
-            id: d.id,
-            groupId: data.groupId || groupRef?.id || "",
-            ...data,
-            createdAt,
-          };
-        })
-        .filter((item) => item.active !== false && item.archived !== true && Number(item.amount || item.price || 0) > 0)
+    const managedGroups = groups.filter(group => (
+      group.active !== false
+      && (
+        group.ownerUid === user.uid
+        || group.adminUid === user.uid
+        || group.createdByUid === user.uid
+        || group.createdBy === user.uid
+        || myGroupMemberships[group.id] === "active"
+      )
+    ));
+
+    if (managedGroups.length === 0) {
+      setMyCollections([]);
+      return undefined;
+    }
+
+    const collectionsByGroup = {};
+    const publish = () => {
+      const createdCollections = managedGroups
+        .flatMap(group => (collectionsByGroup[group.id] || []).map(item => ({
+          ...item,
+          groupId: item.groupId || group.id,
+          groupName: item.groupName || group.name,
+        })))
+        .filter(item => item.active !== false && item.status !== "archived" && Number(item.amount || item.price || 0) > 0)
         .sort((a, b) => {
           const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
           const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
           return bTime - aTime;
         });
       setMyCollections(createdCollections);
-    }, (err) => {
-      console.error("My collections listener error:", err);
-      setMyCollections([]);
-    });
+    };
 
-    return unsub;
-  }, [user?.uid]);
+    const unsubs = managedGroups.map(group => subscribeGroupCollections(db, group.id, (items) => {
+      collectionsByGroup[group.id] = items.map(item => ({
+        ...item,
+        createdAt: item.createdAt?.toDate?.() || item.createdAt || null,
+      }));
+      publish();
+    }, (err) => {
+      console.error("My group collections listener error:", err);
+      collectionsByGroup[group.id] = [];
+      publish();
+    }));
+
+    return () => unsubs.forEach(unsub => unsub?.());
+  }, [groups, myGroupMemberships, user?.uid]);
 
   useEffect(() => {
     const urls = [];
@@ -2754,10 +2774,10 @@ await updateDoc(convRef, {
           setGroupMembers([]);
           setCurrentGroupMember(null);
           setGroupViewTab("announcements");
-          pageHistory.current = pageHistory.current.filter(p => p !== "groupDetail");
-          if (pageHistory.current[pageHistory.current.length - 1] !== "communities") pageHistory.current.push("communities");
-          setPageRaw("communities");
-          window.history.replaceState({ page: "communities" }, "", "/");
+          pageHistory.current.pop();
+          const prev = pageHistory.current[pageHistory.current.length - 1] || "communities";
+          setPageRaw(prev);
+          window.history.pushState({ page: prev }, "", "/");
           return;
         }
         if (pageHistory.current.length > 1) {
@@ -3080,12 +3100,14 @@ await updateDoc(convRef, {
     setCurrentGroupMember(null);
     setGroupViewTab("announcements");
     pageHistory.current = pageHistory.current.filter(p => p !== "groupDetail");
-    if (pageHistory.current[pageHistory.current.length - 1] !== "communities") {
-      pageHistory.current.push("communities");
+    const returnPage = groupInitialView.source === "profileCollections" ? "profile" : "communities";
+    if (returnPage === "profile") setProfileTab("collections");
+    if (pageHistory.current[pageHistory.current.length - 1] !== returnPage) {
+      pageHistory.current.push(returnPage);
     }
-    setPageRaw("communities");
-    window.history.replaceState({ page: "communities" }, "", "/");
-  }, []);
+    setPageRaw(returnPage);
+    window.history.replaceState({ page: returnPage }, "", "/");
+  }, [groupInitialView.source]);
 
   const createGroup = async () => {
     if (!user) { requireAuth("createGroup", () => {}); return; }
@@ -9435,6 +9457,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   </div>
                   {myCollections.map((collectionItem) => {
                     const collectionGroup = getMyCollectionGroup(collectionItem);
+                    const collectionGroupName = collectionGroup?.name || collectionItem.groupName || 'Group collection';
                     const amount = Number(collectionItem.amount || collectionItem.price || 0);
                     const createdLabel = collectionItem.createdAt instanceof Date
                       ? collectionItem.createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
@@ -9450,7 +9473,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                         <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
                           <div style={{minWidth:0}}>
                             <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
-                            <div style={{fontSize:'12px',color:'#667085',marginTop:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroup?.name || collectionItem.groupName || 'Group collection'}</div>
+                            <div style={{fontSize:'12px',color:'#667085',marginTop:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>In: {collectionGroupName}</div>
                           </div>
                           <div style={{fontSize:'13px',fontWeight:'800',color:'#0d9488',whiteSpace:'nowrap'}}>{amount.toLocaleString()} TSh</div>
                         </div>
