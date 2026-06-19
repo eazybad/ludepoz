@@ -480,6 +480,7 @@ function App() {
   const [showCreateServiceSuccess, setShowCreateServiceSuccess] = useState(false);
   // Collections/Orders tracker state
   const [collections, setCollections] = useState([]);
+  const [myCollections, setMyCollections] = useState([]);
   const [viewingCommunity, setViewingCommunity] = useState(null);
   const feedsHydratedRef = useRef(false);
   const [discoverCacheLoaded, setDiscoverCacheLoaded] = useState(false);
@@ -1868,6 +1869,41 @@ useEffect(() => {
       });
     } catch(e) { console.error("Error setting up collections listener:", e); }
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setMyCollections([]);
+      return undefined;
+    }
+
+    const q = query(collectionGroup(db, "collections"), where("createdByUid", "==", user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const createdCollections = snap.docs
+        .map((d) => {
+          const data = d.data();
+          const createdAt = data.createdAt?.toDate?.() || data.createdAt || null;
+          const groupRef = d.ref.parent.parent;
+          return {
+            id: d.id,
+            groupId: data.groupId || groupRef?.id || "",
+            ...data,
+            createdAt,
+          };
+        })
+        .filter((item) => item.active !== false && item.archived !== true && Number(item.amount || item.price || 0) > 0)
+        .sort((a, b) => {
+          const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+      setMyCollections(createdCollections);
+    }, (err) => {
+      console.error("My collections listener error:", err);
+      setMyCollections([]);
+    });
+
+    return unsub;
+  }, [user?.uid]);
 
   useEffect(() => {
     const urls = [];
@@ -4904,6 +4940,8 @@ const loadSellerStats = useCallback(async (userId) => {
     && (group.uniId || currentUniId) === currentUniId
     && canSeeInviteOnlyGroup(group)
   ));
+  const groupsById = new Map(groupsForSelectedUni.map(group => [group.id, group]));
+  const getMyCollectionGroup = (collectionItem) => groupsById.get(collectionItem.groupId);
 if (loading) {
   return (
     <div style={{
@@ -9374,11 +9412,59 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           )}
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
+            <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
             <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>
             <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>
             {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
             <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>Saved ({cart.length})</button>
           </div>
+
+          {profileTab==="collections"&&(
+            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+              {myCollections.length===0 ? (
+                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+                  <div style={{fontSize:'16px',fontWeight:'600',marginTop:'4px'}}>No collections yet</div>
+                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Money collections you create in groups will appear here.</div>
+                  <button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button>
+                </div>
+              ) : (
+                <>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>My Collections ({myCollections.length})</h3>
+                    <button onClick={()=>setShowQuickActions(true)} style={{padding:'8px 14px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Create</button>
+                  </div>
+                  {myCollections.map((collectionItem) => {
+                    const collectionGroup = getMyCollectionGroup(collectionItem);
+                    const amount = Number(collectionItem.amount || collectionItem.price || 0);
+                    const createdLabel = collectionItem.createdAt instanceof Date
+                      ? collectionItem.createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                      : '';
+                    return (
+                      <button
+                        key={`${collectionItem.groupId || 'group'}-${collectionItem.id}`}
+                        type="button"
+                        onClick={() => collectionGroup && openGroup(collectionGroup, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'profileCollections' })}
+                        disabled={!collectionGroup}
+                        style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',padding:'14px',textAlign:'left',cursor:collectionGroup?'pointer':'default',opacity:collectionGroup?1:0.72}}
+                      >
+                        <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
+                            <div style={{fontSize:'12px',color:'#667085',marginTop:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroup?.name || collectionItem.groupName || 'Group collection'}</div>
+                          </div>
+                          <div style={{fontSize:'13px',fontWeight:'800',color:'#0d9488',whiteSpace:'nowrap'}}>{amount.toLocaleString()} TSh</div>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
+                          <span style={{fontSize:'11px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'0.02em',color:'#64748b'}}>{collectionItem.collectionType || 'collection'}</span>
+                          <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
           
           {profileTab==="listings"&&(
             <>
@@ -9403,7 +9489,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 </div>
               </div>}
 
-              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setPage("create")} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create Listing</button></div>}
+              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button></div>}
             </>
           )}
           
