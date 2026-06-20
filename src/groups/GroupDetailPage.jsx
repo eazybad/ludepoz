@@ -93,7 +93,7 @@ const PAWAPAY_PROVIDERS = [
   { value: "TIGO_TZA", label: "Tigo Pesa / Yas" },
   { value: "HALOTEL_TZA", label: "HaloPesa" },
 ];
-const ENABLE_PAWAPAY_PAYMENTS = true;
+const ENABLE_PAWAPAY_PAYMENTS = false;
 
 const emptyManualPayment = {
   studentName: "",
@@ -2212,7 +2212,17 @@ export function GroupDetailPage({
   };
 
   const renderPawaPayChoice = ({ includeOrderOption = false } = {}) => {
-    if (!ENABLE_PAWAPAY_PAYMENTS || !selectedNeedsPayment) return null;
+    if (!selectedNeedsPayment) return null;
+    if (!ENABLE_PAWAPAY_PAYMENTS) {
+      return (
+        <div className="azam-pay-box">
+          <button className="group-btn primary" type="button" disabled>
+            Pay with mobile money - Coming soon
+          </button>
+          <span>Automatic mobile money confirmation will be available after live payment setup is approved.</span>
+        </div>
+      );
+    }
     const amount = Number(selectedCollection?.amount || 0);
     return (
       <div className={`azam-pay-box ${showPawaPayOptions ? "expanded" : ""}`}>
