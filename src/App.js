@@ -35,7 +35,6 @@ import {
   createUniversityGroup,
   archiveUniversityGroup,
   joinUniversityGroup,
-  seedDemoGroups,
   subscribeGroups,
   subscribeGroupCollections,
 } from './groups/groupService';
@@ -220,18 +219,6 @@ const SHOW_PRICE_SIGNAL = false;
 // Read by an isAdmin check in the App component; never used for security gates
 // at the data layer (Firestore rules still enforce real permissions).
 const ADMIN_UIDS = ["LTrwUHH6utQJGiw4lcsKflzXvPR2"];
-
-const QS_DRIVE_ROOT_URL = "https://drive.google.com/drive/folders/1OZjhlt-B9RI9tM8fjxEksoeRX__ZcuPs";
-const QS_RESOURCE_FOLDERS = [
-  "BUILDING CONSTRUCTION 2",
-  "COMMUNICATION SKILLS",
-  "COMPUTER DESIGNS",
-  "FINANCIAL LITERACY",
-  "MATERIAL FOR CONSTRUCTION 2",
-  "MECHANICS OF MATERIALS",
-  "STATISTICS AND PROBABILITY",
-  "TOPOGRAPHICAL SURVEYING",
-];
 
 // Resilient compression wrapper. If compression fails (HEIC images, very large
 // files, browser memory limits), fall back to the ORIGINAL file so the upload
@@ -421,6 +408,7 @@ function App() {
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null, avatarPreset: null });
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [showQuickUpload, setShowQuickUpload] = useState(false);
   const [showQuickSavedFiles, setShowQuickSavedFiles] = useState(false);
@@ -452,8 +440,6 @@ function App() {
   const [groupViewTab, setGroupViewTab] = useState("announcements");
   const [newAnnouncement, setNewAnnouncement] = useState("");
   const [postingAnnouncement, setPostingAnnouncement] = useState(false);
-  const [seedingDemoGroups, setSeedingDemoGroups] = useState(false);
-  const [seedingQsGroup, setSeedingQsGroup] = useState(false);
   const unsubGroupAnnouncements = useRef(null);
   const unsubGroupMembers = useRef(null);
   const [scanResult, setScanResult] = useState(null); // { order, studentName, paid, collectionTitle }
@@ -2353,7 +2339,7 @@ const requestNotificationPermission = async (currentUser) => {
       
       // Scrolling DOWN past threshold → show icons
       if (scrollDelta.current > 60) {
-        setTabIconsVisible(true);
+        setTabIconsVisible(false);
       }
       // Scrolling UP past threshold → hide icons (back to text-only)
       else if (scrollDelta.current < -40) {
@@ -2369,7 +2355,7 @@ const requestNotificationPermission = async (currentUser) => {
   // When a tab is tapped, show icons and lock scroll briefly
   const handleTabTap = (tabId) => {
     setHomeTab(tabId);
-    setTabIconsVisible(true);
+    setTabIconsVisible(false);
     scrollDelta.current = 0;
     tabLocked.current = true;
     if (homeScrollRef.current) homeScrollRef.current.scrollTop = 0;
@@ -2381,6 +2367,12 @@ const requestNotificationPermission = async (currentUser) => {
       setHomeTab(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
+
+  useEffect(() => {
+    if (profileTab === "saved" || (profileTab === "listings" && !ENABLE_DISCOVER_GOODS) || (profileTab === "myServices" && !ENABLE_DISCOVER_SERVICES) || (profileTab === "myRooms" && !ENABLE_ROOMS)) {
+      setProfileTab("collections");
+    }
+  }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, profileTab]);
 
   useEffect(() => {
     if (!viewingRoom) return;
@@ -3163,101 +3155,6 @@ await updateDoc(convRef, {
     finally { setJoiningGroup(false); }
   };
 
-  const handleSeedDemoGroups = async () => {
-    setSeedingDemoGroups(true);
-    try {
-      if (!user || !ADMIN_UIDS.includes(user.uid)) {
-        requireAuth("add demo groups", () => {});
-        if (user) setError("Only admins can add demo groups.");
-        return;
-      }
-      const seeded = await seedDemoGroups(db, {
-        selectedUni,
-        user,
-        profile: { name: userName, avatarUrl: userAvatar },
-      });
-      await loadGroups();
-      setSuccess(seeded === "updated" ? "Demo groups updated with sample data." : "Demo groups added with sample data.");
-    } catch (e) {
-      setError("Failed to add demo groups: " + e.message);
-    } finally {
-      setSeedingDemoGroups(false);
-    }
-  };
-
-  const handleSeedQuantitySurveyGroup = async () => {
-    setSeedingQsGroup(true);
-    try {
-      if (!user || !ADMIN_UIDS.includes(user.uid)) {
-        requireAuth("add QS group", () => {});
-        if (user) setError("Only admins can add the QS group.");
-        return;
-      }
-
-      const existingSnap = await getDocs(query(collection(db, "groups"), where("name", "==", "QUANTITY SURVEY YR1")));
-      if (!existingSnap.empty) {
-        const existingGroup = { id: existingSnap.docs[0].id, ...existingSnap.docs[0].data() };
-        await updateDoc(doc(db, "groups", existingGroup.id), {
-          visibility: "inviteOnly",
-          joinPolicy: "inviteOnly",
-          updatedAt: serverTimestamp(),
-        });
-        const updatedGroup = { ...existingGroup, visibility: "inviteOnly", joinPolicy: "inviteOnly" };
-        setSuccess("QUANTITY SURVEY YR1 already exists. Invite-only mode applied.");
-        await loadGroups();
-        openGroup(updatedGroup, { tab: "resources" });
-        return;
-      }
-
-      const newGroup = await createUniversityGroup(db, {
-        data: {
-          name: "QUANTITY SURVEY YR1",
-          desc: "Year 1 Quantity Survey resources, updates, in-groups, submissions, and class coordination.",
-          type: "class",
-          visibility: "inviteOnly",
-        },
-        user,
-        profile: { name: userName, avatarUrl: userAvatar },
-        selectedUni,
-      });
-
-      const resourceProfile = { name: userName, avatarUrl: userAvatar };
-      await addGroupResource(db, {
-        groupId: newGroup.id,
-        user,
-        profile: resourceProfile,
-        title: "QS NOTES full Drive package",
-        url: QS_DRIVE_ROOT_URL,
-        subject: "General",
-        topic: "Main Drive package",
-        resourceType: "Drive folder",
-        description: "Main Google Drive package for QS Year 1. Groups and Moments can be added later inside Kampasika.",
-      });
-
-      for (const folderName of QS_RESOURCE_FOLDERS) {
-        await addGroupResource(db, {
-          groupId: newGroup.id,
-          user,
-          profile: resourceProfile,
-          title: folderName,
-          url: QS_DRIVE_ROOT_URL,
-          subject: folderName,
-          topic: "Drive folder",
-          resourceType: "Drive folder",
-          description: `Open the main QS Drive package and choose ${folderName}. More files can be uploaded directly into this Kampasika folder later.`,
-        });
-      }
-
-      await loadGroups();
-      setSuccess("QUANTITY SURVEY YR1 created with QS resources.");
-      openGroup(newGroup, { tab: "resources" });
-    } catch (e) {
-      setError("Failed to add QS group: " + e.message);
-    } finally {
-      setSeedingQsGroup(false);
-    }
-  };
-
   const postAnnouncement = async () => {
     if (!newAnnouncement.trim() || !viewingGroup) return;
     setPostingAnnouncement(true);
@@ -3758,8 +3655,6 @@ useEffect(() => {
       setError("Password must be at least 6 characters.");
       return;
     }
-    const chosenUni = DEFAULT_UNI;
-
     try {
       setError("");
       setLoading(true);
@@ -3776,13 +3671,9 @@ useEffect(() => {
         createdAt: serverTimestamp()
       };
 
-      userDoc.universityId = chosenUni.id;
-      userDoc.universityName = chosenUni.short;
-
       await setDoc(doc(db, "users", userCredential.user.uid), userDoc);
 
       setUserName(signupName.trim());
-      setSelectedUni(chosenUni);
       setPhoneVerified(false);
       setLoading(false);
       setSuccess(isStudent
@@ -3806,9 +3697,8 @@ useEffect(() => {
     }
   };
 
-  const finishSignupFlow = (displayUsername, chosenUni = DEFAULT_UNI, verified = false) => {
+  const finishSignupFlow = (displayUsername, verified = false) => {
     setUserName(displayUsername);
-    setSelectedUni(chosenUni);
     setPhoneVerified(verified);
     setLoading(false);
     setSignupOtpBusy(false);
@@ -3838,6 +3728,7 @@ useEffect(() => {
   const discoverServices = offlineDiscoverActive ? cachedDiscoverFeed.services : services;
   const discoverRooms = offlineDiscoverActive ? cachedDiscoverFeed.rooms : rooms;
   const discoverHasEnabledSection = ENABLE_DISCOVER_GOODS || ENABLE_DISCOVER_SERVICES || ENABLE_ROOMS;
+  const discoverEnabledSectionCount = [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS].filter(Boolean).length;
   const savedDiscoverLabel = cachedDiscoverFeed.savedAt
     ? new Date(cachedDiscoverFeed.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : "";
@@ -3853,7 +3744,6 @@ useEffect(() => {
     const displayUsername = cleanUsername ? `@${cleanUsername}` : "";
     const cleanPhone = normalizeTanzaniaPhoneInput(signupPhone);
     const cleanEmail = usernameToAuthEmail(cleanUsername);
-    const chosenUni = DEFAULT_UNI;
 
     if (!cleanUsername || cleanUsername.length < 3) {
       setError("Please choose a username with at least 3 letters or numbers.");
@@ -3888,8 +3778,6 @@ useEffect(() => {
         avatarUrl: null,
         bio: "",
         services: [],
-        universityId: chosenUni.id,
-        universityName: chosenUni.short,
         createdAt: serverTimestamp()
       };
 
@@ -3930,7 +3818,7 @@ useEffect(() => {
       const confirmOtp = httpsCallable(functions, "verifyPhoneOtp");
       const result = await confirmOtp({ code: signupOtpCode.trim() });
       setUserPhone(result.data?.phone || normalizeTanzaniaPhoneInput(signupPhone));
-      finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, DEFAULT_UNI, true);
+      finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, true);
     } catch (err) {
       console.error("Signup OTP verify failed:", err);
       setError("Wrong or expired OTP. Please request another code and try again.");
@@ -4957,6 +4845,8 @@ const loadSellerStats = useCallback(async (userId) => {
   // To re-enable expiry someday: restore `isExpired` checks and a TTL field.
   const myActiveListings = listings.filter(l => l.userId === user?.uid);
   const myServices = services.filter(s => s.userId === user?.uid);
+  const showProfileListings = ENABLE_DISCOVER_GOODS;
+  const showProfileServices = ENABLE_DISCOVER_SERVICES;
   const groupsForSelectedUni = groups.filter(group => (
     group.active !== false
     && (group.uniId || currentUniId) === currentUniId
@@ -5290,7 +5180,7 @@ return (
 )}
       
       {/* EMAIL VERIFICATION BANNER REMOVED */}
-    {page !== "chat" && page !== "groupDetail" && page !== "communities" && (
+    {page !== "chat" && page !== "groupDetail" && page !== "communities" && page !== "profile" && (
   <div
     style={{
       background:'#fff',
@@ -5706,7 +5596,7 @@ return (
 )}
 
 {/* ===== DISCOVER CATEGORY TABS ===== */}
-{(ENABLE_DISCOVER_GOODS || ENABLE_DISCOVER_SERVICES) && <div style={{
+{discoverEnabledSectionCount > 1 && <div style={{
   display:'flex',
   justifyContent:'center',
   gap:'0',
@@ -5737,9 +5627,8 @@ return (
       cursor:'pointer',
       transition:'all 0.25s cubic-bezier(0.4,0,0.2,1)'
     }}>
-      {tabIconsVisible && <span style={{fontSize:'20px',opacity:homeTab===tab.id?1:0.4,transition:'opacity 0.2s ease'}}>{tab.icon}</span>}
      <span style={{
-  fontSize: tabIconsVisible ? '10px' : '13px',
+  fontSize: '13px',
   fontWeight: homeTab===tab.id ? '700' : '500',
   color: homeTab===tab.id ? '#0f1b2d' : '#8a9bb0',
   transition:'all 0.2s ease',
@@ -7203,14 +7092,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               onDeleteGroup={handleArchiveGroup}
               onCreateGroup={() => { user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }}
               onOpenScanner={() => { user ? openScanner() : requireAuth("scan group QR", openScanner); }}
-              onSeedDemoGroups={handleSeedDemoGroups}
-              onSeedQuantitySurveyGroup={handleSeedQuantitySurveyGroup}
-              canSeedDemoGroups={!!user && ADMIN_UIDS.includes(user.uid)}
               groupReadAt={groupReadAt}
               currentUserId={user?.uid || ""}
               isGroupAdmin={isGroupAdmin}
-              seedingDemo={seedingDemoGroups}
-              seedingQsGroup={seedingQsGroup}
             />
           )}
           {showCreateGroup && (
@@ -9354,7 +9238,29 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
           )}
 
-          <div style={{background:'#fff',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px'}}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px',position:'relative'}}>
+           <button
+             type="button"
+             aria-label="Profile menu"
+             onClick={()=>setShowProfileMenu(value => !value)}
+             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid #e2e6ea',background:'#f8fafb',color:'#0f1b2d',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}
+           >
+             ⋯
+           </button>
+           {showProfileMenu && (
+             <>
+               <div onClick={()=>setShowProfileMenu(false)} style={{position:'fixed',inset:0,zIndex:140}} />
+               <div style={{position:'absolute',top:'50px',right:'12px',zIndex:141,minWidth:'150px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',boxShadow:'0 12px 28px rgba(15,27,45,0.16)',overflow:'hidden'}}>
+                 <button
+                   type="button"
+                   onClick={()=>{setShowProfileMenu(false);handleLogout();}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#dc2626',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                 >
+                   Log out
+                 </button>
+               </div>
+             </>
+           )}
            {/* Top row: avatar + stats */}
            <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
              <div style={{position:'relative',flexShrink:0}}>
@@ -9381,18 +9287,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 </div>
              {/* Stats */}
              <div style={{display:'flex',gap:'20px',flex:1,justifyContent:'space-around'}}>
-               <div style={{textAlign:'center'}}>
+               {showProfileListings && <div style={{textAlign:'center'}}>
                  <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myActiveListings.length}</div>
                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Listings</div>
-               </div>
-               <div style={{textAlign:'center'}}>
+               </div>}
+               {showProfileServices && <div style={{textAlign:'center'}}>
                  <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myServices.length}</div>
                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Services</div>
-               </div>
-               <div style={{textAlign:'center'}}>
-                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{cart.length}</div>
-                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Saved</div>
-               </div>
+               </div>}
              </div>
            </div>
            {/* Name + verified badge */}
@@ -9402,7 +9304,6 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
              )}
            </div>
-           <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:ENABLE_PHONE_VERIFICATION?'8px':'12px'}}>{userAccountType === "provider" ? "Service Provider" : "Student - " + (selectedUni?.short || "ARU")}</div>
            {ENABLE_PHONE_VERIFICATION && <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',fontSize:'12px',color:phoneVerified?'#065f46':'#0f766e',fontWeight:'700'}}>
              <span>{phoneVerified ? 'Phone verified' : 'Phone not verified'}</span>
              {!phoneVerified && <button type="button" onClick={()=>setShowPhoneVerifyModal(true)} style={{border:'none',background:'#ccfbf1',color:'#0f766e',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Verify now</button>}
@@ -9419,10 +9320,15 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              <button type="button" onClick={()=>{setShowAboutBanner(false);setShowGetVerifiedBanner(false);isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
              <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#344054',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
+           {isAdmin && (
+             <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
+               Admin Dashboard
+             </button>
+           )}
           </div>
           
           {/* Service Tags */}
-          {userServices.length > 0 && (
+          {showProfileServices && userServices.length > 0 && (
             <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
               {userServices.map(sId => {
                 const tag = SERVICE_TAGS.find(t=>t.id===sId);
@@ -9435,10 +9341,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           
           <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
             <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
-            <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>
-            <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>
+            {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
+            {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
             {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
-            <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>Saved ({cart.length})</button>
           </div>
 
           {profileTab==="collections"&&(
@@ -9489,7 +9394,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
           )}
           
-          {profileTab==="listings"&&(
+          {showProfileListings && profileTab==="listings"&&(
             <>
               {myActiveListings.length>0&&<div style={{marginBottom:'16px'}}>
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'#10b981',marginBottom:'12px'}}>Active Listings ({myActiveListings.length})</h3>
@@ -9516,7 +9421,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </>
           )}
           
-          {profileTab==="myServices"&&(
+          {showProfileServices && profileTab==="myServices"&&(
             <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
               {myServices.length === 0 ? (
                 <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
@@ -9636,38 +9541,6 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
           )}
 
-          {profileTab==="saved"&&(
-            <div style={{display:'flex',flexDirection:'column'}}>
-              {cart.length===0?(
-                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>🔖</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No saved items</div></div>
-              ):(
-                cart.map((item,idx)=>(
-                  <div key={item.id} style={{background:'#fff',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
-                    {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
-                    <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
-                    {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px'}}>{item.description}</div>}
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
-                      <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                      <button onClick={()=>toggleSave(item)} style={{fontSize:'12px',color:'#ef4444',cursor:'pointer',border:'none',background:'none'}}>Remove</button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-          
-          {isAdmin && (
-            <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:'pointer',marginTop:'10px'}}>
-              ⚙️ Admin Dashboard
-            </button>
-          )}
-
-          {/* Instagram-style subtle logout */}
-          <div style={{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid #f0f2f5',display:'flex',justifyContent:'center'}}>
-            <button type="button" onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:'#fee2e2',color:'#dc2626',border:'1px solid #fca5a5',borderRadius:'20px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
-              🚪 <span>Log out</span>
-            </button>
-          </div>
           </>
           )}
         </div>
@@ -9794,10 +9667,6 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               {userName}
               {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'#06d6c7'}}>✓</span>}
             </div>
-            <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'20px'}}>
-              {userAccountType === "provider" ? "Service Provider" : `Student · ${selectedUni?.short || "ARU"}`}
-            </div>
-
             <div style={{
               display:'inline-block',
               padding:'16px',

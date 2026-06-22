@@ -17,12 +17,7 @@ export function GroupListPage({
   onDeleteGroup,
   onCreateGroup,
   onOpenScanner,
-  onSeedDemoGroups,
-  onSeedQuantitySurveyGroup,
   isGroupAdmin,
-  canSeedDemoGroups,
-  seedingDemo,
-  seedingQsGroup,
   groupReadAt = {},
   currentUserId = "",
 }) {
@@ -106,16 +101,6 @@ export function GroupListPage({
         <div className="group-actions">
           <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
           <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
-          {canSeedDemoGroups && (
-            <button className="group-btn ghost" type="button" disabled={seedingDemo} onClick={onSeedDemoGroups}>
-              {seedingDemo ? "Adding..." : "Add demo groups"}
-            </button>
-          )}
-          {canSeedDemoGroups && (
-            <button className="group-btn secondary" type="button" disabled={seedingQsGroup} onClick={onSeedQuantitySurveyGroup}>
-              {seedingQsGroup ? "Adding QS..." : "Add QS Yr1 group"}
-            </button>
-          )}
         </div>
         <div className="groups-mode-grid" aria-label="Kampasika overview">
           <div className="groups-mode-card active">
