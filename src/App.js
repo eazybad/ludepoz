@@ -9102,7 +9102,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    padding:'0 16px 88px 16px'
+    padding:'16px 16px 88px 16px'
   }}>
           {!user ? (
             <div style={{
