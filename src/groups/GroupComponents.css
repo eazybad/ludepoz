@@ -2181,12 +2181,12 @@
 
 .payment-pill.paid {
   background: #f0fdf4;
-  color: #22c55e;
+  color: #16a34a;
 }
 
 .payment-pill.pending {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: #fff7ed;
+  color: #ea580c;
 }
 
 .payment-pill.registered {
@@ -2197,6 +2197,22 @@
 .payment-pill.rejected {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.payment-status-word.paid {
+  color: #16a34a;
+}
+
+.payment-status-word.pending {
+  color: #ea580c;
+}
+
+.payment-status-word.registered {
+  color: #0f766e;
+}
+
+.payment-status-word.rejected {
+  color: #dc2626;
 }
 
 .member-row {

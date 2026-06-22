@@ -555,6 +555,13 @@ export function GroupDetailPage({
     && myPayment?.paymentProvider === "PawaPay"
     && myPayment?.status !== "paid"
     && Boolean(myPayment?.pawaPayDepositId || myPayment?.paymentRef);
+  const myPaymentHasSubmittedProofOrPayment = Boolean(
+    myPayment?.paymentProofUrl
+    || myPayment?.paymentRef
+    || myPayment?.pawaPayDepositId
+    || Number(myPayment?.amountPaid || 0) > 0
+    || (myPayment?.status && myPayment.status !== "registered")
+  );
   const myPaymentStatusLabel = myPayment?.status === "paid"
     ? "Paid"
     : myPayment?.status === "registered"
@@ -564,6 +571,30 @@ export function GroupDetailPage({
       : myPayment
         ? "Payment submitted"
         : "";
+  const myPaymentPrimaryMessage = selectedGroupOrder
+    ? "Your order is on record."
+    : myPaymentWaitingForProvider
+      ? "Waiting for payment confirmation."
+      : selectedNeedsPayment && myPaymentRemaining > 0 && !myPaymentHasSubmittedProofOrPayment
+        ? "You are already registered, waiting for your payment."
+        : selectedNeedsPayment && myPayment?.status === "paid"
+          ? "Your payment is on record."
+          : selectedNeedsPayment && myPayment
+            ? "Payment proof submitted. Waiting for admin confirmation."
+            : myPayment
+              ? "You are registered."
+              : "";
+  const myPaymentSecondaryMessage = myPaymentWaitingForProvider
+    ? "Payment request sent. This updates automatically when the provider confirms."
+    : myPayment?.amountPaid
+      ? `${Number(myPayment.amountPaid).toLocaleString()} TSh`
+      : selectedGroupOrder
+        ? "Payment proof not submitted yet"
+        : selectedNeedsPayment && myPaymentHasSubmittedProofOrPayment
+          ? "Waiting for admin review"
+          : selectedNeedsPayment
+            ? "Amount not recorded"
+            : "Registered";
   const memberDisplayName = member => member?.username || member?.name || member?.email?.split("@")[0] || "Member";
   const togglePaymentDetails = paymentId => {
     setExpandedPaymentIds(prev => ({ ...prev, [paymentId]: !prev[paymentId] }));
@@ -3159,18 +3190,18 @@ export function GroupDetailPage({
               <>
                 <div className="payment-stat"><strong>{summary.paidCount}</strong><span>Paid</span></div>
                 <div className="payment-stat"><strong>{summary.unpaidCount}</strong><span>Unpaid</span></div>
-                <div className="payment-stat"><strong>{summary.pendingCount}</strong><span>Pending proof</span></div>
+                <div className="payment-stat"><strong>{summary.pendingCount}</strong><span>Proof to review</span></div>
                 <div className="payment-stat"><strong>{summary.totalCollected.toLocaleString()}</strong><span>TSh collected</span></div>
               </>
             ) : (
               <>
-                <div className="payment-stat"><strong>{myPayment?.status || "Not registered"}</strong><span>Your status</span></div>
+                <div className="payment-stat"><strong className={`payment-status-word ${myPayment?.status ? statusClass(myPayment.status) : ""}`}>{myPayment?.status || "Not registered"}</strong><span>Your status</span></div>
                 <div className="payment-stat"><strong>{selectedCollection?.amount ? Number(selectedCollection.amount).toLocaleString() : "0"}</strong><span>TSh required</span></div>
               </>
             )}
           </div>}
 
-          {memberCanManage && (
+          {memberCanManage && !selectedCollection && (
             <div style={{ marginBottom: 10 }}>
               <button className="group-btn primary" type="button" onClick={() => {
                 if (!showTrackerForm) {
@@ -3212,17 +3243,6 @@ export function GroupDetailPage({
                     );
                   })}
                 </div>
-              )}
-              {selectedCollection && (
-                <button className="group-btn ghost" type="button" style={{ marginBottom: 10 }} onClick={() => {
-                  if (groupNavDepth.current > 0) {
-                    window.history.back();
-                    return;
-                  }
-                  setSelectedCollectionId("");
-                  setShowPaymentForm(false);
-                  setPayments([]);
-                }}>Back to trackers</button>
               )}
               {selectedCollection && (
                 <div className="payment-card">
@@ -3289,8 +3309,8 @@ export function GroupDetailPage({
                   {myPayment && (
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
-                      <strong>{selectedGroupOrder ? "Your order is on record." : myPaymentWaitingForProvider ? "Waiting for payment confirmation." : selectedNeedsPayment && myPaymentRemaining > 0 ? "You are already registered, waiting for your payment." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
-                      <span>{myPaymentWaitingForProvider ? "Payment request sent. This updates automatically when the provider confirms." : myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedGroupOrder ? "Payment proof not submitted yet" : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      <strong>{myPaymentPrimaryMessage}</strong>
+                      <span>{myPaymentSecondaryMessage}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       {myPayment.paymentProofUrl && <button type="button" className="proof-thumb-btn" onClick={() => setExpandedProofUrl(myPayment.paymentProofUrl)}><img className="payment-proof-thumb" src={myPayment.paymentProofUrl} alt="Your payment proof" /></button>}
                       <details className="group-payment-qr">
@@ -3591,9 +3611,9 @@ export function GroupDetailPage({
                   {myPayment && (
                     <div className="member-payment-card">
                       <span className={`payment-pill ${statusClass(myPayment.status)}`}>{myPaymentStatusLabel || myPayment.status || "pending"}</span>
-                      <strong>{selectedGroupOrder ? "Your order is on record." : myPaymentWaitingForProvider ? "Waiting for payment confirmation." : selectedNeedsPayment && myPaymentRemaining > 0 ? "You are already registered, waiting for your payment." : selectedNeedsPayment ? "Your payment is on record." : "You are registered."}</strong>
+                      <strong>{myPaymentPrimaryMessage}</strong>
                       {myPayment.selectedOption && <span>Option: {myPayment.selectedOption}</span>}
-                      <span>{myPaymentWaitingForProvider ? "Payment request sent. This updates automatically when the provider confirms." : myPayment.amountPaid ? `${Number(myPayment.amountPaid).toLocaleString()} TSh` : selectedNeedsPayment ? "Amount not recorded" : "Registered"}</span>
+                      <span>{myPaymentSecondaryMessage}</span>
                       {selectedNeedsPayment && myPaymentRemaining > 0 && <span>{myPaymentRemaining.toLocaleString()} TSh remaining</span>}
                       <details className="group-payment-qr">
                         <summary>{selectedNeedsPayment ? "Payment QR" : "Registration QR"}</summary>
