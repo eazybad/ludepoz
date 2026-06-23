@@ -5697,7 +5697,7 @@ return (
 {featureFlagsLoaded && !discoverHasEnabledSection && (
   <div style={{margin:'18px 16px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'18px 16px',textAlign:'center',boxShadow:'0 2px 10px rgba(15,27,45,0.05)'}}>
     <div style={{fontSize:'16px',fontWeight:'800',color:'#0f1b2d',marginBottom:'6px'}}>Discover is being prepared</div>
-    <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.45}}>Rooms, goods, and services will appear here when they are switched on.</div>
+    <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.45}}>Rooms near campus will appear here when switched on.</div>
   </div>
 )}
 {/* ===== GOODS TAB CONTENT ===== */}
@@ -7512,7 +7512,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="createCollection"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
-            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"New order / event"}</h2>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"Create collection or event"}</h2>
             {showCreateCollectionSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
@@ -8425,21 +8425,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
               </div>
 
-              {/* Amenities preview */}
-              {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
-                <div style={{padding:'0 16px 16px'}}>
-                  <div style={{fontSize:'13px',fontWeight:'600',color:'#6b7280',marginBottom:'8px'}}>Amenities</div>
-                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
-                  </div>
-                </div>
-              )}
-
-              {/* Contact buttons */}
-              <div style={{padding:'0 16px 100px',display:'flex',gap:'8px'}}>
-                <button onClick={()=>{if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'14px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📱 WhatsApp</button>
-                <button onClick={()=>{if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'14px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📞 Call</button>
-              </div>
+              <div style={{height:'100px'}} />
             </>
           ) : (
             /* ── INDOOR VIEW — full current detail ── */
@@ -11042,7 +11028,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
               <div>
                 <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d'}}>Add to Kampasika</div>
-                <div style={{fontSize:'12px',color:'#667085',marginTop:'2px'}}>Files, groups, events, and marketplace posts.</div>
+                <div style={{fontSize:'12px',color:'#667085',marginTop:'2px'}}>Groups, collections, events, and files.</div>
               </div>
               <button type="button" onClick={() => setShowQuickActions(false)} style={{border:0,background:'#f1f5f7',borderRadius:'999px',width:'34px',height:'34px',fontSize:'18px',fontWeight:900,color:'#486171'}}>×</button>
             </div>
@@ -11051,22 +11037,22 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <strong style={{display:'block',fontSize:'14px',color:'#0f766e'}}>Upload files</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#486171',marginTop:'3px'}}>PDF, PPTX, DOCX, images</span>
               </button>
-              <button type="button" onClick={() => setShowQuickSavedFiles(true)} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
-                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Saved files</strong>
-                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Open offline copies</span>
-              </button>
               <button type="button" onClick={() => { setShowQuickActions(false); user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create group</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Class, course, club</span>
               </button>
               <button type="button" onClick={() => { setShowQuickActions(false); setCreateCollectionData(prev => ({...prev, collectionType:'event', price:''})); user ? setPage('createCollection') : requireAuth("create event", () => setPage('createCollection')); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
-                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create event</strong>
-                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Poster, register, pay</span>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create collection/event</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Register, collect, track</span>
               </button>
-              <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("create") : requireAuth("sell", () => setPage("create")); }} style={{gridColumn:'1 / -1',border:'1px solid #dbe8e7',background:'#f8fbfc',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+              {ENABLE_ROOMS && <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("createRoom") : requireAuth("list room", () => setPage("createRoom")); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+                <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Add room</strong>
+                <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Room listing</span>
+              </button>}
+              {ENABLE_DISCOVER_GOODS && <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("create") : requireAuth("sell", () => setPage("create")); }} style={{gridColumn:'1 / -1',border:'1px solid #dbe8e7',background:'#f8fbfc',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Sell item</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Marketplace listing</span>
-              </button>
+              </button>}
             </div>
           </div>
         </div>
