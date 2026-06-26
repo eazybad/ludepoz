@@ -305,6 +305,7 @@ function App() {
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [signupName, setSignupName] = useState("");
   const [signupUsername, setSignupUsername] = useState("");
   const [signupPhone, setSignupPhone] = useState("");
@@ -608,6 +609,8 @@ useEffect(() => {
 
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
+  const viewingRoomRef = useRef(null);
+  const showRoomIndoorRef = useRef(false);
   // eslint-disable-next-line no-unused-vars
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
@@ -2380,6 +2383,29 @@ const requestNotificationPermission = async (currentUser) => {
   }, [viewingRoom, showRoomIndoor]);
 
   useEffect(() => {
+    viewingRoomRef.current = viewingRoom;
+  }, [viewingRoom]);
+
+  useEffect(() => {
+    showRoomIndoorRef.current = showRoomIndoor;
+  }, [showRoomIndoor]);
+
+  const openRoomDetail = (room) => {
+    setViewingRoom(room);
+    setShowRoomIndoor(false);
+    window.history.pushState({ page: "roomDetail" }, "", "/");
+  };
+
+  const openRoomIndoorView = () => {
+    setShowRoomIndoor(true);
+    window.history.pushState({ page: "roomIndoor" }, "", "/");
+  };
+
+  const handleRoomBack = () => {
+    window.history.back();
+  };
+
+  useEffect(() => {
     if (!user) return;
     const unsubs = [];
     const mergeConvos = (allDocs) => {
@@ -2729,6 +2755,17 @@ await updateDoc(convRef, {
     // Handle browser/Android back button — go back one step instead of exiting
     const handlePopState = (e) => {
       const p = window.location.pathname;
+
+      if (viewingRoomRef.current) {
+        if (showRoomIndoorRef.current) {
+          setShowRoomIndoor(false);
+          window.history.pushState({ page: "roomDetail" }, "", "/");
+        } else {
+          setViewingRoom(null);
+          window.history.pushState({ page: "app" }, "", "/");
+        }
+        return;
+      }
 
       if (pageHistory.current[pageHistory.current.length - 1] === "groupDetail" && groupInternalBackRef.current?.()) {
         window.history.pushState({ page: "groupDetail" }, "", "/");
@@ -3755,6 +3792,10 @@ useEffect(() => {
     }
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
     if (!cleanPhone) {
@@ -5984,7 +6025,7 @@ return (
     ) : (
       <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
         {filtered.map(room => (
-          <div key={room.id} onClick={()=>{setViewingRoom(room);setShowRoomIndoor(false);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+          <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
             {room.photoUrl ? (
               <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
             ) : (
@@ -8173,7 +8214,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
                 {filtered.map(room => (
-                  <div key={room.id} onClick={()=>{setViewingRoom(room);setShowRoomIndoor(false);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     {room.photoUrl ? (
                       <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
                     ) : (
@@ -8346,7 +8387,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
           {/* Header */}
           <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
-            <button onClick={()=>{if(showRoomIndoor){setShowRoomIndoor(false);}else{setViewingRoom(null);}}} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
+            <button onClick={handleRoomBack} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
             <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
           </div>
 
@@ -8409,7 +8450,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 )}
 
                 {/* INDOOR card — tappable */}
-                <div onClick={()=>setShowRoomIndoor(true)} style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
+                <div onClick={openRoomIndoorView} style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
                   {viewingRoom.photos && viewingRoom.photos.length > 1 ? (
                     <img src={viewingRoom.photos[1]} alt="Indoor" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
                   ) : (
@@ -10882,7 +10923,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                     </div>
                   </div>
                 )}
-                <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
+                <div style={{marginBottom:'12px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Confirm password</label><input type={showPassword?"text":"password"} placeholder="Repeat password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} style={{width:'100%',padding:'12px',border:confirmPassword && password !== confirmPassword ? '1.5px solid #ef4444' : '1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>{confirmPassword && password !== confirmPassword && <div style={{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'5px'}}>Password doesn't match</div>}</div>
                 <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
                   </>
                 )}
