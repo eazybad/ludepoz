@@ -278,6 +278,30 @@ function otpHash(uid, phone, code, secret) {
     .digest("hex");
 }
 
+function normalizeAuthUsername(value) {
+  return String(value || "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9._-]/g, "");
+}
+
+function usernameToAuthEmail(username) {
+  return `${normalizeAuthUsername(username)}@kampasika.local`;
+}
+
+async function findAuthUserByIdentifier(db, identifier) {
+  const phone = normalizeTanzaniaPhone(identifier);
+  if (phone) {
+    const byPhone = await db.collection("users").where("phone", "==", phone).limit(1).get();
+    if (!byPhone.empty) return { uid: byPhone.docs[0].id, data: byPhone.docs[0].data(), phone };
+    return null;
+  }
+
+  const usernameKey = normalizeAuthUsername(identifier);
+  if (!usernameKey) return null;
+  const byUsername = await db.collection("users").where("usernameKey", "==", usernameKey).limit(1).get();
+  if (byUsername.empty) return null;
+  const data = byUsername.docs[0].data();
+  return { uid: byUsername.docs[0].id, data, phone: data.phone || "" };
+}
+
 async function sendAfricasTalkingSms({ apiKey, username, phone, message }) {
   const body = new URLSearchParams({
     username,
@@ -405,6 +429,179 @@ exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (re
   await otpRef.delete();
 
   return { success: true, phone: otp.phone };
+});
+
+exports.requestAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY, AFRICASTALKING_USERNAME] }, async (request) => {
+  const mode = request.data?.mode === "signup" ? "signup" : "login";
+  const db = getFirestore();
+  const apiKey = AFRICASTALKING_API_KEY.value();
+  const username = AFRICASTALKING_USERNAME.value();
+  if (!apiKey || !username) {
+    throw new HttpsError("failed-precondition", "Africa's Talking SMS credentials are not configured.");
+  }
+
+  let phone = "";
+  let usernameKey = "";
+  let displayUsername = "";
+  let uid = "";
+
+  if (mode === "signup") {
+    usernameKey = normalizeAuthUsername(request.data?.username);
+    displayUsername = usernameKey ? `@${usernameKey}` : "";
+    phone = normalizeTanzaniaPhone(request.data?.phone);
+    if (!usernameKey || usernameKey.length < 3) {
+      throw new HttpsError("invalid-argument", "Please choose a username with at least 3 letters or numbers.");
+    }
+    if (!phone) {
+      throw new HttpsError("invalid-argument", "Enter a valid Tanzania phone number.");
+    }
+
+    const [byUsername, byPhone] = await Promise.all([
+      db.collection("users").where("usernameKey", "==", usernameKey).limit(1).get(),
+      db.collection("users").where("phone", "==", phone).limit(1).get(),
+    ]);
+    if (!byUsername.empty) {
+      throw new HttpsError("already-exists", "That username is already taken. Please choose another one.");
+    }
+    if (!byPhone.empty) {
+      throw new HttpsError("already-exists", "That phone number already has an account. Log in instead.");
+    }
+  } else {
+    const identifier = String(request.data?.identifier || "").trim();
+    const match = await findAuthUserByIdentifier(db, identifier);
+    if (!match || !normalizeTanzaniaPhone(match.phone)) {
+      throw new HttpsError("not-found", "No account found for that username or phone number.");
+    }
+    uid = match.uid;
+    phone = normalizeTanzaniaPhone(match.phone);
+    usernameKey = match.data?.usernameKey || normalizeAuthUsername(match.data?.username || match.data?.name);
+    displayUsername = match.data?.username || match.data?.name || (usernameKey ? `@${usernameKey}` : "");
+  }
+
+  const requestId = crypto.randomUUID();
+  const code = String(crypto.randomInt(100000, 999999));
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  await db.collection("phoneAuthOtps").doc(requestId).set({
+    mode,
+    uid: uid || null,
+    phone,
+    usernameKey: usernameKey || null,
+    displayUsername: displayUsername || null,
+    codeHash: otpHash(requestId, phone, code, apiKey),
+    attempts: 0,
+    expiresAt,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await sendAfricasTalkingSms({
+    apiKey,
+    username,
+    phone,
+    message: `Kampasika login code: ${code}. Do not share this code.`,
+  });
+
+  return { success: true, requestId, phone };
+});
+
+exports.verifyAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (request) => {
+  const requestId = String(request.data?.requestId || "").trim();
+  const code = String(request.data?.code || "").trim();
+  if (!requestId) {
+    throw new HttpsError("invalid-argument", "Request a new code first.");
+  }
+  if (!/^\d{6}$/.test(code)) {
+    throw new HttpsError("invalid-argument", "Enter the 6 digit code.");
+  }
+
+  const apiKey = AFRICASTALKING_API_KEY.value();
+  const db = getFirestore();
+  const otpRef = db.collection("phoneAuthOtps").doc(requestId);
+  const otpSnap = await otpRef.get();
+  if (!otpSnap.exists) {
+    throw new HttpsError("not-found", "Request a new code first.");
+  }
+
+  const otp = otpSnap.data();
+  if (!otp || Date.now() > Number(otp.expiresAt || 0)) {
+    await otpRef.delete();
+    throw new HttpsError("deadline-exceeded", "Code expired. Request a new one.");
+  }
+  if (Number(otp.attempts || 0) >= 5) {
+    await otpRef.delete();
+    throw new HttpsError("resource-exhausted", "Too many attempts. Request a new code.");
+  }
+
+  const expectedHash = otpHash(requestId, otp.phone, code, apiKey);
+  if (expectedHash !== otp.codeHash) {
+    await otpRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+      lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw new HttpsError("permission-denied", "Wrong code.");
+  }
+
+  let uid = otp.uid || "";
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  if (otp.mode === "signup") {
+    const usernameKey = normalizeAuthUsername(otp.usernameKey);
+    if (!usernameKey) {
+      throw new HttpsError("invalid-argument", "Username is missing. Request a new code.");
+    }
+    const [byUsername, byPhone] = await Promise.all([
+      db.collection("users").where("usernameKey", "==", usernameKey).limit(1).get(),
+      db.collection("users").where("phone", "==", otp.phone).limit(1).get(),
+    ]);
+    if (!byUsername.empty || !byPhone.empty) {
+      await otpRef.delete();
+      throw new HttpsError("already-exists", "That account already exists. Log in instead.");
+    }
+
+    const authUser = await admin.auth().createUser({
+      email: usernameToAuthEmail(usernameKey),
+      phoneNumber: otp.phone,
+      displayName: otp.displayUsername || `@${usernameKey}`,
+    });
+    uid = authUser.uid;
+
+    await db.collection("users").doc(uid).set({
+      username: otp.displayUsername || `@${usernameKey}`,
+      usernameKey,
+      name: otp.displayUsername || `@${usernameKey}`,
+      email: usernameToAuthEmail(usernameKey),
+      phone: otp.phone,
+      phoneVerified: true,
+      phoneVerifiedAt: now,
+      authProvider: "phoneOtp",
+      hasPassword: false,
+      passwordSetAt: null,
+      accountType: "student",
+      avatarUrl: null,
+      bio: "",
+      services: [],
+      createdAt: now,
+    });
+  } else {
+    if (!uid) {
+      const match = await findAuthUserByIdentifier(db, otp.phone);
+      uid = match?.uid || "";
+    }
+    if (!uid) {
+      await otpRef.delete();
+      throw new HttpsError("not-found", "No account found for that phone number.");
+    }
+    await db.collection("users").doc(uid).set({
+      phone: otp.phone,
+      phoneVerified: true,
+      phoneVerifiedAt: now,
+      lastOtpLoginAt: now,
+    }, { merge: true });
+  }
+
+  await otpRef.delete();
+  const token = await admin.auth().createCustomToken(uid);
+  return { success: true, token, uid, phone: otp.phone };
 });
 
 const AZAMPAY_AUTH_BASE_URL = "https://authenticator-sandbox.azampay.co.tz";
@@ -1151,6 +1348,25 @@ exports.adminDeleteUser = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Admins cannot delete their own account.");
   }
 
+  await deleteUserData(uid);
+  await admin.auth().deleteUser(uid);
+
+  return { success: true };
+});
+
+exports.deleteMyAccount = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  await deleteUserData(uid);
+  await admin.auth().deleteUser(uid);
+
+  return { success: true };
+});
+
+async function deleteUserData(uid) {
   const db = admin.firestore();
   const deleteRefs = [db.collection("users").doc(uid)];
 
@@ -1173,11 +1389,7 @@ exports.adminDeleteUser = onCall(async (request) => {
     deleteRefs.slice(i, i + 450).forEach((ref) => batch.delete(ref));
     await batch.commit();
   }
-
-  await admin.auth().deleteUser(uid);
-
-  return { success: true };
-});
+}
 
 function isConvertibleDocumentResource(resource) {
   const text = [

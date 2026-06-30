@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, onAuthStateChanged, signOut, updatePassword } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
@@ -291,6 +291,7 @@ function App() {
   const [userAccountType, setUserAccountType] = useState("student");
   const [userProviderLocation, setUserProviderLocation] = useState("");
   const [userPhone, setUserPhone] = useState("");
+  const [userHasPassword, setUserHasPassword] = useState(true);
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
@@ -305,13 +306,17 @@ function App() {
   const [selectedUni, setSelectedUni] = useState(DEFAULT_UNI);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [signupName, setSignupName] = useState("");
   const [signupUsername, setSignupUsername] = useState("");
   const [signupPhone, setSignupPhone] = useState("");
   const [signupOtpCode, setSignupOtpCode] = useState("");
   const [signupAwaitingOtp, setSignupAwaitingOtp] = useState(false);
   const [signupOtpBusy, setSignupOtpBusy] = useState(false);
+  const [loginAwaitingOtp, setLoginAwaitingOtp] = useState(false);
+  const [loginOtpCode, setLoginOtpCode] = useState("");
+  const [loginUsePassword, setLoginUsePassword] = useState(false);
+  const [authOtpRequestId, setAuthOtpRequestId] = useState("");
+  const [authOtpPhone, setAuthOtpPhone] = useState("");
   const [isStudent, setIsStudent] = useState(true);
   const [signupLocation, setSignupLocation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -323,6 +328,7 @@ function App() {
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
   const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
+  const [REQUIRE_ROOM_USER_VERIFICATION, setRequireRoomUserVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["communities"]);
   const isGoingBack = useRef(false)
@@ -407,6 +413,13 @@ function App() {
   const [lastCreatedListing, setLastCreatedListing] = useState(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({ name: "", bio: "", services: [], avatarFile: null, avatarPreview: null, avatarPreset: null });
+  const [showSetPasswordModal, setShowSetPasswordModal] = useState(false);
+  const [setPasswordReason, setSetPasswordReason] = useState("menu");
+  const [setPasswordData, setSetPasswordData] = useState({ password: "", confirmPassword: "" });
+  const [settingPassword, setSettingPassword] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -636,6 +649,7 @@ useEffect(() => {
 
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  const [messageSearchQ, setMessageSearchQ] = useState("");
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -649,6 +663,8 @@ useEffect(() => {
   const [studentIdFile, setStudentIdFile] = useState(null);
   const [studentIdPreview, setStudentIdPreview] = useState(null); 
   const [verificationStatus, setVerificationStatus] = useState(null);
+  const [roomUserVerificationStatus, setRoomUserVerificationStatus] = useState(null);
+  const [showRoomUserVerifyModal, setShowRoomUserVerifyModal] = useState(false);
   const [nidaNumberInput, setNidaNumberInput] = useState("");
   const [nameOnIdInput, setNameOnIdInput] = useState("");
 
@@ -1070,8 +1086,9 @@ useEffect(() => {
   // sets the badge type on the user doc, and sends an in-app notification.
   const approveVerification = async (req) => {
     try {
+      const isRoomUserVerification = req.verificationKind === "roomUser";
       // Determine badge type from account type
-      const badgeType = req.accountType === "provider"
+      const badgeType = isRoomUserVerification ? "room_user" : req.accountType === "provider"
         ? (req.providerLocation ? "landlord" : "provider")  // future: room verification triggers "landlord"
         : "student";
 
@@ -1083,7 +1100,11 @@ useEffect(() => {
       });
 
       // Update the user's profile
-      await updateDoc(doc(db, "users", req.userId), {
+      await updateDoc(doc(db, "users", req.userId), isRoomUserVerification ? {
+        roomUserVerified: true,
+        roomUserVerificationStatus: "approved",
+        roomUserVerifiedAt: serverTimestamp(),
+      } : {
         isVerified: true,
         verificationBadge: badgeType,
         verifiedAt: serverTimestamp(),
@@ -1134,6 +1155,14 @@ useEffect(() => {
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
       });
+
+      if (req.verificationKind === "roomUser") {
+        await updateDoc(doc(db, "users", req.userId), {
+          roomUserVerified: false,
+          roomUserVerificationStatus: "rejected",
+          roomUserVerificationRejectedAt: serverTimestamp(),
+        });
+      }
 
       await addDoc(collection(db, "notifications"), {
         userId: req.userId,
@@ -1712,6 +1741,19 @@ useEffect(() => {
     }
   };
 
+  const toggleRoomUserVerificationRequirement = async () => {
+    try {
+      const newValue = !REQUIRE_ROOM_USER_VERIFICATION;
+      await setDoc(doc(db, "system", "features"), { requireRoomUserVerification: newValue }, { merge: true });
+      setRequireRoomUserVerification(newValue);
+      setSuccess(newValue ? "Room user verification required for room contacts and posting" : "Room user verification disabled");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Failed to update room verification setting");
+    }
+  };
+
  const deleteConversation = async (conversationId) => {
   if (!conversationId) return;
   if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
@@ -1920,11 +1962,21 @@ useEffect(() => {
       if (!item) return;
       if (item.photoUrl) urls.push(item.photoUrl);
       if (Array.isArray(item.photos)) urls.push(...item.photos.filter(Boolean));
+      [
+        item.avatarUrl,
+        item.userAvatar,
+        item.listedByAvatar,
+        item.buyerAvatar,
+        item.sellerAvatar,
+      ].filter(Boolean).forEach(url => urls.push(url));
     };
     listings.forEach(collect);
     services.forEach(collect);
     rooms.forEach(collect);
     collections.forEach(collect);
+    groups.forEach(collect);
+    conversations.forEach(collect);
+    groupMembers.forEach(collect);
 
     urls.slice(0, 160).forEach(url => {
       if (!url || imagePreloadCache.current.has(url)) return;
@@ -1933,7 +1985,7 @@ useEffect(() => {
       img.decoding = "async";
       img.src = url;
     });
-  }, [collections, listings, rooms, services]);
+  }, [collections, conversations, groupMembers, groups, listings, rooms, services]);
 
   const loadFeatureFlags = async () => {
   try {
@@ -1947,11 +1999,13 @@ useEffect(() => {
       setEnableDiscoverServices(data.discoverServices === true);
       // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
+      setRequireRoomUserVerification(data.requireRoomUserVerification === true);
     } else {
       setEnableRooms(false);
       setEnableDiscoverGoods(false);
       setEnableDiscoverServices(false);
       setRequireIdentityVerification(false);
+      setRequireRoomUserVerification(false);
     }
   } catch (err) {
     console.error("Error loading feature flags:", err);
@@ -1959,6 +2013,7 @@ useEffect(() => {
     setEnableDiscoverGoods(false);
     setEnableDiscoverServices(false);
     setRequireIdentityVerification(false);
+    setRequireRoomUserVerification(false);
   } finally {
     setFeatureFlagsLoaded(true);
   }
@@ -1995,6 +2050,10 @@ useEffect(() => {
 
   const handleCreateRoom = async () => {
     if (!user) { requireAuth("list a room", () => setPage("createRoom")); return; }
+    if (!roomUserCanAccessRooms) {
+      openRoomUserVerification("postRoom");
+      return;
+    }
     const parsedRoomPrice = parsePrice(createRoomData.price);
     if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || parsedRoomPrice === null || !createRoomData.location.trim()) {
       setError("Please fill in name, phone, room type, price, and location"); return;
@@ -2136,6 +2195,30 @@ useEffect(() => {
       // No verification request yet
       setVerificationStatus(null);
     }
+
+    try {
+      const roomQ = query(
+        collection(db, "verificationRequests"),
+        where("userId", "==", userId),
+        where("verificationKind", "==", "roomUser"),
+        orderBy("createdAt", "desc")
+      );
+      const roomSnapshot = await getDocs(roomQ);
+      if (!roomSnapshot.empty) {
+        setRoomUserVerificationStatus(roomSnapshot.docs[0].data().status || null);
+      }
+    } catch (roomErr) {
+      const roomFallbackQ = query(
+        collection(db, "verificationRequests"),
+        where("userId", "==", userId),
+        where("verificationKind", "==", "roomUser")
+      );
+      const roomSnapshot = await getDocs(roomFallbackQ);
+      const latest = roomSnapshot.docs
+        .map(d => d.data())
+        .sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0))[0];
+      if (latest) setRoomUserVerificationStatus(latest.status || null);
+    }
   } catch (err) {
     console.error("Error checking verification status:", err);
   }
@@ -2174,6 +2257,102 @@ const requestNotificationPermission = async (currentUser) => {
   }
 };
 
+  const openRoomUserVerification = () => {
+    if (!user) {
+      requireAuth("verify room access", () => setShowRoomUserVerifyModal(true));
+      return;
+    }
+    setStudentIdFile(null);
+    setStudentIdPreview(null);
+    setNameOnIdInput("");
+    setNidaNumberInput("");
+    setShowRoomUserVerifyModal(true);
+    setError("");
+  };
+
+  const roomUserCanAccessRooms = !REQUIRE_ROOM_USER_VERIFICATION || roomUserVerificationStatus === "approved";
+
+  const submitRoomUserVerification = async () => {
+    if (!user) return;
+    if (!userAvatar) {
+      setError("Please add a profile picture first.");
+      return;
+    }
+    if (!studentIdFile) {
+      setError("Please upload your student ID or national ID.");
+      return;
+    }
+    if (!nameOnIdInput.trim()) {
+      setError("Please enter the name shown on the ID.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setError("");
+
+      const existingQuery = query(
+        collection(db, "verificationRequests"),
+        where("userId", "==", user.uid),
+        where("verificationKind", "==", "roomUser")
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      const activeRequest = existingSnapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .find(item => item.status === "pending" || item.status === "approved");
+      if (activeRequest?.status === "pending") {
+        setRoomUserVerificationStatus("pending");
+        setError("Your Room User Verification is already waiting for review.");
+        return;
+      }
+      if (activeRequest?.status === "approved") {
+        setRoomUserVerificationStatus("approved");
+        setShowRoomUserVerifyModal(false);
+        setSuccess("Room User Verification is already approved.");
+        return;
+      }
+
+      const { file: compressedId } = await safeCompress(studentIdFile, COMPRESSION_PRESETS.receipt);
+      const storageRef = ref(storage, `verification/${user.uid}/roomUser_${Date.now()}.jpg`);
+      const snapshot = await uploadBytes(storageRef, compressedId);
+      const idUrl = await getDownloadURL(snapshot.ref);
+
+      await addDoc(collection(db, "verificationRequests"), {
+        verificationKind: "roomUser",
+        verificationLabel: "Room User Verification",
+        userId: user.uid,
+        userName,
+        email: user.email,
+        phone: userPhone || "",
+        accountType: "room_user",
+        nameOnId: nameOnIdInput.trim(),
+        idUrl,
+        studentIdUrl: idUrl,
+        avatarUrl: userAvatar,
+        status: "pending",
+        submittedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "users", user.uid), {
+        roomUserVerificationStatus: "pending",
+        roomUserVerificationSubmittedAt: serverTimestamp(),
+      });
+      setRoomUserVerificationStatus("pending");
+      setShowRoomUserVerifyModal(false);
+      setStudentIdFile(null);
+      setStudentIdPreview(null);
+      setNameOnIdInput("");
+      setSuccess("Room User Verification submitted. We will review it soon.");
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err) {
+      console.error("Room user verification submit failed:", err);
+      setError("Could not submit Room User Verification. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
  const loadUserProfile = useCallback(async (userId) => {
   try {
     const userDocRef = doc(db, "users", userId);
@@ -2187,6 +2366,8 @@ const requestNotificationPermission = async (currentUser) => {
       setUserAccountType(userData.accountType || "student");
       setUserProviderLocation(userData.location || "");
       setUserPhone(userData.phone || "");
+      setUserHasPassword(userData.hasPassword !== false);
+      setRoomUserVerificationStatus(userData.roomUserVerified === true ? "approved" : (userData.roomUserVerificationStatus || null));
       setPhoneVerified(userData.phoneVerified === true);
       setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
       // Read both legacy "verified" and current "isVerified" field — handles
@@ -2865,6 +3046,8 @@ await updateDoc(convRef, {
         setUserName("");
         setUserAvatar(null);
         setUserPhone("");
+        setUserHasPassword(true);
+        setRoomUserVerificationStatus(null);
         setPhoneVerified(false);
         setPhoneOtpCode("");
         setPhoneOtpSent(false);
@@ -3778,24 +3961,10 @@ useEffect(() => {
 
   const handleSignup = async () => {
     const cleanUsername = normalizeSignupUsername(signupUsername || signupName);
-    const displayUsername = cleanUsername ? `@${cleanUsername}` : "";
     const cleanPhone = normalizeTanzaniaPhoneInput(signupPhone);
-    const cleanEmail = usernameToAuthEmail(cleanUsername);
 
     if (!cleanUsername || cleanUsername.length < 3) {
       setError("Please choose a username with at least 3 letters or numbers.");
-      return;
-    }
-    if (!password.trim()) {
-      setError("Please create a password.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
       return;
     }
     if (!cleanPhone) {
@@ -3806,43 +3975,19 @@ useEffect(() => {
     try {
       setError("");
       setLoading(true);
-
-      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      const userDoc = {
-        username: displayUsername,
-        usernameKey: cleanUsername,
-        name: displayUsername,
-        email: cleanEmail,
-        phone: cleanPhone,
-        phoneVerified: false,
-        accountType: "student",
-        avatarUrl: null,
-        bio: "",
-        services: [],
-        createdAt: serverTimestamp()
-      };
-
-      await setDoc(doc(db, "users", userCredential.user.uid), userDoc);
-      setSignupName(displayUsername);
-      setUserPhone(cleanPhone);
       setSignupOtpBusy(true);
-
-      try {
-        const sendOtp = httpsCallable(functions, "requestPhoneOtp");
-        await sendOtp({ phone: cleanPhone });
-        setSignupAwaitingOtp(true);
-        setSignupOtpCode("");
-        setLoading(false);
-        setSignupOtpBusy(false);
-      } catch (otpErr) {
-        console.error("Signup OTP send failed:", otpErr);
-        setError("Could not send OTP. Please check the phone number and try again.");
-        setLoading(false);
-        setSignupOtpBusy(false);
-      }
+      const requestOtp = httpsCallable(functions, "requestAuthOtp");
+      const result = await requestOtp({ mode: "signup", username: cleanUsername, phone: cleanPhone });
+      setAuthOtpRequestId(result.data?.requestId || "");
+      setAuthOtpPhone(result.data?.phone || cleanPhone);
+      setSignupName(`@${cleanUsername}`);
+      setSignupAwaitingOtp(true);
+      setSignupOtpCode("");
+      setLoading(false);
+      setSignupOtpBusy(false);
     } catch (err) {
       console.error("Signup error:", err);
-      setError(getAuthErrorMessage(err, "signup"));
+      setError(err?.message || "Could not send OTP. Please check your details and try again.");
       setLoading(false);
       setSignupOtpBusy(false);
     }
@@ -3856,9 +4001,11 @@ useEffect(() => {
     try {
       setError("");
       setSignupOtpBusy(true);
-      const confirmOtp = httpsCallable(functions, "verifyPhoneOtp");
-      const result = await confirmOtp({ code: signupOtpCode.trim() });
+      const confirmOtp = httpsCallable(functions, "verifyAuthOtp");
+      const result = await confirmOtp({ requestId: authOtpRequestId, code: signupOtpCode.trim() });
+      await signInWithCustomToken(auth, result.data?.token);
       setUserPhone(result.data?.phone || normalizeTanzaniaPhoneInput(signupPhone));
+      setUserHasPassword(false);
       finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, true);
     } catch (err) {
       console.error("Signup OTP verify failed:", err);
@@ -3883,7 +4030,7 @@ useEffect(() => {
     return usernameToAuthEmail(cleanUsername);
   };
 
-  const handleLogin = async () => {
+  const handlePasswordLogin = async () => {
     const loginId = email.trim().toLowerCase();
 
     if (!loginId) {
@@ -3926,6 +4073,119 @@ useEffect(() => {
     }
   };
 
+  const handleLogin = async () => {
+    const loginId = email.trim().toLowerCase();
+
+    if (!loginId) {
+      setError("Please enter your username or phone number.");
+      return;
+    }
+
+    try {
+      setError("");
+      setLoading(true);
+      const requestOtp = httpsCallable(functions, "requestAuthOtp");
+      const result = await requestOtp({ mode: "login", identifier: loginId });
+      setAuthOtpRequestId(result.data?.requestId || "");
+      setAuthOtpPhone(result.data?.phone || "");
+      setLoginAwaitingOtp(true);
+      setLoginOtpCode("");
+      setLoading(false);
+      setSuccess("Login code sent by SMS.");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Login OTP request error:", err);
+      setError(err?.message || "Could not send login code. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmLoginOtp = async () => {
+    if (!/^\d{6}$/.test(loginOtpCode.trim())) {
+      setError("Enter the 6 digit OTP code.");
+      return;
+    }
+
+    try {
+      setError("");
+      setLoading(true);
+      const confirmOtp = httpsCallable(functions, "verifyAuthOtp");
+      const result = await confirmOtp({ requestId: authOtpRequestId, code: loginOtpCode.trim() });
+      const credential = await signInWithCustomToken(auth, result.data?.token);
+      const userSnap = await getDoc(doc(db, "users", credential.user.uid));
+      const loggedInUser = userSnap.exists() ? userSnap.data() : {};
+      setUserPhone(loggedInUser.phone || result.data?.phone || "");
+      setPhoneVerified(true);
+      setUserHasPassword(loggedInUser.hasPassword !== false);
+      setLoginAwaitingOtp(false);
+      setLoginOtpCode("");
+      setAuthOtpRequestId("");
+
+      setLoading(false);
+      setSuccess("Logged in successfully!");
+      setTimeout(() => setSuccess(""), 4000);
+      const pendingGroup = pendingAuthGroupRef.current;
+      pendingAuthGroupRef.current = null;
+      setShowAuthModal(false);
+      if (pendingGroup?.group) {
+        openGroup(pendingGroup.group, pendingGroup.initialView || {});
+      } else if (viewingGroup) {
+        openGroup(viewingGroup, groupInitialView);
+      } else {
+        setPage("communities");
+      }
+    } catch (err) {
+      console.error("Login OTP verify error:", err);
+      setError(err?.message || "Wrong or expired OTP. Please request another code and try again.");
+      setLoading(false);
+    }
+  };
+
+  const openSetPasswordModal = (reason = "menu") => {
+    setSetPasswordReason(reason);
+    setSetPasswordData({ password: "", confirmPassword: "" });
+    setShowSetPasswordModal(true);
+    setError("");
+  };
+
+  const handleSetAccountPassword = async () => {
+    const nextPassword = setPasswordData.password.trim();
+    if (!user) return;
+    if (nextPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (nextPassword !== setPasswordData.confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    try {
+      setError("");
+      setSettingPassword(true);
+      await updatePassword(user, nextPassword);
+      await updateDoc(doc(db, "users", user.uid), {
+        hasPassword: true,
+        passwordSetAt: serverTimestamp(),
+      });
+      setUserHasPassword(true);
+      setShowSetPasswordModal(false);
+      setSetPasswordData({ password: "", confirmPassword: "" });
+      setSuccess(setPasswordReason === "logout" ? "Password set. You can log out now." : "Password set successfully.");
+      setTimeout(() => setSuccess(""), 3000);
+      if (setPasswordReason === "logout") {
+        await handleLogout();
+      }
+    } catch (err) {
+      console.error("Set password error:", err);
+      setError(err?.code === "auth/requires-recent-login"
+        ? "For security, Firebase needs a fresh session before changing this password. Please try again before closing the app."
+        : (err?.code ? getAuthErrorMessage(err, "signup") : "Could not set your password. Please try again."));
+    } finally {
+      setSettingPassword(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -3937,6 +4197,37 @@ useEffect(() => {
       setActiveConversation(null);
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  const handleDeleteMyAccount = async () => {
+    if (!user) return;
+    if (deleteAccountConfirm.trim().toUpperCase() !== "DELETE") {
+      setError("Type DELETE to confirm account deletion.");
+      return;
+    }
+
+    try {
+      setError("");
+      setDeletingAccount(true);
+      const deleteAccount = httpsCallable(functions, "deleteMyAccount");
+      await deleteAccount();
+      await signOut(auth).catch(() => {});
+      setShowDeleteAccountModal(false);
+      setDeleteAccountConfirm("");
+      setPage("communities");
+      setListings([]);
+      setCart([]);
+      setConversations([]);
+      setMessages([]);
+      setActiveConversation(null);
+      setSuccess("Your account deletion request has been completed.");
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      console.error("Delete account error:", err);
+      setError(err?.message || "Could not delete your account right now. Please try again.");
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -4895,6 +5186,18 @@ const loadSellerStats = useCallback(async (userId) => {
   ));
   const groupsById = new Map(groupsForSelectedUni.map(group => [group.id, group]));
   const getMyCollectionGroup = (collectionItem) => groupsById.get(collectionItem.groupId);
+  const normalizedMessageSearch = messageSearchQ.trim().toLowerCase();
+  const filteredConversations = normalizedMessageSearch
+    ? conversations.filter(conv => {
+        const otherName = user?.uid === conv.buyerId ? conv.sellerName : conv.buyerName;
+        return [
+          otherName,
+          conv.listingTitle,
+          conv.lastMessage,
+          conv.listingPrice ? String(conv.listingPrice) : "",
+        ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedMessageSearch));
+      })
+    : conversations;
 if (loading) {
   return (
     <div style={{
@@ -6372,16 +6675,34 @@ return (
     boxSizing:'border-box',
     paddingBottom:'100px'
   }}>
-          {unreadCount > 0 && <div style={{fontSize:'12px',fontWeight:'700',color:'#0d9488',marginBottom:'12px',padding:'0 2px'}}>{unreadCount} unread</div>}
+          {unreadCount > 0 && <div style={{fontSize:'12px',fontWeight:'700',color:'#0d9488',marginBottom:'12px',padding:'0 16px'}}>{unreadCount} unread</div>}
+          {conversations.length > 0 && (
+            <div style={{padding:'0 16px 12px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Search messages</label>
+              <input
+                type="search"
+                value={messageSearchQ}
+                onChange={e=>setMessageSearchQ(e.target.value)}
+                placeholder="Search by name, listing, price, or message"
+                style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'#fff'}}
+              />
+            </div>
+          )}
           {conversations.length===0?(
             <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
               <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
               <h3 style={{fontSize:'18px',fontWeight:'700',marginBottom:'8px'}}>No messages yet</h3>
               <p style={{fontSize:'16px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
             </div>
+          ):filteredConversations.length===0?(
+            <div style={{background:'#fff',borderRadius:'12px',padding:'28px',textAlign:'center',margin:'0 16px'}}>
+              <div style={{fontSize:'34px',marginBottom:'10px'}}>⌕</div>
+              <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'#0f1b2d'}}>No matches</h3>
+              <p style={{fontSize:'13px',color:'#8a9bb0',margin:0}}>Try a different name, listing, price, or message.</p>
+            </div>
           ):(
-           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-  {conversations.map(conv=>{
+           <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 16px'}}>
+  {filteredConversations.map(conv=>{
     const otherPerson = user.uid===conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
     const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
     return (
@@ -8399,30 +8720,38 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   title="Room location map"
                   width="100%"
                   height="340"
-                  style={{border:'none',display:'block'}}
+                  style={{border:'none',display:'block',filter:roomUserCanAccessRooms?'none':'blur(3px)',opacity:roomUserCanAccessRooms?1:0.55}}
                   loading="lazy"
                   allowFullScreen
-                  src={viewingRoom.lat && viewingRoom.lng
+                  src={roomUserCanAccessRooms && viewingRoom.lat && viewingRoom.lng
                     ? `https://maps.google.com/maps?q=${viewingRoom.lat},${viewingRoom.lng}&t=m&z=17&ie=UTF8&iwloc=&output=embed`
-                    : `https://maps.google.com/maps?q=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}&t=m&z=16&ie=UTF8&iwloc=&output=embed`
+                    : `https://maps.google.com/maps?q=${encodeURIComponent(roomUserCanAccessRooms ? ((viewingRoom.location||'') + ', Dar es Salaam, Tanzania') : (viewingRoom.nearUni || 'Dar es Salaam, Tanzania'))}&t=m&z=${roomUserCanAccessRooms ? 16 : 12}&ie=UTF8&iwloc=&output=embed`
                   }
                 />
+                {!roomUserCanAccessRooms && (
+                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'#0f1b2d',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
+                    Reserve / verify to unlock exact map
+                  </button>
+                )}
                 {/* Location label overlay */}
                 <div style={{position:'absolute',bottom:'12px',left:'12px',background:'rgba(15,27,45,0.85)',color:'#fff',borderRadius:'10px',padding:'6px 12px',fontSize:'13px',fontWeight:'600',backdropFilter:'blur(4px)'}}>
                   📍 {viewingRoom.location}
                 </div>
                 {/* Open in Google Maps button */}
                 <button
-                  onClick={()=>window.open(
-                    viewingRoom.lat && viewingRoom.lng
-                      ? `https://www.google.com/maps/search/?api=1&query=${viewingRoom.lat},${viewingRoom.lng}`
-                      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}`,
-                    '_blank'
-                  )}
+                  onClick={()=>{
+                    if (!roomUserCanAccessRooms) { openRoomUserVerification("roomMap"); return; }
+                    window.open(
+                      viewingRoom.lat && viewingRoom.lng
+                        ? `https://www.google.com/maps/search/?api=1&query=${viewingRoom.lat},${viewingRoom.lng}`
+                        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}`,
+                      '_blank'
+                    );
+                  }}
                   style={{position:'absolute',top:'12px',right:'12px',background:'#fff',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  Open in Maps
+                  {roomUserCanAccessRooms ? "Open in Maps" : "Reserve"}
                 </button>
               </div>
 
@@ -8521,14 +8850,23 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
                   <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
-                  <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
-                  <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
+                  {roomUserCanAccessRooms ? (
+                    <>
+                      <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
+                      <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
+                    </>
+                  ) : (
+                    <div>
+                      <div style={{fontSize:'14px',color:'#6b7280',lineHeight:1.5,marginBottom:'12px'}}>Complete Room User Verification to view contact information and map details.</div>
+                      <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Reserve / verify to view contact</button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
-                <button onClick={()=>{if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📱 WhatsApp</button>
-                <button onClick={()=>{if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>📞 Call</button>
+                <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':roomUserCanAccessRooms?'#25D366':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📱 WhatsApp" : "Reserve"}</button>
+                <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📞 Call" : "Verify"}</button>
               </div>
             </>
           )}
@@ -8920,7 +9258,21 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
                     </button>
                   </div>
-                </div>                {/* ─── VERIFICATION QUEUE ─── */}
+                </div>
+
+                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Room User Verification</div>
+                      <div style={{fontSize:'13px',color:'#6b7280'}}>Require profile photo and ID before room posting, contacts, and maps</div>
+                    </div>
+                    <button onClick={toggleRoomUserVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_ROOM_USER_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
+                      {REQUIRE_ROOM_USER_VERIFICATION ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* ─── VERIFICATION QUEUE ─── */}
                 <div style={{marginBottom:'24px'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
                     <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>
@@ -9278,6 +9630,27 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
              <>
                <div onClick={()=>setShowProfileMenu(false)} style={{position:'fixed',inset:0,zIndex:140}} />
                <div style={{position:'absolute',top:'50px',right:'12px',zIndex:141,minWidth:'150px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',boxShadow:'0 12px 28px rgba(15,27,45,0.16)',overflow:'hidden'}}>
+                 <button
+                   type="button"
+                   onClick={()=>{setShowProfileMenu(false);openSetPasswordModal("menu");}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                 >
+                   {userHasPassword ? "Change password" : "Set password"}
+                 </button>
+                 <button
+                   type="button"
+                   onClick={()=>{window.open("/privacy.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                 >
+                   Privacy policy
+                 </button>
+                 <button
+                   type="button"
+                   onClick={()=>{setShowProfileMenu(false);setDeleteAccountConfirm("");setShowDeleteAccountModal(true);setError("");}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#b91c1c',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                 >
+                   Delete account
+                 </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);handleLogout();}}
@@ -9854,6 +10227,78 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
 
+      {showSetPasswordModal && user && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:520,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ if (setPasswordReason !== "logout" || userHasPassword) setShowSetPasswordModal(false); }}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'400px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',marginBottom:'14px'}}>
+              <div>
+                <h3 style={{fontSize:'20px',fontWeight:'800',color:'#0f1b2d',margin:'0 0 6px'}}>{userHasPassword ? "Change password" : "Set password"}</h3>
+                <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:0}}>
+                  {setPasswordReason === "logout" ? "Set a password before logging out so you can sign back in later." : "Use this password when signing in with your username or phone number."}
+                </p>
+              </div>
+              <button type="button" onClick={()=>setShowSetPasswordModal(false)} disabled={setPasswordReason === "logout" && !userHasPassword} style={{background:'none',border:'none',fontSize:'24px',cursor:(setPasswordReason === "logout" && !userHasPassword)?'not-allowed':'pointer',color:'#8a9bb0',lineHeight:1,opacity:(setPasswordReason === "logout" && !userHasPassword)?0.35:1}}>×</button>
+            </div>
+            {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
+            <div style={{marginBottom:'12px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Password</label>
+              <input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={setPasswordData.password} onChange={e=>setSetPasswordData({...setPasswordData,password:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+            </div>
+            <div style={{marginBottom:'16px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Confirm password</label>
+              <input type={showPassword?"text":"password"} placeholder="Repeat password" value={setPasswordData.confirmPassword} onChange={e=>setSetPasswordData({...setPasswordData,confirmPassword:e.target.value})} style={{width:'100%',padding:'12px',border:setPasswordData.confirmPassword && setPasswordData.password !== setPasswordData.confirmPassword ? '1.5px solid #ef4444' : '1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+              {setPasswordData.confirmPassword && setPasswordData.password !== setPasswordData.confirmPassword && <div style={{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'5px'}}>Password doesn't match</div>}
+            </div>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:'700',color:'#344054',marginBottom:'16px',cursor:'pointer'}}>
+              <input type="checkbox" checked={showPassword} onChange={e=>setShowPassword(e.target.checked)} />
+              Show password
+            </label>
+            <button type="button" onClick={handleSetAccountPassword} disabled={settingPassword} style={{width:'100%',padding:'13px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',cursor:settingPassword?'wait':'pointer'}}>
+              {settingPassword ? "Saving..." : setPasswordReason === "logout" ? "Set password and log out" : "Save password"}
+            </button>
+            {setPasswordReason !== "logout" && (
+              <button type="button" onClick={()=>setShowSetPasswordModal(false)} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showDeleteAccountModal && user && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:540,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ if (!deletingAccount) setShowDeleteAccountModal(false); }}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',marginBottom:'14px'}}>
+              <div>
+                <h3 style={{fontSize:'20px',fontWeight:'900',color:'#991b1b',margin:'0 0 6px'}}>Delete account</h3>
+                <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:0}}>
+                  This deletes your Kampasika profile and account data connected to this login where possible.
+                </p>
+              </div>
+              <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{background:'none',border:'none',fontSize:'24px',cursor:deletingAccount?'wait':'pointer',color:'#8a9bb0',lineHeight:1}}>×</button>
+            </div>
+            {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
+            <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'12px',padding:'12px',marginBottom:'14px'}}>
+              <div style={{fontSize:'13px',fontWeight:'900',color:'#991b1b',marginBottom:'6px'}}>What will happen</div>
+              <ul style={{margin:'0 0 0 18px',padding:0,color:'#7f1d1d',fontSize:'12px',lineHeight:1.5}}>
+                <li>Your profile and sign-in account will be deleted.</li>
+                <li>Your listings, services, rooms, alerts, verification requests, and notifications will be removed where possible.</li>
+                <li>Some records may be retained when needed for security, payment disputes, legal compliance, or group history.</li>
+              </ul>
+            </div>
+            <p style={{fontSize:'12px',lineHeight:1.5,color:'#667085',margin:'0 0 12px'}}>
+              More details: <a href="/account-deletion.html" target="_blank" rel="noreferrer" style={{color:'#0d9488',fontWeight:'800'}}>Account deletion policy</a>
+            </p>
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>Type DELETE to confirm</label>
+              <input type="text" value={deleteAccountConfirm} onChange={e=>setDeleteAccountConfirm(e.target.value)} disabled={deletingAccount} placeholder="DELETE" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+            </div>
+            <button type="button" onClick={handleDeleteMyAccount} disabled={deletingAccount || deleteAccountConfirm.trim().toUpperCase() !== "DELETE"} style={{width:'100%',padding:'13px',background:'#dc2626',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:(deletingAccount || deleteAccountConfirm.trim().toUpperCase() !== "DELETE")?'not-allowed':'pointer',opacity:deleteAccountConfirm.trim().toUpperCase()==="DELETE"?1:0.55}}>
+              {deletingAccount ? "Deleting..." : "Delete my account"}
+            </button>
+            <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'800',cursor:deletingAccount?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {viewingListing && (
   <div style={{
     position:'fixed',
@@ -10383,6 +10828,49 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
   </div>
 )}
+
+      {showRoomUserVerifyModal && user && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:560,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowRoomUserVerifyModal(false)}>
+          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',maxHeight:'90vh',overflowY:'auto',boxSizing:'border-box'}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{fontSize:'20px',fontWeight:'900',color:'#0f1b2d',margin:'0 0 6px'}}>Room User Verification</h3>
+            <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:'0 0 16px'}}>
+              Add a profile picture and upload a student ID or national ID before viewing room contacts, maps, or posting rooms when this protection is enabled.
+            </p>
+            {roomUserVerificationStatus === "pending" && (
+              <div style={{background:'#fffbeb',color:'#92400e',border:'1px solid #fde68a',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Your Room User Verification is waiting for admin review.</div>
+            )}
+            {roomUserVerificationStatus === "approved" && (
+              <div style={{background:'#d1fae5',color:'#065f46',border:'1px solid #a7f3d0',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Room User Verification approved.</div>
+            )}
+            {!userAvatar && (
+              <div style={{background:'#fef2f2',color:'#991b1b',border:'1px solid #fecaca',borderRadius:'10px',padding:'12px',fontSize:'13px',marginBottom:'14px'}}>
+                <strong style={{display:'block',marginBottom:'6px'}}>Profile picture required</strong>
+                <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true);}} style={{padding:'9px 12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Add profile picture</button>
+              </div>
+            )}
+            <div style={{marginBottom:'12px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>Name as shown on ID</label>
+              <input type="text" value={nameOnIdInput} onChange={e=>setNameOnIdInput(e.target.value)} placeholder="Full name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}} />
+            </div>
+            <input type="file" id="room-user-id-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>{const file=e.target.files[0];if(!file)return;if(!file.type.startsWith('image/')){setError("Please choose an image.");return;}if(file.size>5*1024*1024){setError("Image is too large. Max 5MB.");return;}setStudentIdFile(file);const reader=new FileReader();reader.onload=event=>setStudentIdPreview(event.target.result);reader.readAsDataURL(file);}} />
+            <label htmlFor="room-user-id-upload" style={{display:'block',cursor:'pointer',marginBottom:'14px'}}>
+              {studentIdPreview ? (
+                <img src={studentIdPreview} alt="Room user ID preview" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px',border:'1.5px solid #e2e6ea'}} />
+              ) : (
+                <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
+                  <div style={{fontSize:'36px',marginBottom:'8px'}}>ID</div>
+                  <div style={{fontSize:'14px',fontWeight:'800',color:'#0f1b2d'}}>Upload student ID or national ID</div>
+                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Image only, max 5MB</div>
+                </div>
+              )}
+            </label>
+            <button type="button" onClick={submitRoomUserVerification} disabled={uploading || !userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved"} style={{width:'100%',padding:'13px',background:(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'#d1d5db':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'900',cursor:uploading?'wait':(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'not-allowed':'pointer'}}>
+              {uploading ? "Submitting..." : roomUserVerificationStatus === "pending" ? "Waiting for review" : roomUserVerificationStatus === "approved" ? "Approved" : "Submit for review"}
+            </button>
+            <button type="button" onClick={()=>setShowRoomUserVerifyModal(false)} disabled={uploading} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:uploading?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
+          </div>
+        </div>
+      )}
        
       {/* Verification Modal */}
 {showVerifyModal && (
@@ -10867,7 +11355,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <>
                 {signupAwaitingOtp ? (
                   <>
-                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {signupPhone} to finish creating your account.</p>
+                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || signupPhone} to finish creating your account.</p>
                     <div style={{marginBottom:'12px'}}>
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
                       <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
@@ -10876,7 +11364,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   </>
                 ) : (
                   <>
-                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account with a username, phone number, and password</p>
+                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account with a username and phone number</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. amina_juma" value={signupUsername} onChange={e=>{setSignupUsername(e.target.value);setSignupName(e.target.value);}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Phone number</label><input type="tel" placeholder="0712345678" value={signupPhone} onChange={e=>setSignupPhone(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 {false && <>
@@ -10923,20 +11411,40 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                     </div>
                   </div>
                 )}
-                <div style={{marginBottom:'12px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-                <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Confirm password</label><input type={showPassword?"text":"password"} placeholder="Repeat password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:confirmPassword && password !== confirmPassword ? '1.5px solid #ef4444' : '1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button type="button" onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button>{confirmPassword && password !== confirmPassword && <div style={{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'5px'}}>Password doesn't match</div>}</div>
                 <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setError("");}}>Log in</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
               </>
             ):(
               <>
+                {loginAwaitingOtp ? (
+                  <>
+                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || "your phone"}.</p>
+                    <div style={{marginBottom:'12px'}}>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
+                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={loginOtpCode} onChange={e=>setLoginOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
+                    </div>
+                    <button onClick={handleConfirmLoginOtp} disabled={loading || loginOtpCode.length !== 6} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer',opacity:loginOtpCode.length===6?1:0.6}}>{loading?"Verifying...":"Verify and Log In"}</button>
+                    <button type="button" onClick={()=>{setLoginAwaitingOtp(false);setLoginOtpCode("");setAuthOtpRequestId("");setError("");}} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Use another number</button>
+                  </>
+                ) : loginUsePassword ? (
+                  <>
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username, phone, or email</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-                <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setError("");}}>Sign up</span></p>
+                <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
+                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
+                  </>
+                ) : (
+                  <>
+                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
+                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                    <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Sending code...":"Send OTP"}</button>
+                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
+                  </>
+                )}
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
               </>
             )}
           </div>
