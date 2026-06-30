@@ -6678,7 +6678,6 @@ return (
           {unreadCount > 0 && <div style={{fontSize:'12px',fontWeight:'700',color:'#0d9488',marginBottom:'12px',padding:'0 16px'}}>{unreadCount} unread</div>}
           {conversations.length > 0 && (
             <div style={{padding:'0 16px 12px'}}>
-              <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Search messages</label>
               <input
                 type="search"
                 value={messageSearchQ}
@@ -6946,8 +6945,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           }}>
             <div style={{
               maxWidth:'78%',
-              background:isMine?'#d9fdd3':'#fff',
-              color:'#111827',
+              background:isMine?'#06d6c7':'#fff',
+              color:isMine?'#0f1b2d':'#111827',
               padding:'8px 12px',
               borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',
               fontSize:'14px',
@@ -6997,12 +6996,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     <div style={{
       background:'#fff',
       borderTop:'1px solid #e2e6ea',
-      padding:'8px 12px',
-      paddingBottom:'max(8px, env(safe-area-inset-bottom))',
+      padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
       alignItems:'center',
-      flexShrink:0
+      flexShrink:0,
+      width:'100%',
+      boxSizing:'border-box'
     }}>
       {/* Hidden file input for photo */}
       <input
@@ -7024,8 +7024,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         type="button"
         onClick={() => document.getElementById('chat-photo-input').click()}
         style={{
-          width:'40px',
-          height:'40px',
+          width:'42px',
+          height:'42px',
+          minWidth:'42px',
           borderRadius:'50%',
           background:'#f4f6f8',
           border:'1.5px solid #e2e6ea',
@@ -7048,6 +7049,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         placeholder="Type a message..." 
         style={{
           flex:1,
+          minWidth:0,
+          height:'42px',
           padding:'10px 16px',
           border:'1.5px solid #e2e6ea',
           borderRadius:'24px',
@@ -7062,6 +7065,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         style={{
           width:'42px',
           height:'42px',
+          minWidth:'42px',
           borderRadius:'50%',
           background:messageText.trim()?'#06d6c7':'#e2e6ea',
           color:messageText.trim()?'#0f1b2d':'#8a9bb0',
