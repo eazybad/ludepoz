@@ -216,7 +216,7 @@ function demoEventsFor(group) {
 }
 
 function addDemoSampleData(batch, groupRef, group, { user, profile }) {
-  const ownerName = profile.name || user.email || "Group owner";
+  const ownerName = profile.name || "Group owner";
   const tracker = demoTrackerFor(group);
   const trackerRef = doc(groupRef, "collections", "demo-main-tracker");
 
@@ -599,7 +599,7 @@ export async function createUniversityGroup(db, { data, user, profile, selectedU
     ownerUid: user.uid,
     adminUid: user.uid,
     adminEmail: user.email || "",
-    adminName: profile.name || user.email || "Group owner",
+    adminName: profile.name || "Group owner",
     memberCount: 1,
     mentionPermission: "admins",
     visibility: data.visibility || "inviteOnly",
@@ -614,7 +614,7 @@ export async function createUniversityGroup(db, { data, user, profile, selectedU
 
   batch.set(memberRef, {
     uid: user.uid,
-    name: profile.username || profile.name || user.email || "Group owner",
+    name: profile.username || profile.name || "Group owner",
     fullName: profile.fullName || "",
     email: user.email || "",
     phone: profile.phone || "",
@@ -670,7 +670,7 @@ export async function seedDemoGroups(db, { selectedUni, user, profile }) {
       ownerUid: user.uid,
       adminUid: user.uid,
       adminEmail: user.email || "",
-      adminName: profile.name || user.email || "Kampasika Demo",
+      adminName: profile.name || "Kampasika Demo",
       memberCount: group.name === "ARU Freshers 2026" ? 128 : group.name === "Hostel Block A" ? 64 : 42,
       mentionPermission: "admins",
       visibility: "public",
@@ -714,7 +714,7 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
   if (group.joinPolicy === "approvalRequired") {
     await setDoc(memberRef, {
       uid: user.uid,
-      name: profile.username || profile.name || user.email || "Member",
+      name: profile.username || profile.name || "Member",
       fullName: profile.fullName || "",
       email: user.email || "",
       phone: profile.phone || "",
@@ -727,7 +727,7 @@ export async function joinUniversityGroup(db, { group, user, profile }) {
   }
   await setDoc(memberRef, {
     uid: user.uid,
-    name: profile.username || profile.name || user.email || "Member",
+    name: profile.username || profile.name || "Member",
     fullName: profile.fullName || "",
     email: user.email || "",
     phone: profile.phone || "",
@@ -802,7 +802,7 @@ export async function createGroupWorkGroup(db, { groupId, user, profile, data })
     memberNames: data.memberNames || [],
     status: "open",
     createdByUid: user.uid,
-    createdByName: profile.name || user.email || "Leader",
+    createdByName: profile.name || "Leader",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -851,7 +851,7 @@ export async function submitGroupWork(db, { groupId, workGroupId, user, profile,
     submissionNote: (data.note || "").trim(),
     submissionUrl: (data.url || "").trim(),
     submittedByUid: user.uid,
-    submittedByName: profile.name || user.email || "Member",
+    submittedByName: profile.name || "Member",
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -875,7 +875,7 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text 
     ));
   const messageRef = await addDoc(collection(db, "groups", groupId, "channels", channelId, "messages"), {
     text: cleanText,
-    authorName: profile.name || user.email || "Member",
+    authorName: profile.name || "Member",
     authorUid: user.uid,
     kind,
     pinned,
@@ -892,7 +892,7 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text 
 
   await Promise.all(mentionedMembers.map(member => writeNotification(db, member.uid, {
     type: "group_mention",
-    title: `${profile.name || user.email || "Someone"} tagged you`,
+    title: `${profile.name || "Someone"} tagged you`,
     message: `${group?.name || "Group"}: ${cleanText.slice(0, 140)}`,
     groupId,
     messageId: messageRef.id,
@@ -950,7 +950,7 @@ export async function addGroupResource(db, { groupId, user, profile, title, url 
     storagePath: storagePath.trim(),
     description: cleanDescription,
     deadline: deadline || null,
-    authorName: profile.name || user.email || "Admin",
+    authorName: profile.name || "Admin",
     authorUid: user.uid,
     kind: "resource",
     pinned: false,
@@ -1181,7 +1181,7 @@ export async function createGroupCollection(db, { groupId, user, profile, data, 
     roundBaseTitle: data.roundBaseTitle || data.roundStartedFromTitle || data.title.trim(),
     roundStartedFromTitle: data.roundStartedFromTitle || "",
     createdByUid: user.uid,
-    createdByName: profile.name || user.email || "Admin",
+    createdByName: profile.name || "Admin",
     groupId,
     status: "active",
     createdAt: serverTimestamp(),
@@ -1364,7 +1364,7 @@ export async function submitGroupPayment(db, storage, { groupId, collectionItem,
   const paymentRef = doc(db, "groups", groupId, "collections", collectionItem.id, "payments", user.uid);
   await setDoc(paymentRef, {
     uid: user.uid,
-    studentName: data.studentName.trim() || profile.name || user.email || "Member",
+    studentName: data.studentName.trim() || profile.name || "Member",
     phone: data.phone.trim(),
     payerName: data.payerName.trim(),
     paymentRef: data.paymentRef.trim(),
@@ -1399,7 +1399,7 @@ export async function registerGroupEvent(db, { groupId, collectionItem, user, pr
   const isOrder = collectionItem.collectionType === "order";
   await setDoc(registrationRef, {
     uid: user.uid,
-    studentName: profile.name || user.email || "Member",
+    studentName: profile.name || "Member",
     phone: (data.phone || "").trim(),
     payerName: "",
     paymentRef: "",
@@ -1419,8 +1419,8 @@ export async function registerGroupEvent(db, { groupId, collectionItem, user, pr
     type: isOrder ? "group_order_placed" : "group_event_registered",
     title: isOrder ? `${groupName}: new order` : `${groupName}: event registration`,
     message: isOrder
-      ? `${profile.name || user.email || "Member"} placed an order for ${collectionItem.title}`
-      : `${profile.name || user.email || "Member"} registered for ${collectionItem.title}`,
+      ? `${profile.name || "Member"} placed an order for ${collectionItem.title}`
+      : `${profile.name || "Member"} registered for ${collectionItem.title}`,
     groupId,
     collectionId: collectionItem.id,
     paymentId: registrationRef.id,

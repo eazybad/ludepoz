@@ -1155,6 +1155,10 @@
   min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
+  background-color: #f7f7f4;
+  background-image: linear-gradient(rgba(255,255,255,0.82), rgba(255,255,255,0.82)), url("../../public/chatwallpaper.jpeg");
+  background-size: cover;
+  background-position: center;
 }
 
 .chat-panel.composer-open {

@@ -24,6 +24,15 @@ npx @bubblewrap/cli build
 
 Bubblewrap will ask for the package name, app name, signing information, and other values.
 
+The stable wrapper values are recorded in `android-wrapper/bubblewrap-values.md`.
+
+This workspace has the PWA build and asset-link helper ready, but the Android `.aab` build still requires local Android tooling:
+
+- Java JDK with `keytool`
+- Android SDK / Android Studio
+- Bubblewrap CLI
+- The upload keystore created during Bubblewrap setup
+
 ## Permissions
 
 Keep permissions minimal. The app should not request SMS permissions.
@@ -51,7 +60,15 @@ Then publish:
 
 `https://kampasika.org/.well-known/assetlinks.json`
 
-Template:
+You can generate the hosted file after you have the real fingerprint:
+
+```powershell
+$env:ANDROID_SHA256_FINGERPRINTS="REPLACE_WITH_PLAY_APP_SIGNING_SHA256"
+npm run android:assetlinks
+npm run build
+```
+
+Template output:
 
 ```json
 [

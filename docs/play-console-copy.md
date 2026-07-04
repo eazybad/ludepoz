@@ -20,6 +20,10 @@ If you prefer testing OTP, contact `support@kampasika.org` before review so we c
 
 Replace with your final production domain if different.
 
+## Terms of Service URL
+
+`https://kampasika.org/terms.html`
+
 ## Account Deletion URL
 
 `https://kampasika.org/account-deletion.html`

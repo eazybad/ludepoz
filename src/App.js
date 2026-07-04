@@ -3831,15 +3831,15 @@ useEffect(() => {
   const getAuthErrorMessage = (err, mode = "login") => {
     switch (err?.code) {
       case "auth/invalid-email":
-        return "That email address is not valid. Please check it and try again.";
+        return "That account identifier is not valid. Please check it and try again.";
       case "auth/email-already-in-use":
-        return "That email is already registered. Try logging in instead.";
+        return "That account is already registered. Try logging in instead.";
       case "auth/weak-password":
         return "Your password is too weak. Use at least 6 characters.";
       case "auth/user-not-found":
       case "auth/wrong-password":
       case "auth/invalid-credential":
-        return "The email or password is incorrect. Please check both and try again.";
+        return "The username or password is incorrect. Please check both and try again.";
       case "auth/too-many-requests":
         return "Too many attempts. Please wait a few minutes, then try again.";
       case "auth/network-request-failed":
@@ -3860,11 +3860,11 @@ useEffect(() => {
       return;
     }
     if (!cleanEmail) {
-      setError("Please enter your email address.");
+      setError("Please enter your account identifier.");
       return;
     }
     if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-      setError("Please enter a valid email address, like alex@gmail.com.");
+      setError("Please enter a valid account identifier.");
       return;
     }
     if (!password.trim()) {
@@ -4026,7 +4026,7 @@ useEffect(() => {
     }
 
     const cleanUsername = normalizeSignupUsername(loginId);
-    if (!cleanUsername) throw new Error("Please enter your username, phone, or email.");
+    if (!cleanUsername) throw new Error("Please enter your username or phone number.");
     return usernameToAuthEmail(cleanUsername);
   };
 
@@ -4034,7 +4034,7 @@ useEffect(() => {
     const loginId = email.trim().toLowerCase();
 
     if (!loginId) {
-      setError("Please enter your username, phone, or email.");
+      setError("Please enter your username or phone number.");
       return;
     }
     if (!password.trim()) {
@@ -5472,14 +5472,17 @@ return (
   <div
     onClick={() => setError("")}
     style={{
-      margin: '16px',
       background: '#fee2e2',
       color: '#991b1b',
       padding: '12px 40px 12px 12px',
       borderRadius: '8px',
       fontSize: '13px',
-      flexShrink: 0,
-      position: 'relative',
+      position: 'fixed',
+      top: 'max(14px, env(safe-area-inset-top))',
+      left: '16px',
+      right: '16px',
+      zIndex: 5000,
+      boxShadow: '0 12px 28px rgba(15,27,45,0.18)',
       cursor: 'pointer',
       animation: 'toastSlideIn 0.3s ease-out'
     }}
@@ -5497,14 +5500,17 @@ return (
   <div
     onClick={() => setSuccess("")}
     style={{
-      margin:'16px',
       background:'#d1fae5',
       color:'#065f46',
       padding:'12px 40px 12px 12px',
       borderRadius:'8px',
       fontSize:'13px',
-      flexShrink:0,
-      position:'relative',
+      position:'fixed',
+      top:'max(14px, env(safe-area-inset-top))',
+      left:'16px',
+      right:'16px',
+      zIndex:5000,
+      boxShadow:'0 12px 28px rgba(15,27,45,0.18)',
       cursor:'pointer',
       animation:'toastSlideIn 0.3s ease-out',
       overflow:'hidden'
@@ -5770,7 +5776,8 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'100px'
+    paddingBottom:'100px',
+    background:'#f4f6f8'
   }}>
 
          {false && showAboutBanner && (
@@ -6688,10 +6695,12 @@ return (
             </div>
           )}
           {conversations.length===0?(
-            <div style={{background:'#fff',borderRadius:'12px',padding:'40px',textAlign:'center'}}>
+            <div style={{minHeight:'calc(100dvh - 190px)',display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',padding:'24px 28px',boxSizing:'border-box'}}>
+              <div style={{maxWidth:'320px'}}>
               <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
-              <h3 style={{fontSize:'18px',fontWeight:'700',marginBottom:'8px'}}>No messages yet</h3>
-              <p style={{fontSize:'16px',color:'#8a9bb0'}}>Start a conversation by messaging a seller!</p>
+              <h3 style={{fontSize:'22px',fontWeight:'900',margin:'0 0 8px',color:'#0f1b2d'}}>No messages yet</h3>
+              <p style={{fontSize:'15px',lineHeight:1.5,color:'#8a9bb0',margin:0}}>Start a conversation from a listing, service, or room and it will appear here.</p>
+              </div>
             </div>
           ):filteredConversations.length===0?(
             <div style={{background:'#fff',borderRadius:'12px',padding:'28px',textAlign:'center',margin:'0 16px'}}>
@@ -7412,40 +7421,35 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="communities"&&(
         <>
           {!user ? (
-            <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'18px 16px 110px',background:'#f6f8fb'}}>
-              <div style={{background:'#fff',border:'1px solid #dbe8e7',borderRadius:'8px',padding:'20px 16px',marginBottom:'14px'}}>
-                <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'800',color:'#0f1b2d',marginBottom:'8px'}}>
+            <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'#f6f8fb',display:'flex',alignItems:'center'}}>
+              <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'left'}}>
+                <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'#0f1b2d',marginBottom:'12px',lineHeight:1}}>
                   Kam<em style={{color:'#06d6c7'}}>pa</em>sika
                 </div>
-                <div style={{fontSize:'18px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.25,marginBottom:'8px'}}>
-                  Campus groups for money, events, files, and members.
+                <div style={{fontSize:'22px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.2,marginBottom:'12px'}}>
+                  Campus groups, files, events, orders, and members in one place.
                 </div>
-                <div style={{fontSize:'13px',color:'#536173',lineHeight:1.45}}>
+                <div style={{fontSize:'15px',color:'#536173',lineHeight:1.55,marginBottom:'24px'}}>
                   Sign in to see your groups, join invites, coordinate contributions, and keep class or organization resources in one place.
                 </div>
-              </div>
-
-              <div style={{display:'grid',gap:'8px',marginBottom:'14px'}}>
+                <div style={{display:'grid',gap:'10px',marginBottom:'22px'}}>
                 <button
                   type="button"
                   onClick={() => { setAuthMode("signup"); setShowAuthModal(true); setError(""); }}
-                  style={{width:'100%',padding:'13px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'15px',fontWeight:'900',cursor:'pointer'}}
+                  style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
                 >
                   Create account
                 </button>
                 <button
                   type="button"
                   onClick={() => { setAuthMode("login"); setShowAuthModal(true); setError(""); }}
-                  style={{width:'100%',padding:'13px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'15px',fontWeight:'900',cursor:'pointer'}}
+                  style={{width:'100%',padding:'14px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
                 >
                   Sign in
                 </button>
-              </div>
-
-              <div style={{border:'1px solid #dbe8e7',borderRadius:'8px',background:'#fff',padding:'14px'}}>
-                <div style={{fontSize:'13px',fontWeight:'900',color:'#0f1b2d',marginBottom:'5px'}}>Joining a group?</div>
-                <div style={{fontSize:'12px',color:'#667085',lineHeight:1.45}}>
-                  Open the invite link from your class rep, club leader, or group admin, then sign in to request access.
+                </div>
+                <div style={{fontSize:'13px',color:'#667085',lineHeight:1.5}}>
+                  Joining a group? Open the invite link from your class rep, club leader, or group admin, then sign in to request access.
                 </div>
               </div>
             </div>
@@ -7723,8 +7727,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                   {groupMembers.map(member => (
                     <div key={member.uid || member.id} style={{background:"#fff",border:"1px solid #e2e6ea",borderRadius:"8px",padding:"12px",display:"flex",alignItems:"center",gap:"10px"}}>
-                      <div style={{width:"38px",height:"38px",borderRadius:"50%",background:member.avatarUrl?`url(${member.avatarUrl}) center/cover`:"#075e54",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:"800",flexShrink:0}}>{!member.avatarUrl && (member.name || member.email || "?").slice(0,2).toUpperCase()}</div>
-                      <div style={{flex:1,minWidth:0}}><div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{member.name || member.email || "Member"}</div><div style={{fontSize:"11px",color:"#667781"}}>{member.role || "member"}</div></div>
+                      <div style={{width:"38px",height:"38px",borderRadius:"50%",background:member.avatarUrl?`url(${member.avatarUrl}) center/cover`:"#075e54",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:"800",flexShrink:0}}>{!member.avatarUrl && (member.name || "?").slice(0,2).toUpperCase()}</div>
+                      <div style={{flex:1,minWidth:0}}><div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{member.name || "Member"}</div><div style={{fontSize:"11px",color:"#667781"}}>{member.role || "member"}</div></div>
                     </div>
                   ))}
                 </div>
@@ -7732,7 +7736,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               {isGroupAdmin(viewingGroup) && (
                 <div style={{marginTop:"12px",background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea"}}>
                   <div style={{fontSize:"13px",fontWeight:"800",color:"#0f1b2d",marginBottom:"8px"}}>Admin tools</div>
-                  <div style={{display:"flex",gap:"8px"}}><input type="email" id="coAdminEmail" placeholder="co-admin email" style={{flex:1,padding:"10px",border:"1.5px solid #e2e6ea",borderRadius:"8px",fontSize:"14px",outline:"none",boxSizing:"border-box"}}/><button onClick={async()=>{ const emailInput = document.getElementById("coAdminEmail"); const email = emailInput?.value?.trim(); if (!email) return; try { await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] }); setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]}); emailInput.value = ""; setSuccess("Co-admin added!"); setTimeout(()=>setSuccess(""),2000); } catch(e){ setError("Failed: "+e.message); } }} style={{padding:"10px 14px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}>Add</button></div>
+                  <div style={{display:"flex",gap:"8px"}}><input type="text" id="coAdminEmail" placeholder="co-admin account ID" style={{flex:1,padding:"10px",border:"1.5px solid #e2e6ea",borderRadius:"8px",fontSize:"14px",outline:"none",boxSizing:"border-box"}}/><button onClick={async()=>{ const emailInput = document.getElementById("coAdminEmail"); const email = emailInput?.value?.trim(); if (!email) return; try { await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] }); setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]}); emailInput.value = ""; setSuccess("Co-admin added!"); setTimeout(()=>setSuccess(""),2000); } catch(e){ setError("Failed: "+e.message); } }} style={{padding:"10px 14px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}>Add</button></div>
                 </div>
               )}
             </div>
@@ -8042,8 +8046,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                     <div>
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>👥 Co-admins (optional)</label>
-                      <input type="text" placeholder="e.g. john@gmail.com, amina@gmail.com" value={createCollectionData.adminEmails} onChange={e=>setCreateCollectionData({...createCollectionData,adminEmails:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
-                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Comma-separated emails of others who can manage orders.</div>
+                      <input type="text" placeholder="Comma-separated manager account IDs" value={createCollectionData.adminEmails} onChange={e=>setCreateCollectionData({...createCollectionData,adminEmails:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/>
+                      <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Comma-separated account IDs of others who can manage orders.</div>
                     </div>
 
                     <div>
@@ -9335,7 +9339,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                     {req.userName || 'Unknown'}
                                   </div>
                                   <div style={{fontSize:'11px',color:'#6b7280',lineHeight:1.5}}>
-                                    Account: {req.email}<br/>
+                                    Account ID: {req.email}<br/>
                                     {req.phone && <>Phone: {req.phone}<br/></>}
                                     {req.nameOnId && <>Jina kwenye ID: <b>{req.nameOnId}</b><br/></>}
                                     {req.nidaNumber && <>NIDA: <span style={{fontFamily:'monospace'}}>{req.nidaNumber}</span><br/></>}
@@ -9443,7 +9447,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                             </div>
                             {/* User info */}
                             <div style={{fontSize:'11px',color:'#6b7280',marginBottom:'10px',lineHeight:1.5}}>
-                              <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no email'}</div>
+                              <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no account ID'}</div>
                               {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0d9488',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
                             </div>
                             {/* Status + actions */}
@@ -9489,13 +9493,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
   }}>
           {!user ? (
             <div style={{
-              marginTop:'24px',
-              background:'#fff',
-              borderRadius:'20px',
-              padding:'36px 24px',
+              minHeight:'calc(100dvh - 140px)',
+              display:'flex',
+              flexDirection:'column',
+              justifyContent:'center',
+              padding:'24px 8px',
               textAlign:'center',
-              boxShadow:'0 4px 20px rgba(15,27,45,0.08)',
-              border:'1px solid #e8ecf0'
+              boxSizing:'border-box'
             }}>
               <div style={{
                 width:'80px',
@@ -9554,7 +9558,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               >
                 Already have an account? Sign in
               </button>
-              <div style={{marginTop:'28px',paddingTop:'20px',borderTop:'1px solid #eef2f5',display:'flex',flexDirection:'column',gap:'10px',textAlign:'left'}}>
+              <div style={{margin:'28px auto 0',maxWidth:'280px',display:'flex',flexDirection:'column',gap:'10px',textAlign:'left'}}>
                 {[
                   { icon:'👥', text:'Join your class or campus group' },
                   { icon:'🧾', text:'Track events, orders, and payments' },
@@ -9569,7 +9573,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
           ) : (
           <>
-          {showAboutBanner && (
+          {false && showAboutBanner && (
             <div style={{background:'#fff',borderRadius:'16px',padding:'16px',marginBottom:'16px',border:'1px solid #ccfbf1',boxShadow:'0 4px 16px rgba(15,27,45,0.06)'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
                 <div>
@@ -9584,13 +9588,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <span key={tag} style={{fontSize:'10px',fontWeight:'800',color:'#0f766e',background:'#ecfeff',padding:'4px 8px',borderRadius:'8px'}}>{tag}</span>
                     ))}
                   </div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'12px'}}>
+                    <button type="button" onClick={()=>window.open("/terms.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Terms</button>
+                    <button type="button" onClick={()=>window.open("/privacy.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Privacy</button>
+                    <button type="button" onClick={()=>window.open("/account-deletion.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Account deletion</button>
+                  </div>
                 </div>
                 <button type="button" aria-label="Close about" onClick={()=>setShowAboutBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'#f4f6f8',color:'#344054',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
               </div>
             </div>
           )}
 
-          {showVerifiedBanner && (
+          {false && showVerifiedBanner && (
             <div style={{background:'linear-gradient(135deg,#042f2e,#0f766e)',borderRadius:'16px',padding:'16px',marginBottom:'16px',color:'#fff',boxShadow:'0 4px 16px rgba(15,27,45,0.12)'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
                 <div>
@@ -9604,7 +9613,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
           )}
 
-          {showGetVerifiedBanner && (
+          {false && showGetVerifiedBanner && (
             <div style={{background:'linear-gradient(135deg,#0f766e,#06d6c7)',borderRadius:'16px',padding:'16px',marginBottom:'16px',color:'#fff',boxShadow:'0 4px 16px rgba(6,214,199,0.22)'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
                 <div>
@@ -9626,9 +9635,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
              type="button"
              aria-label="Profile menu"
              onClick={()=>setShowProfileMenu(value => !value)}
-             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid #e2e6ea',background:'#f8fafb',color:'#0f1b2d',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}
+             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid #e2e6ea',background:'#f8fafb',color:'#0f1b2d',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexDirection:'column',gap:'3px'}}
            >
-             ⋯
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
            </button>
            {showProfileMenu && (
              <>
@@ -9643,8 +9654,15 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                  </button>
                  <button
                    type="button"
+                   onClick={()=>{window.open("/terms.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                 >
+                   Terms of service
+                 </button>
+                 <button
+                   type="button"
                    onClick={()=>{window.open("/privacy.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Privacy policy
                  </button>
@@ -11346,6 +11364,48 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
 
+      {page==="profile" && (showAboutBanner || showVerifiedBanner || showGetVerifiedBanner) && (
+        <div
+          style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.34)',zIndex:420,display:'flex',alignItems:'center',justifyContent:'center',padding:'18px',boxSizing:'border-box'}}
+          onClick={()=>{setShowAboutBanner(false);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}}
+        >
+          <div
+            onClick={e=>e.stopPropagation()}
+            style={{width:'100%',maxWidth:'390px',background:'#fff',borderRadius:'18px',padding:'18px',boxShadow:'0 18px 48px rgba(15,27,45,0.24)',border:'1px solid #dce3ea',boxSizing:'border-box'}}
+          >
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'14px',marginBottom:'10px'}}>
+              <div>
+                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.1}}>
+                  {showAboutBanner ? <>Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika</> : showVerifiedBanner ? 'Verification status' : 'Get verified'}
+                </div>
+                <p style={{fontSize:'13px',lineHeight:1.55,color:'#536173',margin:'8px 0 0'}}>
+                  {showAboutBanner
+                    ? 'Campus tools for groups, listings, rooms, services, events, payments records, and trusted student activity.'
+                    : showVerifiedBanner
+                    ? 'Your account is verified. Your listings and services can show a trust badge to other users.'
+                    : 'Verify your account so people can trust your listings, services, and room activity more easily.'}
+                </p>
+              </div>
+              <button type="button" aria-label="Close" onClick={()=>{setShowAboutBanner(false);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{width:'30px',height:'30px',borderRadius:'50%',border:'none',background:'#f4f6f8',color:'#344054',fontSize:'18px',fontWeight:'900',cursor:'pointer',flexShrink:0,lineHeight:1}}>×</button>
+            </div>
+
+            {showAboutBanner && (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:'8px',marginTop:'14px'}}>
+                <button type="button" onClick={()=>window.open("/terms.html", "_blank", "noopener,noreferrer")} style={{padding:'10px 8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'12px',fontWeight:'900',cursor:'pointer'}}>Terms</button>
+                <button type="button" onClick={()=>window.open("/privacy.html", "_blank", "noopener,noreferrer")} style={{padding:'10px 8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'12px',fontWeight:'900',cursor:'pointer'}}>Privacy</button>
+                <button type="button" onClick={()=>window.open("/account-deletion.html", "_blank", "noopener,noreferrer")} style={{padding:'10px 8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'12px',fontWeight:'900',cursor:'pointer'}}>Deletion</button>
+              </div>
+            )}
+
+            {showGetVerifiedBanner && (
+              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',marginTop:'16px',padding:'13px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
+                Start verification
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Auth Modal */}
       {showAuthModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{setShowAuthModal(false);setError("");}}>
@@ -11435,7 +11495,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 ) : loginUsePassword ? (
                   <>
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username, phone, or email</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
                 <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
@@ -11688,7 +11748,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   backdropFilter:'blur(20px)',
   WebkitBackdropFilter:'blur(20px)',
   borderTop:'1px solid rgba(226,230,234,0.6)',
-  display:page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
+  display:!user||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,

@@ -595,7 +595,7 @@ export function GroupDetailPage({
           : selectedNeedsPayment
             ? "Amount not recorded"
             : "Registered";
-  const memberDisplayName = member => member?.username || member?.name || member?.email?.split("@")[0] || "Member";
+  const memberDisplayName = member => member?.username || member?.name || "Member";
   const togglePaymentDetails = paymentId => {
     setExpandedPaymentIds(prev => ({ ...prev, [paymentId]: !prev[paymentId] }));
   };
@@ -615,7 +615,7 @@ export function GroupDetailPage({
   const pendingMembers = members.filter(member => member.status === "pending");
   const activeMembers = members.filter(member => !["pending", "rejected", "removed", "left", "blocked"].includes(member.status));
   const memberNameByUid = useMemo(() => activeMembers.reduce((acc, member) => {
-    acc[member.uid] = member.name || member.email || "Member";
+    acc[member.uid] = member.name || "Member";
     return acc;
   }, {}), [activeMembers]);
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
@@ -2244,16 +2244,7 @@ export function GroupDetailPage({
 
   const renderPawaPayChoice = ({ includeOrderOption = false } = {}) => {
     if (!selectedNeedsPayment) return null;
-    if (!ENABLE_PAWAPAY_PAYMENTS) {
-      return (
-        <div className="azam-pay-box">
-          <button className="group-btn primary" type="button" disabled>
-            Pay with mobile money - Coming soon
-          </button>
-          <span>Automatic mobile money confirmation will be available after live payment setup is approved.</span>
-        </div>
-      );
-    }
+    if (!ENABLE_PAWAPAY_PAYMENTS) return null;
     const amount = Number(selectedCollection?.amount || 0);
     return (
       <div className={`azam-pay-box ${showPawaPayOptions ? "expanded" : ""}`}>
@@ -4208,7 +4199,7 @@ export function GroupDetailPage({
                     return (
                       <label key={member.uid} className={`workgroup-member-option ${selected ? "selected" : ""}`}>
                         <input type="checkbox" checked={selected} onChange={() => toggleWorkGroupMember(member.uid)} />
-                        <span>{member.name || member.email || "Member"}</span>
+                        <span>{member.name || "Member"}</span>
                       </label>
                     );
                   })}

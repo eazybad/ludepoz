@@ -18,6 +18,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "android:assetlinks": "node scripts/create-assetlinks.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
