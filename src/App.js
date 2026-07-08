@@ -3938,6 +3938,25 @@ useEffect(() => {
     }
   };
 
+  const getOtpErrorMessage = (err) => {
+    const message = err?.message || "";
+    if (message) return message;
+    switch (err?.code) {
+      case "functions/deadline-exceeded":
+        return "Code expired. Please request another code.";
+      case "functions/permission-denied":
+        return "Wrong OTP code. Please check it and try again.";
+      case "functions/resource-exhausted":
+        return "Too many attempts. Please request another code.";
+      case "functions/already-exists":
+        return "That account already exists. Log in instead.";
+      case "functions/not-found":
+        return "Request a new code first.";
+      default:
+        return "Could not verify OTP. Please request another code and try again.";
+    }
+  };
+
   const cachedDiscoverCount =
     cachedDiscoverFeed.listings.length +
     cachedDiscoverFeed.services.length +
@@ -4009,7 +4028,7 @@ useEffect(() => {
       finishSignupFlow(signupName || `@${normalizeSignupUsername(signupUsername)}`, true);
     } catch (err) {
       console.error("Signup OTP verify failed:", err);
-      setError("Wrong or expired OTP. Please request another code and try again.");
+      setError(getOtpErrorMessage(err));
       setSignupOtpBusy(false);
     }
   };
@@ -4136,7 +4155,7 @@ useEffect(() => {
       }
     } catch (err) {
       console.error("Login OTP verify error:", err);
-      setError(err?.message || "Wrong or expired OTP. Please request another code and try again.");
+      setError(getOtpErrorMessage(err));
       setLoading(false);
     }
   };
@@ -5230,29 +5249,14 @@ if (loading) {
         textAlign:'center'
       }}>
         <div style={{
-          width:'48px',
-          height:'48px',
-          borderRadius:'14px',
-          background:'#06d6c7',
-          color:'#0f1b2d',
-          display:'flex',
-          alignItems:'center',
-          justifyContent:'center',
-          fontSize:'22px',
-          fontWeight:'900',
-          marginBottom:'18px',
-          boxShadow:'0 10px 30px rgba(6,214,199,0.24)'
-        }}>
-          K
-        </div>
-        <div style={{
           fontFamily:'serif',
-          fontSize:'31px',
+          fontSize:'40px',
           fontWeight:'800',
           color:'#fff',
           letterSpacing:'0',
           lineHeight:1,
-          marginBottom:'18px'
+          marginBottom:'22px',
+          textShadow:'0 14px 34px rgba(6,214,199,0.18)'
         }}>
           Kam<em style={{color:'#06d6c7'}}>pa</em>sika
         </div>
@@ -7422,8 +7426,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <>
           {!user ? (
             <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'#f6f8fb',display:'flex',alignItems:'center'}}>
-              <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'left'}}>
-                <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'#0f1b2d',marginBottom:'12px',lineHeight:1}}>
+              <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'center'}}>
+                <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'#0f1b2d',margin:'0 auto 14px',lineHeight:1,textAlign:'center'}}>
                   Kam<em style={{color:'#06d6c7'}}>pa</em>sika
                 </div>
                 <div style={{fontSize:'22px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.2,marginBottom:'12px'}}>
@@ -11406,13 +11410,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </div>
       )}
 
-      {/* Auth Modal */}
+      {/* Auth Page */}
       {showAuthModal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{setShowAuthModal(false);setError("");}}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px',maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}}>
-              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</h2>
-              <button onClick={()=>{setShowAuthModal(false);setError("");}} style={{background:'none',border:'none',fontSize:'24px',cursor:'pointer',color:'#8a9bb0'}}>×</button>
+        <div style={{position:'fixed',inset:0,background:'#f6f8fb',zIndex:500,display:'flex',alignItems:'stretch',justifyContent:'center',overflowY:'auto'}}>
+          <div style={{width:'100%',maxWidth:'440px',minHeight:'100dvh',padding:'42px 24px 28px',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'center'}}>
+            <div style={{position:'relative',marginBottom:'28px',textAlign:'center'}}>
+              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'#0f1b2d',margin:0,textAlign:'center'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</h2>
+              <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'#667085',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             </div>
             {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
             {authMode==="signup"?(

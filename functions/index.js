@@ -286,6 +286,31 @@ function usernameToAuthEmail(username) {
   return `${normalizeAuthUsername(username)}@kampasika.local`;
 }
 
+async function createOrReuseAuthUserForOtpSignup({ usernameKey, phone, displayUsername }) {
+  try {
+    return await admin.auth().createUser({
+      email: usernameToAuthEmail(usernameKey),
+      phoneNumber: phone,
+      displayName: displayUsername || `@${usernameKey}`,
+    });
+  } catch (err) {
+    if (err?.code !== "auth/phone-number-already-exists") {
+      throw err;
+    }
+
+    const existingUser = await admin.auth().getUserByPhoneNumber(phone);
+    const updates = {};
+    if (!existingUser.email) updates.email = usernameToAuthEmail(usernameKey);
+    if (!existingUser.displayName) updates.displayName = displayUsername || `@${usernameKey}`;
+    if (Object.keys(updates).length) {
+      await admin.auth().updateUser(existingUser.uid, updates).catch((updateErr) => {
+        console.warn("Could not update reused OTP auth user:", updateErr);
+      });
+    }
+    return existingUser;
+  }
+}
+
 async function findAuthUserByIdentifier(db, identifier) {
   const phone = normalizeTanzaniaPhone(identifier);
   if (phone) {
@@ -558,10 +583,10 @@ exports.verifyAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (req
       throw new HttpsError("already-exists", "That account already exists. Log in instead.");
     }
 
-    const authUser = await admin.auth().createUser({
-      email: usernameToAuthEmail(usernameKey),
-      phoneNumber: otp.phone,
-      displayName: otp.displayUsername || `@${usernameKey}`,
+    const authUser = await createOrReuseAuthUserForOtpSignup({
+      usernameKey,
+      phone: otp.phone,
+      displayUsername: otp.displayUsername,
     });
     uid = authUser.uid;
 
