@@ -3940,8 +3940,12 @@ useEffect(() => {
 
   const getOtpErrorMessage = (err) => {
     const message = err?.message || "";
-    if (message) return message;
+    if (message && message.toLowerCase() !== "internal") return message;
     switch (err?.code) {
+      case "functions/internal":
+        return "OTP was received, but sign in could not finish. Please request a new code and try again.";
+      case "functions/failed-precondition":
+        return "SMS verification is not configured correctly yet.";
       case "functions/deadline-exceeded":
         return "Code expired. Please request another code.";
       case "functions/permission-denied":

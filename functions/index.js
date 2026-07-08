@@ -286,6 +286,20 @@ function usernameToAuthEmail(username) {
   return `${normalizeAuthUsername(username)}@kampasika.local`;
 }
 
+function authOtpSignupError(err) {
+  switch (err?.code) {
+    case "auth/email-already-exists":
+      return new HttpsError("already-exists", "That username is already taken. Please choose another one.");
+    case "auth/invalid-phone-number":
+      return new HttpsError("invalid-argument", "Enter a valid Tanzania phone number.");
+    case "auth/invalid-email":
+      return new HttpsError("invalid-argument", "Please choose a valid username.");
+    default:
+      console.error("OTP signup auth user error:", err);
+      return new HttpsError("internal", "Could not create your account after verifying the OTP. Please try again.");
+  }
+}
+
 async function createOrReuseAuthUserForOtpSignup({ usernameKey, phone, displayUsername }) {
   try {
     return await admin.auth().createUser({
@@ -295,7 +309,7 @@ async function createOrReuseAuthUserForOtpSignup({ usernameKey, phone, displayUs
     });
   } catch (err) {
     if (err?.code !== "auth/phone-number-already-exists") {
-      throw err;
+      throw authOtpSignupError(err);
     }
 
     const existingUser = await admin.auth().getUserByPhoneNumber(phone);
@@ -303,9 +317,14 @@ async function createOrReuseAuthUserForOtpSignup({ usernameKey, phone, displayUs
     if (!existingUser.email) updates.email = usernameToAuthEmail(usernameKey);
     if (!existingUser.displayName) updates.displayName = displayUsername || `@${usernameKey}`;
     if (Object.keys(updates).length) {
-      await admin.auth().updateUser(existingUser.uid, updates).catch((updateErr) => {
+      try {
+        await admin.auth().updateUser(existingUser.uid, updates);
+      } catch (updateErr) {
+        if (updateErr?.code === "auth/email-already-exists") {
+          throw new HttpsError("already-exists", "That username is already taken. Please choose another one.");
+        }
         console.warn("Could not update reused OTP auth user:", updateErr);
-      });
+      }
     }
     return existingUser;
   }
@@ -418,6 +437,9 @@ exports.verifyPhoneOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (re
   }
 
   const apiKey = AFRICASTALKING_API_KEY.value();
+  if (!apiKey) {
+    throw new HttpsError("failed-precondition", "Africa's Talking SMS credentials are not configured.");
+  }
   const db = getFirestore();
   const otpRef = db.collection("phoneOtps").doc(uid);
   const otpSnap = await otpRef.get();
@@ -540,6 +562,9 @@ exports.verifyAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (req
   }
 
   const apiKey = AFRICASTALKING_API_KEY.value();
+  if (!apiKey) {
+    throw new HttpsError("failed-precondition", "Africa's Talking SMS credentials are not configured.");
+  }
   const db = getFirestore();
   const otpRef = db.collection("phoneAuthOtps").doc(requestId);
   const otpSnap = await otpRef.get();
@@ -625,7 +650,13 @@ exports.verifyAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (req
   }
 
   await otpRef.delete();
-  const token = await admin.auth().createCustomToken(uid);
+  let token = "";
+  try {
+    token = await admin.auth().createCustomToken(uid);
+  } catch (err) {
+    console.error("OTP custom token error:", err);
+    throw new HttpsError("internal", "OTP was verified, but sign in could not finish. Please try logging in again.");
+  }
   return { success: true, token, uid, phone: otp.phone };
 });
 
