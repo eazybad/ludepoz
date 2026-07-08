@@ -3945,7 +3945,7 @@ useEffect(() => {
       case "functions/internal":
         return "OTP was received, but sign in could not finish. Please request a new code and try again.";
       case "functions/failed-precondition":
-        return "SMS verification is not configured correctly yet.";
+        return "OTP was verified, but Firebase sign-in is not configured correctly yet.";
       case "functions/deadline-exceeded":
         return "Code expired. Please request another code.";
       case "functions/permission-denied":

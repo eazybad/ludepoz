@@ -649,14 +649,14 @@ exports.verifyAuthOtp = onCall({ secrets: [AFRICASTALKING_API_KEY] }, async (req
     }, { merge: true });
   }
 
-  await otpRef.delete();
   let token = "";
   try {
     token = await admin.auth().createCustomToken(uid);
   } catch (err) {
     console.error("OTP custom token error:", err);
-    throw new HttpsError("internal", "OTP was verified, but sign in could not finish. Please try logging in again.");
+    throw new HttpsError("failed-precondition", "OTP was verified, but Firebase sign-in is not configured correctly yet.");
   }
+  await otpRef.delete();
   return { success: true, token, uid, phone: otp.phone };
 });
 
