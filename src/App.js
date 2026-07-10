@@ -2060,16 +2060,15 @@ useEffect(() => {
     }
     try {
       setUploading(true);
-      const photoUrls = [];
-      if (createRoomData.photoFiles.length > 0) {
-        for (let i = 0; i < createRoomData.photoFiles.length; i++) {
-          const original = createRoomData.photoFiles[i];
-          const { file } = await safeCompress(original, COMPRESSION_PRESETS.room);
-          const storageRef = ref(storage, `rooms/${Date.now()}_${i}.jpg`);
-          const snapshot = await uploadBytes(storageRef, file);
-          photoUrls.push(await getDownloadURL(snapshot.ref));
-        }
-      }
+      const uploadTs = Date.now();
+      const photoUrls = createRoomData.photoFiles.length > 0
+        ? await Promise.all(createRoomData.photoFiles.map(async (original, i) => {
+            const { file } = await safeCompress(original, COMPRESSION_PRESETS.room);
+            const storageRef = ref(storage, `rooms/${uploadTs}_${i}.jpg`);
+            const snapshot = await uploadBytes(storageRef, file);
+            return getDownloadURL(snapshot.ref);
+          }))
+        : [];
       // eslint-disable-next-line no-unused-vars
       let videoUrl = null;
       await addDoc(collection(db, "rooms"), {
@@ -4351,18 +4350,16 @@ useEffect(() => {
     setError("");
     setUploading(true);
     
-    // Upload multiple photos (compressed on-device first to save data + storage)
-    const photoUrls = [];
-    if (createData.photoFiles.length > 0) {
-      for (let i = 0; i < createData.photoFiles.length; i++) {
-        const original = createData.photoFiles[i];
-        const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
-        const storageRef = ref(storage, `listings/${user.uid}_${Date.now()}_${i}.jpg`);
-        const snapshot = await uploadBytes(storageRef, file);
-        const url = await getDownloadURL(snapshot.ref);
-        photoUrls.push(url);
-      }
-    }
+    // Upload multiple photos in parallel (compressed on-device first to save data + storage)
+    const listingUploadTs = Date.now();
+    const photoUrls = createData.photoFiles.length > 0
+      ? await Promise.all(createData.photoFiles.map(async (original, i) => {
+          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
+          const storageRef = ref(storage, `listings/${user.uid}_${listingUploadTs}_${i}.jpg`);
+          const snapshot = await uploadBytes(storageRef, file);
+          return getDownloadURL(snapshot.ref);
+        }))
+      : [];
 
     await addDoc(collection(db, "listings"), {
       userId: user.uid,
@@ -4445,17 +4442,15 @@ useEffect(() => {
       setError("");
       setUploading(true);
       
-      const photoUrls = [];
-      if (createServiceData.photoFiles.length > 0) {
-        for (let i = 0; i < createServiceData.photoFiles.length; i++) {
-          const original = createServiceData.photoFiles[i];
-          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
-          const storageRef = ref(storage, `services/${user.uid}_${Date.now()}_${i}.jpg`);
-          const snapshot = await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(snapshot.ref);
-          photoUrls.push(url);
-        }
-      }
+      const serviceUploadTs = Date.now();
+      const photoUrls = createServiceData.photoFiles.length > 0
+        ? await Promise.all(createServiceData.photoFiles.map(async (original, i) => {
+            const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
+            const storageRef = ref(storage, `services/${user.uid}_${serviceUploadTs}_${i}.jpg`);
+            const snapshot = await uploadBytes(storageRef, file);
+            return getDownloadURL(snapshot.ref);
+          }))
+        : [];
 
       await addDoc(collection(db, "services"), {
         userId: user.uid,
@@ -4593,21 +4588,22 @@ useEffect(() => {
     try {
       setUploading(true);
       setCollectionUploadStatus(createCollectionData.photoFiles.length > 0 ? "Preparing poster..." : isEventCollection ? "Creating event..." : "Creating order...");
-      const photoUrls = [];
+      let photoUrls = [];
       if (createCollectionData.photoFiles.length > 0) {
-        for (let i = 0; i < createCollectionData.photoFiles.length; i++) {
-          try {
-            const original = createCollectionData.photoFiles[i];
-            setCollectionUploadStatus(`Compressing poster ${i + 1} of ${createCollectionData.photoFiles.length}...`);
-            const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
-            setCollectionUploadStatus(`Uploading poster ${i + 1} of ${createCollectionData.photoFiles.length}...`);
-            const storageRef = ref(storage, `collections/${user.uid}_${Date.now()}_${i}.jpg`);
-            const snapshot = await uploadBytes(storageRef, file);
-            photoUrls.push(await getDownloadURL(snapshot.ref));
-          } catch (photoError) {
-            console.error("Collection poster upload failed:", photoError);
-            setCollectionUploadStatus("Poster upload failed. Creating event without poster...");
-          }
+        const totalPosters = createCollectionData.photoFiles.length;
+        setCollectionUploadStatus(totalPosters > 1 ? `Uploading ${totalPosters} posters...` : "Uploading poster...");
+        const collectionUploadTs = Date.now();
+        const results = await Promise.allSettled(createCollectionData.photoFiles.map(async (original, i) => {
+          const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
+          const storageRef = ref(storage, `collections/${user.uid}_${collectionUploadTs}_${i}.jpg`);
+          const snapshot = await uploadBytes(storageRef, file);
+          return getDownloadURL(snapshot.ref);
+        }));
+        photoUrls = results.filter(r => r.status === "fulfilled").map(r => r.value);
+        const failedCount = results.length - photoUrls.length;
+        if (failedCount > 0) {
+          results.forEach(r => { if (r.status === "rejected") console.error("Collection poster upload failed:", r.reason); });
+          setCollectionUploadStatus(photoUrls.length > 0 ? `${failedCount} poster(s) failed to upload, continuing...` : "Poster upload failed. Creating event without poster...");
         }
       }
       setCollectionUploadStatus(isEventCollection ? "Creating event..." : "Creating order...");
@@ -7737,6 +7733,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{marginTop:"12px",background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea"}}>
                   <div style={{fontSize:"13px",fontWeight:"800",color:"#0f1b2d",marginBottom:"8px"}}>Admin tools</div>
                   <div style={{display:"flex",gap:"8px"}}><input type="text" id="coAdminEmail" placeholder="co-admin account ID" style={{flex:1,padding:"10px",border:"1.5px solid #e2e6ea",borderRadius:"8px",fontSize:"14px",outline:"none",boxSizing:"border-box"}}/><button onClick={async()=>{ const emailInput = document.getElementById("coAdminEmail"); const email = emailInput?.value?.trim(); if (!email) return; try { await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] }); setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]}); emailInput.value = ""; setSuccess("Co-admin added!"); setTimeout(()=>setSuccess(""),2000); } catch(e){ setError("Failed: "+e.message); } }} style={{padding:"10px 14px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}>Add</button></div>
+                  {canArchiveGroup(viewingGroup) && (
+                    <div style={{marginTop:"14px",paddingTop:"14px",borderTop:"1px solid #f1f4f8"}}>
+                      <div style={{fontSize:"12px",color:"#8a9bb0",marginBottom:"8px"}}>Deleting a group permanently removes it and its data for all members. This cannot be undone.</div>
+                      <button
+                        type="button"
+                        onClick={() => handleArchiveGroup(viewingGroup, "delete")}
+                        style={{width:"100%",padding:"10px 14px",background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}
+                      >
+                        🗑️ Delete group
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -9228,7 +9236,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     >
       {ENABLE_ROOMS ? 'ON' : 'OFF'}
     </button>
-</div>}
+</div>
 </div>
 
 
