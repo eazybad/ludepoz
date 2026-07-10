@@ -3638,13 +3638,7 @@ await updateDoc(convRef, {
     setIsStandalone(standalone);
     if (standalone) return; // Already installed, don't show banner
 
-    // Check if user already dismissed the banner
-    const dismissed = localStorage.getItem('installBannerDismissed');
-    if (dismissed) {
-      const dismissedAt = parseInt(dismissed);
-      // Show again after 7 days
-      if (Date.now() - dismissedAt < 7 * 24 * 60 * 60 * 1000) return;
-    }
+    localStorage.removeItem('installBannerDismissed');
 
     // Detect iOS
     const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
@@ -3678,14 +3672,12 @@ await updateDoc(convRef, {
     const result = await deferredPrompt.userChoice;
     if (result.outcome === 'accepted') {
       setShowInstallBanner(false);
-      localStorage.setItem('installBannerDismissed', Date.now().toString());
     }
     setDeferredPrompt(null);
   };
 
   const dismissInstallBanner = () => {
     setShowInstallBanner(false);
-    localStorage.setItem('installBannerDismissed', Date.now().toString());
   };
 
   useEffect(() => {
