@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, onAuthStateChanged, signOut, updatePassword } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { QRCodeSVG } from 'qrcode.react';
@@ -4356,8 +4356,15 @@ useEffect(() => {
       ? await Promise.all(createData.photoFiles.map(async (original, i) => {
           const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `listings/${user.uid}_${listingUploadTs}_${i}.jpg`);
-          const snapshot = await uploadBytes(storageRef, file);
-          return getDownloadURL(snapshot.ref);
+          const uploadTask = uploadBytesResumable(storageRef, file);
+          await new Promise((resolve, reject) => {
+            uploadTask.on('state_changed',
+              null,
+              (error) => reject(error),
+              async () => resolve()
+            );
+          });
+          return getDownloadURL(uploadTask.snapshot.ref);
         }))
       : [];
 
