@@ -1139,7 +1139,6 @@ export function GroupDetailPage({
   useEffect(() => {
     const context = getMentionContext(messageText, messageText.length);
     if (context && context.query.length >= 1) {
-      setMentionQuery(context.query);
       const query = context.query.toLowerCase();
       const filtered = activeMembers.filter(member => {
         const handle = memberMentionHandle(member).toLowerCase();
@@ -1356,7 +1355,6 @@ export function GroupDetailPage({
     setMessageText(`${before}@${handle} ${after}`);
     setShowMentionSuggestions(false);
     setMentionSuggestions([]);
-    setMentionQuery("");
   };
 
   const handleReactToMessage = async (message, emoji) => {
