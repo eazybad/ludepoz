@@ -1162,13 +1162,8 @@
   background-position: center;
 }
 
-.chat-panel.light-mode {
-  background-image: linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url("/groupwallpaper-light.jpeg");
-}
-
 .chat-panel.dark-mode {
   background-color: #0b141a;
-  background-image: linear-gradient(rgba(11,20,26,0.85), rgba(11,20,26,0.85)), url("/groupwallpaper-dark.jpeg");
 }
 
 .chat-panel.composer-open {
@@ -1346,6 +1341,97 @@
 
 .dark-mode .message-attachment span {
   color: #8696a0;
+}
+
+.attachment-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #0f766e;
+}
+
+.dark-mode .attachment-type-icon {
+  color: #5dcaa5;
+}
+
+.attachment-type-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.message-attachment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.attachment-download-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: #54656f;
+}
+
+.dark-mode .attachment-download-icon {
+  color: #8696a0;
+}
+
+.attachment-download-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-image-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 240px;
+}
+
+.message-image-grid.count-1 {
+  grid-template-columns: 1fr;
+}
+
+.message-image-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background-color: #d3d1c7;
+  background-size: cover;
+  background-position: center;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.message-image-grid.count-1 .message-image-thumb {
+  aspect-ratio: 4 / 3;
+}
+
+.message-image-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #ffffff;
+}
+
+.message-image-overlay svg {
+  width: 18px;
+  height: 18px;
+  stroke: #ffffff;
+}
+
+.message-image-overlay small {
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .message-reply-preview {
@@ -1679,7 +1765,7 @@
   gap: 6px;
 }
 
-.chat-attachment-preview span {
+.chat-attachment-preview > span {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1692,11 +1778,50 @@
   font-weight: 800;
 }
 
+.dark-mode .chat-attachment-preview > span {
+  border-color: rgba(134, 150, 160, 0.2);
+  background: #202c33;
+  color: #e9edef;
+}
+
+.attachment-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-progress-ring {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .upload-progress-text {
   color: #0f766e;
   font-size: 10px;
   font-weight: 900;
-  margin-left: auto;
+  margin-left: 4px;
+}
+
+.dark-mode .upload-progress-text {
+  color: #5dcaa5;
+}
+
+.attachment-cancel-btn {
+  background: #fee2e2 !important;
+}
+
+.dark-mode .attachment-cancel-btn {
+  background: rgba(239, 68, 68, 0.25) !important;
+}
+
+.attachment-cancel-btn svg {
+  stroke: #b91c1c;
+}
+
+.dark-mode .attachment-cancel-btn svg {
+  stroke: #fca5a5;
 }
 
 .mention-suggestions-dropdown {

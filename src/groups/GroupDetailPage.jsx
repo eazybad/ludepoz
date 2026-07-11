@@ -368,6 +368,14 @@ function inferResourceType(value = "") {
   return "";
 }
 
+function formatBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size <= 0) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function resourcePreviewKind(resource = {}) {
   const type = String(resource.resourceType || "").toLowerCase();
   const source = [
@@ -517,6 +525,8 @@ export function GroupDetailPage({
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [chatAttachmentUploadIds, setChatAttachmentUploadIds] = useState([]);
+  const chatUploadTasksRef = useRef({});
+  const cancelledUploadIdsRef = useRef(new Set());
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
   const [showGroupAbout, setShowGroupAbout] = useState(false);
@@ -1267,7 +1277,8 @@ export function GroupDetailPage({
         const fileRef = ref(storage, filePath);
         
         const uploadTask = uploadBytesResumable(fileRef, uploadFile);
-        
+        chatUploadTasksRef.current[uploadId] = uploadTask;
+
         await new Promise((resolve, reject) => {
           uploadTask.on('state_changed', 
             (snapshot) => {
@@ -1275,20 +1286,32 @@ export function GroupDetailPage({
               setUploadProgress(prev => ({ ...prev, [uploadId]: progress }));
             },
             (error) => {
+              delete chatUploadTasksRef.current[uploadId];
               setUploadProgress(prev => {
                 const next = { ...prev };
                 delete next[uploadId];
                 return next;
               });
+              if (cancelledUploadIdsRef.current.has(uploadId) || error?.code === "storage/canceled") {
+                cancelledUploadIdsRef.current.delete(uploadId);
+                resolve();
+                return;
+              }
               reject(error);
             },
             async () => {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              delete chatUploadTasksRef.current[uploadId];
               setUploadProgress(prev => {
                 const next = { ...prev };
                 delete next[uploadId];
                 return next;
               });
+              if (cancelledUploadIdsRef.current.has(uploadId)) {
+                cancelledUploadIdsRef.current.delete(uploadId);
+                resolve();
+                return;
+              }
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
               attachments.push({
                 name: file.name,
                 url,
@@ -1358,8 +1381,20 @@ export function GroupDetailPage({
   };
 
   const removeChatAttachment = (index) => {
+    const uploadId = chatAttachmentUploadIds[index];
+    const activeTask = uploadId && chatUploadTasksRef.current[uploadId];
+    if (activeTask) {
+      cancelledUploadIdsRef.current.add(uploadId);
+      activeTask.cancel();
+      delete chatUploadTasksRef.current[uploadId];
+    }
     setChatAttachments(prev => prev.filter((_, itemIndex) => itemIndex !== index));
     setChatAttachmentUploadIds(prev => prev.filter((_, itemIndex) => itemIndex !== index));
+    setUploadProgress(prev => {
+      const next = { ...prev };
+      if (uploadId) delete next[uploadId];
+      return next;
+    });
   };
 
   const handleSelectMention = (member) => {
@@ -3067,7 +3102,14 @@ export function GroupDetailPage({
       )}
 
       {canViewGroupContent && activeTab === "chats" && (
-        <div className={`group-panel chat-panel ${isDarkMode ? "dark-mode" : "light-mode"} ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
+        <div
+          className={`group-panel chat-panel ${isDarkMode ? "dark-mode" : "light-mode"} ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}
+          style={{
+            backgroundImage: isDarkMode
+              ? `linear-gradient(rgba(11,20,26,0.85), rgba(11,20,26,0.85)), url(${process.env.PUBLIC_URL}/groupwallpaper-dark.jpeg)`
+              : `linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url(${process.env.PUBLIC_URL}/groupwallpaper-light.jpeg)`,
+          }}
+        >
           {currentAction?.description && (
             <div className="group-pin-float" aria-label="Pinned update">
               <strong>Pinned update:</strong>{" "}
@@ -3109,30 +3151,57 @@ export function GroupDetailPage({
                       </div>
                     )}
                     {message.text && <div className="message-text">{message.text}</div>}
-                    {message.attachments?.length > 0 && (
-                      <div className="message-attachments">
-                        {message.attachments.map((attachment, attachmentIndex) => (
-                          <button
-                            key={`${attachment.url || attachment.name}-${attachmentIndex}`}
-                            type="button"
-                            className="message-attachment"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleOpenResourceInApp({
-                                title: attachment.name,
-                                text: attachment.name,
-                                url: attachment.url,
-                                fileName: attachment.name,
-                                resourceType: attachment.resourceType || inferResourceType(attachment.name || attachment.url || ""),
-                              });
-                            }}
-                          >
-                            <strong>{attachment.name || "Attachment"}</strong>
-                            <span>{attachment.resourceType || inferResourceType(attachment.name || attachment.url || "") || "File"}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {message.attachments?.length > 0 && (() => {
+                      const openAttachment = (attachment) => handleOpenResourceInApp({
+                        title: attachment.name,
+                        text: attachment.name,
+                        url: attachment.url,
+                        fileName: attachment.name,
+                        resourceType: attachment.resourceType || inferResourceType(attachment.name || attachment.url || ""),
+                      });
+                      const imageAttachments = message.attachments.filter(a => (a.resourceType || inferResourceType(a.name || a.url || "")) === "Image");
+                      const fileAttachments = message.attachments.filter(a => (a.resourceType || inferResourceType(a.name || a.url || "")) !== "Image");
+                      const totalImageBytes = imageAttachments.reduce((sum, a) => sum + (Number(a.size) || 0), 0);
+                      return (
+                        <div className="message-attachments">
+                          {imageAttachments.length > 0 && (
+                            <div className={`message-image-grid count-${Math.min(imageAttachments.length, 4)}`}>
+                              {imageAttachments.slice(0, 4).map((attachment, attachmentIndex) => (
+                                <button
+                                  key={`${attachment.url || attachment.name}-${attachmentIndex}`}
+                                  type="button"
+                                  className="message-image-thumb"
+                                  style={{ backgroundImage: `url(${attachment.url})` }}
+                                  onClick={(event) => { event.stopPropagation(); openAttachment(attachment); }}
+                                >
+                                  {attachmentIndex === 3 && imageAttachments.length > 4 && (
+                                    <span className="message-image-overlay">
+                                      <MenuIcon name="down" />
+                                      <small>{formatBytes(totalImageBytes)} · picha {imageAttachments.length}</small>
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {fileAttachments.map((attachment, attachmentIndex) => (
+                            <button
+                              key={`${attachment.url || attachment.name}-file-${attachmentIndex}`}
+                              type="button"
+                              className="message-attachment"
+                              onClick={(event) => { event.stopPropagation(); openAttachment(attachment); }}
+                            >
+                              <span className="attachment-type-icon"><MenuIcon name="file" /></span>
+                              <span className="message-attachment-meta">
+                                <strong>{attachment.name || "Attachment"}</strong>
+                                <span>{attachment.resourceType || inferResourceType(attachment.name || attachment.url || "") || "File"}{attachment.size ? ` · ${formatBytes(attachment.size)}` : ""}</span>
+                              </span>
+                              <span className="attachment-download-icon"><MenuIcon name="down" /></span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {message.reactions && Object.keys(message.reactions).length > 0 && (
                       <div className="message-reactions">
                         {Object.entries(
@@ -3262,13 +3331,34 @@ export function GroupDetailPage({
                         {chatAttachments.map((file, index) => {
                           const uploadId = chatAttachmentUploadIds[index];
                           const progress = uploadProgress[uploadId];
+                          const isUploading = progress !== undefined;
+                          const isImage = /^image\//.test(file.type || "") || /\.(png|jpe?g|webp|gif)$/i.test(file.name || "");
+                          const ringCircumference = 2 * Math.PI * 9;
+                          const ringOffset = ringCircumference * (1 - Math.min(100, Math.max(0, progress || 0)) / 100);
                           return (
-                            <span key={`${file.name}-${index}`}>
-                              {file.name}
-                              {progress !== undefined && (
+                            <span key={`${file.name}-${index}`} className={isUploading ? "uploading" : ""}>
+                              {isUploading ? (
+                                <span className="upload-progress-ring" aria-hidden="true">
+                                  <svg width="24" height="24" viewBox="0 0 24 24" style={{ transform: "rotate(-90deg)" }}>
+                                    <circle cx="12" cy="12" r="9" fill="none" stroke="var(--upload-ring-track, rgba(15,110,86,0.25))" strokeWidth="2.5" />
+                                    <circle cx="12" cy="12" r="9" fill="none" stroke="var(--upload-ring-active, #0f6e56)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={ringCircumference} strokeDashoffset={ringOffset} />
+                                  </svg>
+                                </span>
+                              ) : isImage ? (
+                                <span className="attachment-type-icon"><MenuIcon name="image" /></span>
+                              ) : (
+                                <span className="attachment-type-icon"><MenuIcon name="file" /></span>
+                              )}
+                              <span className="attachment-file-name">{file.name}</span>
+                              {isUploading && (
                                 <small className="upload-progress-text">{Math.round(progress)}%</small>
                               )}
-                              <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeChatAttachment(index)}>
+                              <button
+                                type="button"
+                                className={isUploading ? "attachment-cancel-btn" : ""}
+                                aria-label={isUploading ? `Cancel upload of ${file.name}` : `Remove ${file.name}`}
+                                onClick={() => removeChatAttachment(index)}
+                              >
                                 <MenuIcon name="close" />
                               </button>
                             </span>
