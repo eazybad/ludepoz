@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { getBlob, getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getBlob, getDownloadURL, ref, uploadBytes, uploadBytesResumable } from "firebase/storage";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { compressImage, COMPRESSION_PRESETS } from "../imageCompression";
 import "./GroupComponents.css";
@@ -277,6 +277,7 @@ function MenuIcon({ name }) {
     qr: <><path d="M4 4h6v6H4z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6H4z" /><path d="M14 14h2v2h-2z" /><path d="M18 14h2v6h-2z" /><path d="M14 18h2v2h-2z" /></>,
     back: <><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></>,
     leave: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
+    trash: <><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></>,
     send: <><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7Z" /></>,
     down: <><path d="M12 5v14" /><path d="M19 12l-7 7-7-7" /></>,
     plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
@@ -311,6 +312,44 @@ function formatMessageDay(value) {
   if (sameMessageDay(value, today)) return "Today";
   if (sameMessageDay(value, yesterday)) return "Yesterday";
   return value.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function normalizeMentionKey(value = "") {
+  return String(value).toLowerCase().replace(/@/g, "").replace(/[^a-z0-9]+/g, "");
+}
+
+function memberMentionHandle(member) {
+  const label = member?.username || member?.name || member?.fullName || member?.email || "member";
+  return String(label).split(/\s+/)[0].replace(/^@+/, "");
+}
+
+function getMentionContext(text, cursorPos) {
+  const before = text.slice(0, cursorPos);
+  const match = before.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
+  if (!match) return null;
+  return {
+    query: match[2] || "",
+    start: before.length - match[2].length - 1,
+  };
+}
+
+function renderMessageWithMentions(text) {
+  if (!text) return null;
+  const nodes = [];
+  const regex = /(^|\s)(@[a-zA-Z0-9._-]+)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    nodes.push(
+      <span key={`${match.index}-${match[2]}`} className="message-mention">
+        {match[1]}{match[2]}
+      </span>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes.length ? nodes : text;
 }
 
 function statusClass(status) {
@@ -412,6 +451,7 @@ export function GroupDetailPage({
   joiningGroup,
   onShareGroup,
   onLeaveGroup,
+  onDeleteGroup,
   onMarkRead,
   onError,
   onSuccess,
@@ -480,6 +520,12 @@ export function GroupDetailPage({
   const [groupUploadStatus, setGroupUploadStatus] = useState("");
   const [pendingEventPhotoPreviews, setPendingEventPhotoPreviews] = useState({});
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
+  const [mentionSuggestions, setMentionSuggestions] = useState([]);
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [uploadControllers, setUploadControllers] = useState({});
+  const [chatAttachmentUploadIds, setChatAttachmentUploadIds] = useState([]);
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
   const [showGroupAbout, setShowGroupAbout] = useState(false);
@@ -612,8 +658,8 @@ export function GroupDetailPage({
         ].some(value => String(value || "").toLowerCase().includes(term));
       })
     : payments;
-  const pendingMembers = members.filter(member => member.status === "pending");
-  const activeMembers = members.filter(member => !["pending", "rejected", "removed", "left", "blocked"].includes(member.status));
+  const pendingMembers = useMemo(() => members.filter(member => member.status === "pending"), [members]);
+  const activeMembers = useMemo(() => members.filter(member => !["pending", "rejected", "removed", "left", "blocked"].includes(member.status)), [members]);
   const memberNameByUid = useMemo(() => activeMembers.reduce((acc, member) => {
     acc[member.uid] = member.name || "Member";
     return acc;
@@ -1116,6 +1162,25 @@ export function GroupDetailPage({
   }, [group.mentionPermission]);
 
   useEffect(() => {
+    const context = getMentionContext(messageText, messageText.length);
+    if (context && context.query.length >= 1) {
+      setMentionQuery(context.query);
+      const query = context.query.toLowerCase();
+      const filtered = activeMembers.filter(member => {
+        const handle = memberMentionHandle(member).toLowerCase();
+        const name = (member.name || "").toLowerCase();
+        return handle.includes(query) || name.includes(query);
+      }).slice(0, 5);
+      setMentionSuggestions(filtered);
+      setShowMentionSuggestions(true);
+    } else {
+      setShowMentionSuggestions(false);
+      setMentionSuggestions([]);
+      setMentionQuery("");
+    }
+  }, [messageText, activeMembers]);
+
+  useEffect(() => {
     setNotificationPrefsDraft({
       ...DEFAULT_GROUP_NOTIFICATION_PREFS,
       ...(currentMember?.notificationPrefs || {}),
@@ -1198,18 +1263,53 @@ export function GroupDetailPage({
         throw new Error("File upload is not ready. Try again in a moment.");
       }
       const attachments = [];
-      for (const file of chatAttachments) {
+      setUploadProgress(prev => {
+        const next = { ...prev };
+        chatAttachmentUploadIds.forEach(id => next[id] = 0);
+        return next;
+      });
+      
+      for (let i = 0; i < chatAttachments.length; i++) {
+        const file = chatAttachments[i];
+        const uploadId = chatAttachmentUploadIds[i];
         const uploadFile = await prepareResourceUploadFile(file);
         const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "attachment";
         const filePath = `groups/${group.id}/chat/${user.uid}_${Date.now()}_${safeName}`;
-        const snap = await uploadBytes(ref(storage, filePath), uploadFile);
-        const url = await getDownloadURL(snap.ref);
-        attachments.push({
-          name: file.name,
-          url,
-          size: uploadFile.size,
-          contentType: uploadFile.type || file.type || "",
-          resourceType: inferResourceType(uploadFile.name || file.name) || "File",
+        const fileRef = ref(storage, filePath);
+        
+        const uploadTask = uploadBytesResumable(fileRef, uploadFile);
+        
+        await new Promise((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadProgress(prev => ({ ...prev, [uploadId]: progress }));
+            },
+            (error) => {
+              setUploadProgress(prev => {
+                const next = { ...prev };
+                delete next[uploadId];
+                return next;
+              });
+              reject(error);
+            },
+            async () => {
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              setUploadProgress(prev => {
+                const next = { ...prev };
+                delete next[uploadId];
+                return next;
+              });
+              attachments.push({
+                name: file.name,
+                url,
+                size: uploadFile.size,
+                contentType: uploadFile.type || file.type || "",
+                resourceType: inferResourceType(uploadFile.name || file.name) || "File",
+              });
+              resolve();
+            }
+          );
         });
       }
       const messageRef = await sendGroupMessage(db, {
@@ -1237,6 +1337,7 @@ export function GroupDetailPage({
       }
       setMessageText("");
       setChatAttachments([]);
+      setChatAttachmentUploadIds([]);
       setShowChatComposer(false);
       setShowChatTools(false);
       setReplyToMessage(null);
@@ -1253,6 +1354,10 @@ export function GroupDetailPage({
     event.target.value = "";
     if (files.length === 0) return;
     setChatAttachments(prev => [...prev, ...files]);
+    setChatAttachmentUploadIds(prev => [
+      ...prev,
+      ...files.map((file, index) => `${file.name}-${prev.length + index}-${Date.now()}`)
+    ]);
     setShowChatComposer(true);
     setShowChatTools(false);
   };
@@ -1265,6 +1370,19 @@ export function GroupDetailPage({
 
   const removeChatAttachment = (index) => {
     setChatAttachments(prev => prev.filter((_, itemIndex) => itemIndex !== index));
+    setChatAttachmentUploadIds(prev => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const handleSelectMention = (member) => {
+    const context = getMentionContext(messageText, messageText.length);
+    if (!context) return;
+    const handle = memberMentionHandle(member);
+    const before = messageText.slice(0, context.start);
+    const after = messageText.slice(context.start + context.query.length + 1);
+    setMessageText(`${before}@${handle} ${after}`);
+    setShowMentionSuggestions(false);
+    setMentionSuggestions([]);
+    setMentionQuery("");
   };
 
   const handleReactToMessage = async (message, emoji) => {
@@ -2629,6 +2747,12 @@ export function GroupDetailPage({
     }
   };
 
+  const handleDeleteGroup = () => {
+    if (!onDeleteGroup || !memberCanEditGroup) return;
+    setMenuOpen(false);
+    onDeleteGroup(group, "delete");
+  };
+
   const renderTrackerForm = () => (
     <div className="payment-card group-create-card">
       {editingTrackerId && <div className="payment-alert compact">Editing existing {trackerData.collectionType === "event" ? "event" : trackerData.collectionType === "order" ? "order" : "payment tracker"}</div>}
@@ -2767,6 +2891,13 @@ export function GroupDetailPage({
                         <button type="button" className="group-menu-item danger" disabled={busy} onClick={handleLeaveGroup}>
                           <span><MenuIcon name="leave" /></span>
                           <strong>Leave group</strong>
+                        </button>
+                      )}
+                      <div className="group-menu-divider" />
+                      {memberCanEditGroup && onDeleteGroup && (
+                        <button type="button" className="group-menu-item danger" disabled={busy} onClick={handleDeleteGroup}>
+                          <span><MenuIcon name="trash" /></span>
+                          <strong>Delete group</strong>
                         </button>
                       )}
                     </>
@@ -3139,13 +3270,35 @@ export function GroupDetailPage({
                     )}
                     {chatAttachments.length > 0 && (
                       <div className="chat-attachment-preview">
-                        {chatAttachments.map((file, index) => (
-                          <span key={`${file.name}-${index}`}>
-                            {file.name}
-                            <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeChatAttachment(index)}>
-                              <MenuIcon name="close" />
-                            </button>
-                          </span>
+                        {chatAttachments.map((file, index) => {
+                          const uploadId = chatAttachmentUploadIds[index];
+                          const progress = uploadProgress[uploadId];
+                          return (
+                            <span key={`${file.name}-${index}`}>
+                              {file.name}
+                              {progress !== undefined && (
+                                <small className="upload-progress-text">{Math.round(progress)}%</small>
+                              )}
+                              <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeChatAttachment(index)}>
+                                <MenuIcon name="close" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {showMentionSuggestions && mentionSuggestions.length > 0 && (
+                      <div className="mention-suggestions-dropdown">
+                        {mentionSuggestions.map(member => (
+                          <button
+                            key={member.uid}
+                            type="button"
+                            className="mention-suggestion-item"
+                            onClick={() => handleSelectMention(member)}
+                          >
+                            <span className="mention-suggestion-name">{member.name || "Member"}</span>
+                            <span className="mention-suggestion-handle">@{memberMentionHandle(member)}</span>
+                          </button>
                         ))}
                       </div>
                     )}

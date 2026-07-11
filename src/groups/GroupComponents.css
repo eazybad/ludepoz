@@ -217,8 +217,14 @@
   box-sizing: border-box;
 }
 
-.group-card + .group-card {
-  margin-top: 8px;
+.group-card-wrap {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.group-card-wrap.has-selection {
+  z-index: 20;
 }
 
 .group-card.selected {
@@ -228,33 +234,29 @@
 }
 
 .group-selection-bar {
-  position: sticky;
-  top: 0;
+  position: absolute;
+  top: -50px;
+  left: 0;
+  right: 0;
   z-index: 30;
-  margin-bottom: 8px;
-  padding: 10px;
+  padding: 8px 10px;
   border: 1px solid #99f0ee;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.08);
-}
-
-.group-selection-bar strong {
-  display: block;
-  margin-bottom: 8px;
-  color: #0f1b2d;
-  font-size: 13px;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.12);
 }
 
 .group-selection-bar > div {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .group-selection-bar .group-btn {
+  flex: 1;
   padding: 8px 10px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .group-avatar {
@@ -1395,6 +1397,10 @@
   margin: 0 auto;
 }
 
+.chat-input-bar > * {
+  position: relative;
+}
+
 .chat-input-row {
   display: flex;
   align-items: center;
@@ -1597,14 +1603,68 @@
 .chat-attachment-preview span {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+  background: #f0fdfa;
   color: #0f1b2d;
   font-size: 12px;
   font-weight: 800;
-  overflow-wrap: anywhere;
 }
+
+.upload-progress-text {
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 900;
+  margin-left: auto;
+}
+
+.mention-suggestions-dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 12px;
+  right: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #99f0ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.15);
+  z-index: 65;
+  padding: 4px;
+}
+
+.mention-suggestion-item {
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mention-suggestion-item:hover {
+  background: #ecfeff;
+}
+
+.mention-suggestion-name {
+  color: #0f1b2d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mention-suggestion-handle {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 
 .chat-attachment-preview button {
   flex: 0 0 auto;

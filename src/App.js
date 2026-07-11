@@ -4326,12 +4326,12 @@ useEffect(() => {
     setTimeout(() => setError(""), 4000);
     return;
   }
-  if (!createData.title.trim()) {
+  if (!createData.title || !String(createData.title).trim()) {
     setError("Please add a title for your item.");
     setTimeout(() => setError(""), 4000);
     return;
   }
-  if (!createData.price.trim()) {
+  if (!createData.price || !String(createData.price).trim()) {
     setError("Please add the price.");
     setTimeout(() => setError(""), 4000);
     return;
@@ -4341,7 +4341,7 @@ useEffect(() => {
     setTimeout(() => setError(""), 4000);
     return;
   }
-  if (!createData.location.trim()) {
+  if (!createData.location || !String(createData.location).trim()) {
     setError("Please add the pickup or meeting location.");
     setTimeout(() => setError(""), 4000);
     return;
@@ -4352,7 +4352,7 @@ useEffect(() => {
     
     // Upload multiple photos in parallel (compressed on-device first to save data + storage)
     const listingUploadTs = Date.now();
-    const photoUrls = createData.photoFiles.length > 0
+    const photoUrls = createData.photoFiles && createData.photoFiles.length > 0
       ? await Promise.all(createData.photoFiles.map(async (original, i) => {
           const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `listings/${user.uid}_${listingUploadTs}_${i}.jpg`);
@@ -4363,22 +4363,22 @@ useEffect(() => {
 
     await addDoc(collection(db, "listings"), {
       userId: user.uid,
-      userName: userName,
-      userAvatar: userAvatar,
+      userName: userName || "Student",
+      userAvatar: userAvatar || null,
       // Stamp verification at creation time so badges display without lookups.
       // If the user later gets verified, OLDER listings won't show the badge —
       // that's fine; they can re-list, and new listings will reflect the new status.
       userIsVerified: isVerified || false,
       userVerificationBadge: isVerified ? (userAccountType === "provider" ? "provider" : "student") : null,
-      universityId: selectedUni.id,
-      universityName: selectedUni.short,
+      universityId: selectedUni?.id || 1,
+      universityName: selectedUni?.short || "ARU",
       category: createData.cat,
-      title: createData.title.trim(),
-      description: createData.desc.trim(),
+      title: String(createData.title || "").trim(),
+      description: String(createData.desc || "").trim(),
       price: parsedPrice,
-      condition: createData.cond,
-      location: createData.location.trim(),
-      whatsapp: createData.whatsapp.trim(),
+      condition: createData.cond || "",
+      location: String(createData.location || "").trim(),
+      whatsapp: String(createData.whatsapp || "").trim(),
       photoUrl: photoUrls[0] || null,        // Keep first photo as main
       photos: photoUrls,                      // ⭐ ADD ALL PHOTOS
       sold: false,
@@ -7605,6 +7605,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             }
           }}
           onLeaveGroup={closeGroupDetail}
+          onDeleteGroup={handleArchiveGroup}
           onMarkRead={markGroupRead}
           onBackHandlerChange={(handler) => {
             groupInternalBackRef.current = handler;

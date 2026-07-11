@@ -61,18 +61,29 @@ export function GroupListPage({
   };
 
   const filteredGroups = normalizedSearch
-    ? groups.filter(group => (
-      group.name?.toLowerCase().includes(normalizedSearch)
-      || group.desc?.toLowerCase().includes(normalizedSearch)
-      || groupTypes[group.type]?.toLowerCase().includes(normalizedSearch)
-    ))
+    ? groups.filter(group => {
+        try {
+          return (group.name?.toLowerCase().includes(normalizedSearch) || false)
+            || (group.desc?.toLowerCase().includes(normalizedSearch) || false)
+            || (groupTypes[group.type]?.toLowerCase().includes(normalizedSearch) || false);
+        } catch (err) {
+          console.error("Group filter error:", err);
+          return false;
+        }
+      })
     : groups;
   const selectedGroup = groups.find(group => group.id === selectedGroupId);
-  const recentGroups = filteredGroups.filter(group => (
-    group.lastActivityByUid !== currentUserId
-    && group.activityAt?.toMillis
-    && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
-  ));
+  const recentGroups = filteredGroups.filter(group => {
+    try {
+      const activityTime = group.activityAt?.toMillis?.() || group.activityAt?.getTime?.() || 0;
+      return group.lastActivityByUid !== currentUserId
+        && activityTime > 0
+        && activityTime > (groupReadAt[group.id] || 0);
+    } catch (err) {
+      console.error("Recent group filter error:", err);
+      return false;
+    }
+  });
 
   return (
     <div className="groups-page">
@@ -134,59 +145,62 @@ export function GroupListPage({
 
       <div className="group-section">
         <div className="group-section-title">My Groups</div>
-        {selectedGroup && canDeleteGroup(selectedGroup) && (
-          <div className="group-selection-bar">
-            <strong>{selectedGroup.name}</strong>
-            <div>
-              <button type="button" className="group-btn ghost" onClick={() => { onDeleteGroup?.(selectedGroup, "archive"); setSelectedGroupId(""); }}>Archive</button>
-              <button type="button" className="group-btn danger" onClick={() => { onDeleteGroup?.(selectedGroup, "delete"); setSelectedGroupId(""); }}>Delete</button>
-              <button type="button" className="group-btn ghost" onClick={() => setSelectedGroupId("")}>Cancel</button>
-            </div>
-          </div>
-        )}
         {filteredGroups.length > 0 ? (
-          filteredGroups.map(group => (
-            <button
-              key={group.id}
-              type="button"
-              className={`group-card ${selectedGroupId === group.id ? "selected" : ""}`}
-              onClick={() => handleGroupOpen(group)}
-              onContextMenu={event => {
-                if (!canDeleteGroup(group)) return;
-                event.preventDefault();
-                setSelectedGroupId(group.id);
-              }}
-              onMouseDown={() => startGroupLongPress(group)}
-              onMouseUp={clearLongPress}
-              onMouseLeave={clearLongPress}
-              onTouchStart={() => startGroupLongPress(group)}
-              onTouchEnd={clearLongPress}
-              onTouchCancel={clearLongPress}
-            >
-              <div
-                className="group-avatar"
-                style={{
-                  backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
-                {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
+          filteredGroups.map(group => {
+            const isSelected = selectedGroupId === group.id;
+            return (
+              <div key={group.id} className={`group-card-wrap${isSelected ? " has-selection" : ""}`}>
+                {isSelected && canDeleteGroup(group) && (
+                  <div className="group-selection-bar" role="toolbar" aria-label={`Actions for ${group.name}`}>
+                    <div>
+                      <button type="button" className="group-btn ghost" onClick={() => { onDeleteGroup?.(group, "archive"); setSelectedGroupId(""); }}>Archive</button>
+                      <button type="button" className="group-btn danger" onClick={() => { onDeleteGroup?.(group, "delete"); setSelectedGroupId(""); }}>Delete</button>
+                      <button type="button" className="group-btn ghost" onClick={() => setSelectedGroupId("")}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`group-card ${isSelected ? "selected" : ""}`}
+                  onClick={() => handleGroupOpen(group)}
+                  onContextMenu={event => {
+                    if (!canDeleteGroup(group)) return;
+                    event.preventDefault();
+                    setSelectedGroupId(group.id);
+                  }}
+                  onMouseDown={() => startGroupLongPress(group)}
+                  onMouseUp={clearLongPress}
+                  onMouseLeave={clearLongPress}
+                  onTouchStart={() => startGroupLongPress(group)}
+                  onTouchEnd={clearLongPress}
+                  onTouchCancel={clearLongPress}
+                >
+                  <div
+                    className="group-avatar"
+                    style={{
+                      backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
+                  >
+                    {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="group-card-title">{group.name}</div>
+                    <div className="group-card-subtitle">
+                      {(group.memberCount || 0).toLocaleString()} members - {groupTypes[group.type] || "Group"}
+                      {group.desc ? ` - ${group.desc}` : ""}
+                    </div>
+                  </div>
+                  {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
+                  <span className="group-visibility-pill">
+                    {group.joinPolicy === "approvalRequired" ? "Approval" : "Invite"}
+                  </span>
+                  {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
+                </button>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="group-card-title">{group.name}</div>
-                <div className="group-card-subtitle">
-                  {(group.memberCount || 0).toLocaleString()} members - {groupTypes[group.type] || "Group"}
-                  {group.desc ? ` - ${group.desc}` : ""}
-                </div>
-              </div>
-              {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
-              <span className="group-visibility-pill">
-                {group.joinPolicy === "approvalRequired" ? "Approval" : "Invite"}
-              </span>
-              {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
-            </button>
-          ))
+            );
+          })
         ) : (
           <div className="group-empty">
             {hasGroups ? "No groups match your search." : "No groups yet. Create one or scan a group QR to join."}
