@@ -450,6 +450,7 @@ export function GroupDetailPage({
   onBackHandlerChange,
   onGroupUpdated,
   onOpenScanner,
+  isDarkMode = false,
   initialTab = "overview",
   initialCollectionId = "",
   initialCollection = null,
@@ -3066,7 +3067,7 @@ export function GroupDetailPage({
       )}
 
       {canViewGroupContent && activeTab === "chats" && (
-        <div className={`group-panel chat-panel ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
+        <div className={`group-panel chat-panel ${isDarkMode ? "dark-mode" : "light-mode"} ${(showChatComposer || replyToMessage || showChatTools) ? "composer-open" : ""}`}>
           {currentAction?.description && (
             <div className="group-pin-float" aria-label="Pinned update">
               <strong>Pinned update:</strong>{" "}

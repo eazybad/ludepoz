@@ -323,6 +323,7 @@ function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+  const [isDarkMode, setIsDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [page, setPageRaw] = useState("communities");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
@@ -575,6 +576,13 @@ useEffect(() => {
     } finally {
       setDiscoverCacheLoaded(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e) => setIsDarkMode(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
   useEffect(() => {
@@ -6793,7 +6801,7 @@ return (
     height:'100dvh',
     display:'flex',
     flexDirection:'column',
-    background:'#f4f6f8',
+    background:isDarkMode?'#0b141a':'#f4f6f8',
     zIndex:100
   }}>
     
@@ -6816,9 +6824,9 @@ return (
 
     {/* Chat Header - FIXED, never moves */}
     <div style={{
-      background:'#fff',
+      background:isDarkMode?'#202c33':'#fff',
       padding:'12px 16px',
-      borderBottom:'1px solid #e2e6ea',
+      borderBottom:isDarkMode?'1px solid rgba(134,150,160,0.3)':'1px solid #e2e6ea',
       display:'flex',
       alignItems:'center',
       gap:'12px',
@@ -6905,8 +6913,8 @@ return (
     </div>
 
     {/* Messages Container - scrollable middle area */}
-    <div 
-      id="messages-container" 
+    <div
+      id="messages-container"
       style={{
   flex:1,
   overflowY:'auto',
@@ -6914,8 +6922,10 @@ return (
   padding:'14px 12px',
   display:'flex',
   flexDirection:'column',
-  backgroundColor:'#f7f7f4',
-  backgroundImage:"linear-gradient(rgba(255,255,255,0.82), rgba(255,255,255,0.82)), url('/chatwallpaper.jpeg')",
+  backgroundColor:isDarkMode?'#0b141a':'#f7f7f4',
+  backgroundImage:isDarkMode
+    ?"linear-gradient(rgba(11,20,26,0.85), rgba(11,20,26,0.85)), url('/chatwallpaper-dark.jpeg')"
+    :"linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url('/chatwallpaper-light.jpeg')",
   backgroundSize:'cover',
   backgroundPosition:'center'
 }}
@@ -6957,15 +6967,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           }}>
             <div style={{
               maxWidth:'78%',
-              background:isMine?'#06d6c7':'#fff',
-              color:isMine?'#0f1b2d':'#111827',
-              padding:'8px 12px',
-              borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',
-              fontSize:'14px',
-              lineHeight:'1.35',
-              boxShadow:'0 1px 1px rgba(0,0,0,0.08)'
+              background:isMine
+                ?(isDarkMode?'#005c4b':'#d9fdd3')
+                :(isDarkMode?'#202c33':'#ffffff'),
+              color:isDarkMode?'#e9edef':'#111b21',
+              padding:'6px 10px 8px 10px',
+              borderRadius:isMine?'8px 8px 0 8px':'8px 8px 8px 0',
+              fontSize:'14.2px',
+              lineHeight:'1.4',
+              boxShadow:'0 1px 0.5px rgba(11,20,26,0.13)'
             }}>
-              {!isMine&&<div style={{fontSize:'11px',fontWeight:'600',marginBottom:'4px',color:'#6b7280'}}>{msg.senderName}</div>}
+              {!isMine&&<div style={{fontSize:'12px',fontWeight:'600',marginBottom:'2px',color:isDarkMode?'#8696a0':'#0f766e'}}>{msg.senderName}</div>}
               {msg.imageUrl && (
                 <img
                   src={msg.imageUrl}
@@ -7006,8 +7018,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
     {/* Message Input - part of flex layout, NOT fixed */}
     <div style={{
-      background:'#fff',
-      borderTop:'1px solid #e2e6ea',
+      background:isDarkMode?'#202c33':'#fff',
+      borderTop:isDarkMode?'1px solid rgba(134,150,160,0.3)':'1px solid #e2e6ea',
       padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
@@ -7592,6 +7604,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           user={user}
           userName={userName}
           userAvatar={userAvatar}
+          isDarkMode={isDarkMode}
           onJoinGroup={() => joinGroup(viewingGroup)}
           joiningGroup={joiningGroup}
           onBack={() => {
