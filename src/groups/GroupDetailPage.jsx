@@ -314,10 +314,6 @@ function formatMessageDay(value) {
   return value.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
-function normalizeMentionKey(value = "") {
-  return String(value).toLowerCase().replace(/@/g, "").replace(/[^a-z0-9]+/g, "");
-}
-
 function memberMentionHandle(member) {
   const label = member?.username || member?.name || member?.fullName || member?.email || "member";
   return String(label).split(/\s+/)[0].replace(/^@+/, "");
@@ -331,25 +327,6 @@ function getMentionContext(text, cursorPos) {
     query: match[2] || "",
     start: before.length - match[2].length - 1,
   };
-}
-
-function renderMessageWithMentions(text) {
-  if (!text) return null;
-  const nodes = [];
-  const regex = /(^|\s)(@[a-zA-Z0-9._-]+)/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
-    nodes.push(
-      <span key={`${match.index}-${match[2]}`} className="message-mention">
-        {match[1]}{match[2]}
-      </span>,
-    );
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
-  return nodes.length ? nodes : text;
 }
 
 function statusClass(status) {
@@ -522,9 +499,7 @@ export function GroupDetailPage({
   const [mentionPermission, setMentionPermission] = useState(group.mentionPermission || "admins");
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
   const [uploadProgress, setUploadProgress] = useState({});
-  const [uploadControllers, setUploadControllers] = useState({});
   const [chatAttachmentUploadIds, setChatAttachmentUploadIds] = useState([]);
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [editGroupData, setEditGroupData] = useState({ name: group.name || "", desc: group.desc || "", avatarFile: null, avatarPreview: group.avatarUrl || "" });
@@ -1176,7 +1151,6 @@ export function GroupDetailPage({
     } else {
       setShowMentionSuggestions(false);
       setMentionSuggestions([]);
-      setMentionQuery("");
     }
   }, [messageText, activeMembers]);
 

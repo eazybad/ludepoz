@@ -72,7 +72,6 @@ export function GroupListPage({
         }
       })
     : groups;
-  const selectedGroup = groups.find(group => group.id === selectedGroupId);
   const recentGroups = filteredGroups.filter(group => {
     try {
       const activityTime = group.activityAt?.toMillis?.() || group.activityAt?.getTime?.() || 0;
