@@ -1245,6 +1245,7 @@
   max-width: 92%;
   align-self: flex-start;
   border: none;
+  border-left: 4px solid transparent;
   border-radius: 8px;
   padding: 10px 11px;
   background: #ffffff;

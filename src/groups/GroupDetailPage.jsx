@@ -319,6 +319,21 @@ function memberMentionHandle(member) {
   return String(label).split(/\s+/)[0].replace(/^@+/, "");
 }
 
+function getUserColor(userId) {
+  if (!userId) return "#0f766e";
+  const colors = [
+    "#e11d48", "#f97316", "#eab308", "#22c55e", "#14b8a6",
+    "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e", "#06b6d4",
+    "#84cc16", "#a855f7", "#6366f1", "#0ea5e9", "#10b981"
+  ];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+}
+
 function getMentionContext(text, cursorPos) {
   const before = text.slice(0, cursorPos);
   const match = before.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
@@ -3076,6 +3091,7 @@ export function GroupDetailPage({
                     role="button"
                     tabIndex={0}
                     className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.offlinePending ? "pending" : ""}`}
+                    style={{ borderLeftColor: getUserColor(message.authorUid) }}
                     onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
                     onMouseLeave={clearMessageHold}
@@ -3084,7 +3100,7 @@ export function GroupDetailPage({
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
                   >
-                    <div className="message-author">{message.authorName || "Member"}</div>
+                    <div className="message-author" style={{ color: getUserColor(message.authorUid) }}>{message.authorName || "Member"}</div>
                     {message.replyTo && (
                       <div className="message-reply-preview">
                         <strong>{message.replyTo.authorName}</strong>
