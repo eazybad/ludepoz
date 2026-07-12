@@ -559,6 +559,8 @@ useEffect(() => {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [collectionSearchQ, setCollectionSearchQ] = useState("");
   const [committedCollectionSearchQ, setCommittedCollectionSearchQ] = useState("");
+  const [collectionGroupFilter, setCollectionGroupFilter] = useState("all");
+  const [collectionDateFilter, setCollectionDateFilter] = useState("all");
   const [orderSearchQ, setOrderSearchQ] = useState("");
   const [editingCollection, setEditingCollection] = useState(false);
   // Rooms & Housing state
@@ -7897,27 +7899,63 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
                 <button type="button" onClick={() => commitCollectionsSearch(collectionSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
               </div>
+              <div style={{margin:'0 16px 8px 16px',display:'flex',gap:'8px'}}>
+                <select value={collectionGroupFilter} onChange={e=>setCollectionGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                  <option value="all">All groups</option>
+                  {Array.from(new Set(collections.map(c => (c.communityName || c.universityName || "").trim()).filter(Boolean))).sort().map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                <select value={collectionDateFilter} onChange={e=>setCollectionDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                  <option value="all">Any time</option>
+                  <option value="today">Posted today</option>
+                  <option value="week">Last 7 days</option>
+                  <option value="month">Last 30 days</option>
+                </select>
+              </div>
               <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }} />
               {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
             </>
           )}
 
-          {collections.length === 0 ? (
+          {(() => {
+            const searchedCollections = aiParsed && committedCollectionSearchQ.trim()
+              ? filterCollections(collections, aiParsed)
+              : collections.filter(col => {
+                  if (!committedCollectionSearchQ.trim()) return true;
+                  const q = committedCollectionSearchQ.toLowerCase();
+                  return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q) || col.communityName?.toLowerCase().includes(q) || col.communityType?.toLowerCase().includes(q) || col.collectionType?.toLowerCase().includes(q);
+                });
+            const visibleCollections = searchedCollections.filter(col => {
+              if (collectionGroupFilter !== "all" && (col.communityName || col.universityName || "").trim() !== collectionGroupFilter) return false;
+              if (collectionDateFilter !== "all") {
+                const posted = col.createdAt instanceof Date ? col.createdAt : (col.createdAt ? new Date(col.createdAt) : null);
+                if (!posted) return false;
+                const daysAgo = (Date.now() - posted.getTime()) / (1000 * 60 * 60 * 24);
+                if (collectionDateFilter === "today" && daysAgo > 1) return false;
+                if (collectionDateFilter === "week" && daysAgo > 7) return false;
+                if (collectionDateFilter === "month" && daysAgo > 30) return false;
+              }
+              return true;
+            });
+            if (collections.length === 0) return (
             <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
               <div style={{fontSize:'16px',fontWeight:'600'}}>No active orders or events</div>
               <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create group orders and event registrations for their group.</div>
             </div>
-          ) : (
+            );
+            if (visibleCollections.length === 0) return (
+            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+              <div style={{fontSize:'32px',marginBottom:'12px'}}>🔍</div>
+              <div style={{fontSize:'15px',fontWeight:'600'}}>No matches for these filters</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Try a different group or time range.</div>
+              <button type="button" onClick={()=>{setCollectionGroupFilter("all");setCollectionDateFilter("all");}} style={{marginTop:'12px',padding:'8px 16px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer'}}>Clear filters</button>
+            </div>
+            );
+            return (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {(aiParsed && committedCollectionSearchQ.trim()
-                ? filterCollections(collections, aiParsed)
-                : collections.filter(col => {
-                    if (!committedCollectionSearchQ.trim()) return true;
-                    const q = committedCollectionSearchQ.toLowerCase();
-                    return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q) || col.communityName?.toLowerCase().includes(q) || col.communityType?.toLowerCase().includes(q) || col.collectionType?.toLowerCase().includes(q);
-                  })
-              ).map(col => {
+              {visibleCollections.map(col => {
                 const target = col.expectedPeople || col.totalOrders || 0;
                 const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
                 // eslint-disable-next-line no-unused-vars
@@ -7956,7 +7994,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 );
               })}
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
 

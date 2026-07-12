@@ -647,6 +647,7 @@
   background: #0d9488;
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  padding-bottom: 7px;
 }
 
 .group-header-main {
@@ -1027,7 +1028,7 @@
 .group-current-channel {
   width: fit-content;
   min-width: 120px;
-  margin: 0 auto 7px;
+  margin: 0 auto;
   padding: 0 12px;
   color: rgba(255, 255, 255, 0.86);
   font-size: 11px;
