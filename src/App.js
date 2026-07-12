@@ -323,7 +323,16 @@ function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
-  const [isDarkMode, setIsDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [isDarkMode, setIsDarkModeRaw] = useState(() => {
+    const saved = localStorage.getItem('kp-theme');
+    if (saved === 'dark') return true;
+    if (saved === 'light') return false;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const setIsDarkMode = (value, { persist = false } = {}) => {
+    setIsDarkModeRaw(value);
+    if (persist) localStorage.setItem('kp-theme', value ? 'dark' : 'light');
+  };
   const [page, setPageRaw] = useState("communities");
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
@@ -422,6 +431,9 @@ function App() {
   const [deleteAccountConfirm, setDeleteAccountConfirm] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [createListingProgress, setCreateListingProgress] = useState(0);
+  const createListingTasksRef = useRef([]);
+  const createListingCancelledRef = useRef(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -468,7 +480,6 @@ function App() {
   const [showAboutBanner, setShowAboutBanner] = useState(false);
   const [showVerifiedBanner, setShowVerifiedBanner] = useState(false);
   const [showGetVerifiedBanner, setShowGetVerifiedBanner] = useState(false);
-  const [showChatTip, setShowChatTip] = useState(true);
   // Services state
   const [services, setServices] = useState([]);
   const [activeServiceCat, setActiveServiceCat] = useState("all");
@@ -580,7 +591,10 @@ useEffect(() => {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e) => setIsDarkMode(e.matches);
+    const handleChange = (e) => {
+      if (localStorage.getItem('kp-theme')) return;
+      setIsDarkModeRaw(e.matches);
+    };
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
@@ -4319,6 +4333,14 @@ useEffect(() => {
   }
 };
 
+  const cancelCreateListingUpload = () => {
+    createListingCancelledRef.current = true;
+    createListingTasksRef.current.forEach(task => { try { task.cancel(); } catch (e) {} });
+    createListingTasksRef.current = [];
+    setUploading(false);
+    setCreateListingProgress(0);
+  };
+
   const handleCreateListing = async () => {
     if (!canPerformAction()) return;
 
@@ -4357,24 +4379,54 @@ useEffect(() => {
   try {
     setError("");
     setUploading(true);
-    
+    setCreateListingProgress(0);
+    createListingCancelledRef.current = false;
+    createListingTasksRef.current = [];
+
     // Upload multiple photos in parallel (compressed on-device first to save data + storage)
     const listingUploadTs = Date.now();
-    const photoUrls = createData.photoFiles && createData.photoFiles.length > 0
+    const fileCount = createData.photoFiles?.length || 0;
+    const progressByIndex = new Array(fileCount).fill(0);
+    const reportProgress = () => {
+      if (!fileCount) return;
+      const total = progressByIndex.reduce((sum, value) => sum + value, 0);
+      setCreateListingProgress(Math.round(total / fileCount));
+    };
+    const photoUrls = fileCount > 0
       ? await Promise.all(createData.photoFiles.map(async (original, i) => {
           const { file } = await safeCompress(original, COMPRESSION_PRESETS.listing);
           const storageRef = ref(storage, `listings/${user.uid}_${listingUploadTs}_${i}.jpg`);
           const uploadTask = uploadBytesResumable(storageRef, file);
+          createListingTasksRef.current.push(uploadTask);
           await new Promise((resolve, reject) => {
             uploadTask.on('state_changed',
-              null,
-              (error) => reject(error),
-              async () => resolve()
+              (snapshot) => {
+                progressByIndex[i] = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                reportProgress();
+              },
+              (error) => {
+                if (createListingCancelledRef.current || error?.code === "storage/canceled") {
+                  resolve(null);
+                  return;
+                }
+                reject(error);
+              },
+              async () => {
+                progressByIndex[i] = 100;
+                reportProgress();
+                resolve();
+              }
             );
           });
-          return getDownloadURL(uploadTask.snapshot.ref);
+          return createListingCancelledRef.current ? null : getDownloadURL(uploadTask.snapshot.ref);
         }))
       : [];
+
+    if (createListingCancelledRef.current) {
+      setUploading(false);
+      setCreateListingProgress(0);
+      return;
+    }
 
     await addDoc(collection(db, "listings"), {
       userId: user.uid,
@@ -4439,9 +4491,12 @@ useEffect(() => {
     // Don't auto-redirect — let user choose to share or go home
   } catch (err) {
     console.error("Error creating listing:", err);
-    setError("Could not create the listing. Check your internet connection and try again.");
+    if (!createListingCancelledRef.current) {
+      setError("Could not create the listing. Check your internet connection and try again.");
+    }
   } finally {
     setUploading(false);
+    setCreateListingProgress(0);
   }
 };
 
@@ -6676,7 +6731,22 @@ return (
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="New">New</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
-                <button onClick={handleCreateListing} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"💾 Create Listing"}</button>
+                <div style={{width:'100%',marginTop:'16px',display:'flex',gap:'8px',alignItems:'center'}}>
+                  <button onClick={handleCreateListing} disabled={uploading} style={{flex:1,padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+                    {uploading && (
+                      <span style={{position:'relative',width:'18px',height:'18px',flexShrink:0}}>
+                        <svg width="18" height="18" viewBox="0 0 18 18" style={{transform:'rotate(-90deg)'}}>
+                          <circle cx="9" cy="9" r="7" fill="none" stroke="rgba(15,27,45,0.2)" strokeWidth="2.5" />
+                          <circle cx="9" cy="9" r="7" fill="none" stroke="#0f1b2d" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={2*Math.PI*7} strokeDashoffset={2*Math.PI*7*(1-createListingProgress/100)} style={{transition:'stroke-dashoffset 0.2s ease'}} />
+                        </svg>
+                      </span>
+                    )}
+                    <span>{uploading?`Uploading... ${createListingProgress}%`:"💾 Create Listing"}</span>
+                  </button>
+                  {uploading && (
+                    <button type="button" onClick={cancelCreateListingUpload} aria-label="Cancel upload" style={{width:'40px',height:'40px',flexShrink:0,borderRadius:'50%',border:'none',background:'#fee2e2',color:'#b91c1c',fontSize:'18px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -6805,23 +6875,6 @@ return (
     zIndex:100
   }}>
     
-    {/* Chat Tip (dismissible) */}
-    {showChatTip && (
-      <div style={{
-        background:'#e0f2fe',
-        padding:'10px 16px',
-        display:'flex',
-        justifyContent:'space-between',
-        alignItems:'start',
-        fontSize:'12px',
-        lineHeight:'1.4',
-        flexShrink:0
-      }}>
-        <span>💬 <strong>Quick Reply Tip:</strong> Ghosting damages your reputation. Respond promptly to build trust!</span>
-        <button onClick={()=>setShowChatTip(false)} style={{background:'none',border:'none',fontSize:'16px',cursor:'pointer',flexShrink:0}}>×</button>
-      </div>
-    )}
-
     {/* Chat Header - FIXED, never moves */}
     <div style={{
       background:isDarkMode?'#202c33':'#fff',
@@ -9674,6 +9727,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
              <>
                <div onClick={()=>setShowProfileMenu(false)} style={{position:'fixed',inset:0,zIndex:140}} />
                <div style={{position:'absolute',top:'50px',right:'12px',zIndex:141,minWidth:'150px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',boxShadow:'0 12px 28px rgba(15,27,45,0.16)',overflow:'hidden'}}>
+                 <button
+                   type="button"
+                   onClick={()=>{setIsDarkMode(!isDarkMode, {persist:true});}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:isDarkMode?'#202c33':'#fff',color:isDarkMode?'#e9edef':'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}
+                 >
+                   <span>Dark mode</span>
+                   <span style={{width:'36px',height:'20px',borderRadius:'999px',background:isDarkMode?'#0d9488':'#d1d5db',position:'relative',flexShrink:0}}>
+                     <span style={{position:'absolute',top:'2px',left:isDarkMode?'18px':'2px',width:'16px',height:'16px',borderRadius:'50%',background:'#fff',transition:'left 0.15s ease'}} />
+                   </span>
+                 </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);openSetPasswordModal("menu");}}
