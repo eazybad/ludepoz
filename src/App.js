@@ -224,12 +224,13 @@ const ADMIN_UIDS = ["LTrwUHH6utQJGiw4lcsKflzXvPR2"];
 // files, browser memory limits), fall back to the ORIGINAL file so the upload
 // still succeeds. The user gets their listing/photo posted; they just don't
 // get the size benefit on that one image.
-async function safeCompress(file, preset) {
+async function safeCompress(file, preset, timeoutMs = 15000) {
   try {
-    const { file: compressed } = await compressImage(file, preset);
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Compression timed out")), timeoutMs));
+    const { file: compressed } = await Promise.race([compressImage(file, preset), timeout]);
     return { file: compressed, fallback: false };
   } catch (err) {
-    console.warn("Compression failed, uploading original:", err.message);
+    console.warn("Compression failed or timed out, uploading original:", err.message);
     return { file, fallback: true };
   }
 }
@@ -3704,6 +3705,22 @@ await updateDoc(convRef, {
   };
 
   useEffect(() => {
+    if (!user || !("Notification" in window) || Notification.permission !== "granted") return;
+    (async () => {
+      try {
+        const token = await getToken(messaging, {
+          vapidKey: "BCpZgxfVSjWFXh3ySZm5oeZb3ak8nEK_zCc9brxVGq-9JVgEIhpiJCOg3169zvMK4OvF3CBGzSq9YpMMnjYaGTE"
+        });
+        if (token) {
+          await updateDoc(doc(db, "users", user.uid), { fcmToken: token });
+        }
+      } catch (e) {
+        console.log("Silent FCM token refresh failed:", e.message);
+      }
+    })();
+  }, [user]);
+
+  useEffect(() => {
     if (!user || !("Notification" in window) || Notification.permission !== "default") {
       setShowNotificationBanner(false);
       return;
@@ -4401,22 +4418,29 @@ useEffect(() => {
           const uploadTask = uploadBytesResumable(storageRef, file);
           createListingTasksRef.current.push(uploadTask);
           await new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = (fn) => (...args) => { if (settled) return; settled = true; clearTimeout(stallTimer); fn(...args); };
+            const resolveOnce = finish(resolve);
+            const rejectOnce = finish(reject);
+            let stallTimer = setTimeout(() => rejectOnce(new Error("Upload stalled - check your connection and try again")), 25000);
             uploadTask.on('state_changed',
               (snapshot) => {
+                clearTimeout(stallTimer);
+                stallTimer = setTimeout(() => rejectOnce(new Error("Upload stalled - check your connection and try again")), 25000);
                 progressByIndex[i] = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                 reportProgress();
               },
               (error) => {
                 if (createListingCancelledRef.current || error?.code === "storage/canceled") {
-                  resolve(null);
+                  resolveOnce(null);
                   return;
                 }
-                reject(error);
+                rejectOnce(error);
               },
               async () => {
                 progressByIndex[i] = 100;
                 reportProgress();
-                resolve();
+                resolveOnce();
               }
             );
           });
