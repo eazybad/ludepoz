@@ -1098,9 +1098,11 @@ export function GroupDetailPage({
     if (activeTab !== "chats") return;
     const el = messageListRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setShowJumpToLatest(false);
-  }, [activeTab, chatMessages.length]);
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+      setShowJumpToLatest(false);
+    });
+  }, [activeTab, chatMessages.length, showChatComposer, replyToMessage, showChatTools]);
 
   const scrollChatToLatest = () => {
     const el = messageListRef.current;
@@ -3110,14 +3112,8 @@ export function GroupDetailPage({
               : `linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url(${process.env.PUBLIC_URL}/groupwallpaper-light.jpeg)`,
           }}
         >
-          {currentAction?.description && (
-            <div className="group-pin-float" aria-label="Pinned update">
-              <strong>Pinned update:</strong>{" "}
-              <span>{currentAction.description}</span>
-            </div>
-          )}
           {chatMessages.length === 0 ? (
-            <div className="group-empty">No messages yet.</div>
+            <div className="chat-empty-friendly">💬 No messages yet — say hi!</div>
           ) : (
             <div className="message-list" ref={messageListRef} onScroll={handleChatScroll}>
               {chatMessages.map((message, index) => (
