@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.kampasika.app",
+    "sha256_cert_fingerprints": ["42:7E:E4:1C:09:BE:29:31:87:36:72:C5:95:25:C3:BB:14:3E:6B:CC:94:B7:3F:24:8E:BB:73:BF:35:B0:58:9A"]
+  }
+}]
