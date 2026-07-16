@@ -549,7 +549,7 @@ export function GroupDetailPage({
   const chatPlusButtonRef = useRef(null);
   const messageHoldTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
-  const openedReadAtRef = useRef(groupReadAtValue || 0);
+  const [openedReadAt, setOpenedReadAt] = useState(groupReadAtValue || 0);
   const syncingQueuedMessagesRef = useRef(false);
 
   useEffect(() => {
@@ -673,8 +673,8 @@ export function GroupDetailPage({
   const unreadChatMessages = useMemo(() => chatMessages.filter(message => (
     message.authorUid !== user?.uid
     && message.createdAt?.getTime
-    && message.createdAt.getTime() > openedReadAtRef.current
-  )), [chatMessages, user?.uid]);
+    && message.createdAt.getTime() > openedReadAt
+  )), [chatMessages, user?.uid, openedReadAt]);
   const firstUnreadMessageId = unreadChatMessages[0]?.id || "";
   const noteSnapshotMeta = useCallback(() => {}, []);
   const rememberGroupScreen = useCallback((patch = {}) => {
@@ -1103,6 +1103,12 @@ export function GroupDetailPage({
       setShowJumpToLatest(false);
     });
   }, [activeTab, chatMessages.length, showChatComposer, replyToMessage, showChatTools]);
+
+  useEffect(() => {
+    if (activeTab !== "chats" || unreadChatMessages.length === 0) return;
+    const timer = setTimeout(() => setOpenedReadAt(Date.now()), 1500);
+    return () => clearTimeout(timer);
+  }, [activeTab, unreadChatMessages.length]);
 
   const scrollChatToLatest = () => {
     const el = messageListRef.current;
@@ -3672,7 +3678,7 @@ export function GroupDetailPage({
                   <div key={workGroup.id} className="workgroup-card">
                   <div className="workgroup-card-head">
                       <div>
-                        <strong>{workGroup.name}{workGroup.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</strong>
+                        <strong>{workGroup.name}{workGroup.createdAt?.getTime?.() > openedReadAt && <span className="inline-new-pill">New</span>}</strong>
                         <span>{workGroup.memberNames?.length || workGroup.memberUids?.length || 0} members{workGroup.leaderName ? ` - Leader: ${workGroup.leaderName}` : ""}</span>
                       </div>
                       <em className={`workgroup-status ${workGroup.status === "submitted" ? "submitted" : ""}`}>{workGroup.status === "submitted" ? "Submitted" : "Open"}</em>
@@ -4155,7 +4161,7 @@ export function GroupDetailPage({
               ) : (
                 selectedResourceItems.map(resource => (
                   <div key={resource.id} className="resource-box class-board-resource">
-                    <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAtRef.current && <span className="inline-new-pill">New</span>}</div>
+                    <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAt && <span className="inline-new-pill">New</span>}</div>
                     {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
                     {(resource.description || (resource.text && resource.title && resource.text !== resource.title)) && (
                       <div className="resource-text">{resource.description || resource.text}</div>
