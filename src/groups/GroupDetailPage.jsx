@@ -1166,13 +1166,13 @@ export function GroupDetailPage({
 
   useEffect(() => {
     const context = getMentionContext(messageText, messageText.length);
-    if (context && context.query.length >= 1) {
+    if (context) {
       const query = context.query.toLowerCase();
       const filtered = activeMembers.filter(member => {
         const handle = memberMentionHandle(member).toLowerCase();
         const name = (member.name || "").toLowerCase();
-        return handle.includes(query) || name.includes(query);
-      }).slice(0, 5);
+        return !query || handle.includes(query) || name.includes(query);
+      }).slice(0, 30);
       setMentionSuggestions(filtered);
       setShowMentionSuggestions(true);
     } else {
@@ -3371,6 +3371,9 @@ export function GroupDetailPage({
                             className="mention-suggestion-item"
                             onClick={() => handleSelectMention(member)}
                           >
+                            <span className="mention-suggestion-avatar" style={{ background: getUserColor(member.uid) }}>
+                              {(member.name || "?").trim().charAt(0).toUpperCase()}
+                            </span>
                             <span className="mention-suggestion-name">{member.name || "Member"}</span>
                             <span className="mention-suggestion-handle">@{memberMentionHandle(member)}</span>
                           </button>

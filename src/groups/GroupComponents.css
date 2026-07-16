@@ -1603,6 +1603,19 @@
   background: transparent;
   font: inherit;
   font-size: 14px;
+  color: #0f1b2d;
+}
+
+.chat-input-row textarea::placeholder {
+  color: #8a94a3;
+}
+
+.dark-mode .chat-input-row textarea {
+  color: #e9edef;
+}
+
+.dark-mode .chat-input-row textarea::placeholder {
+  color: #8696a0;
 }
 
 .chat-composer-dismiss {
@@ -1888,6 +1901,20 @@
   text-align: left;
 }
 
+.mention-suggestion-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  margin-right: -2px;
+}
+
 .mention-suggestion-item:hover {
   background: #ecfeff;
 }
@@ -1900,6 +1927,10 @@
   color: #0f1b2d;
   font-size: 13px;
   font-weight: 800;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dark-mode .mention-suggestion-name {
