@@ -675,6 +675,8 @@ useEffect(() => {
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messageSearchQ, setMessageSearchQ] = useState("");
+  const [messageFilterMode, setMessageFilterMode] = useState("all");
+  const [expandedPersonUid, setExpandedPersonUid] = useState("");
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -5294,7 +5296,7 @@ const loadSellerStats = useCallback(async (userId) => {
   const groupsById = new Map(groupsForSelectedUni.map(group => [group.id, group]));
   const getMyCollectionGroup = (collectionItem) => groupsById.get(collectionItem.groupId);
   const normalizedMessageSearch = messageSearchQ.trim().toLowerCase();
-  const filteredConversations = normalizedMessageSearch
+  const filteredConversations = (normalizedMessageSearch
     ? conversations.filter(conv => {
         const otherName = user?.uid === conv.buyerId ? conv.sellerName : conv.buyerName;
         return [
@@ -5304,7 +5306,31 @@ const loadSellerStats = useCallback(async (userId) => {
           conv.listingPrice ? String(conv.listingPrice) : "",
         ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedMessageSearch));
       })
-    : conversations;
+    : conversations
+  ).filter(conv => {
+    if (messageFilterMode !== "unread") return true;
+    const myUnread = user?.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+    return (myUnread || 0) > 0;
+  });
+  const groupedConversationsByPerson = (() => {
+    const groups = new Map();
+    const order = [];
+    filteredConversations.forEach(conv => {
+      const otherUid = user?.uid === conv.buyerId ? conv.sellerId : conv.buyerId;
+      const otherPerson = user?.uid === conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
+      if (!groups.has(otherUid)) {
+        groups.set(otherUid, { otherUid, otherPerson, conversations: [] });
+        order.push(otherUid);
+      }
+      groups.get(otherUid).conversations.push(conv);
+    });
+    const getTime = conv => conv.lastMessageAt?.seconds ? conv.lastMessageAt.seconds * 1000 : 0;
+    return order.map(uid => {
+      const group = groups.get(uid);
+      group.conversations.sort((a, b) => getTime(b) - getTime(a));
+      return group;
+    }).sort((a, b) => getTime(b.conversations[0]) - getTime(a.conversations[0]));
+  })();
 if (loading) {
   return (
     <div style={{
@@ -5635,7 +5661,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="home"||page==="create"||page==="profile"||page==="messages"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
+    {(page==="home"||page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="rooms"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -6789,7 +6815,10 @@ return (
     boxSizing:'border-box',
     paddingBottom:'100px'
   }}>
-          {unreadCount > 0 && <div style={{fontSize:'12px',fontWeight:'700',color:'#0d9488',marginBottom:'12px',padding:'0 16px'}}>{unreadCount} unread</div>}
+          <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'0 16px',marginBottom:'12px'}}>
+            <button type="button" onClick={()=>setMessageFilterMode("all")} style={{padding:'6px 14px',borderRadius:'999px',border:messageFilterMode==="all"?'1.5px solid #0d9488':'1.5px solid #e2e6ea',background:messageFilterMode==="all"?'#ecfeff':'#fff',color:messageFilterMode==="all"?'#0d9488':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>All</button>
+            <button type="button" onClick={()=>setMessageFilterMode("unread")} style={{padding:'6px 14px',borderRadius:'999px',border:messageFilterMode==="unread"?'1.5px solid #0d9488':'1.5px solid #e2e6ea',background:messageFilterMode==="unread"?'#ecfeff':'#fff',color:messageFilterMode==="unread"?'#0d9488':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Unread{unreadCount>0?` · ${unreadCount}`:""}</button>
+          </div>
           {conversations.length > 0 && (
             <div style={{padding:'0 16px 12px'}}>
               <input
@@ -6811,75 +6840,103 @@ return (
             </div>
           ):filteredConversations.length===0?(
             <div style={{background:'#fff',borderRadius:'12px',padding:'28px',textAlign:'center',margin:'0 16px'}}>
-              <div style={{fontSize:'34px',marginBottom:'10px'}}>⌕</div>
-              <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'#0f1b2d'}}>No matches</h3>
-              <p style={{fontSize:'13px',color:'#8a9bb0',margin:0}}>Try a different name, listing, price, or message.</p>
+              <div style={{fontSize:'34px',marginBottom:'10px'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?'✓':'⌕'}</div>
+              <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'#0f1b2d'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"You're all caught up":"No matches"}</h3>
+              <p style={{fontSize:'13px',color:'#8a9bb0',margin:0}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"No unread conversations right now.":"Try a different name, listing, price, or message."}</p>
             </div>
           ):(
            <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 16px'}}>
-  {filteredConversations.map(conv=>{
-    const otherPerson = user.uid===conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
-    const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+  {groupedConversationsByPerson.map(group=>{
+    const { otherUid, otherPerson, conversations: personConvs } = group;
+    const totalUnread = personConvs.reduce((sum, conv) => {
+      const u = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+      return sum + (u || 0);
+    }, 0);
+    const topConv = personConvs[0];
+    const isExpanded = expandedPersonUid === otherUid;
+    const singleThread = personConvs.length === 1;
+
+    const AvatarCircle = ({size=48}) => (
+      <div style={{
+        width:size, height:size, borderRadius:'50%',
+        backgroundImage:otherPerson.avatar?`url(${otherPerson.avatar})`:'none',
+        backgroundColor:!otherPerson.avatar?'#06d6c7':'transparent',
+        backgroundSize:'cover', backgroundPosition:'center',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        color:'#fff', fontWeight:'700', fontSize: size>40?'16px':'13px', flexShrink:0
+      }}>
+        {!otherPerson.avatar&&otherPerson.name.split(" ").map(n=>n[0]).join("")}
+      </div>
+    );
+
     return (
-      <div key={conv.id} style={{background:'#fff',borderRadius:'12px',border:'1px solid #e2e6ea',overflow:'hidden'}}>
+      <div key={otherUid} style={{background:'#fff',borderRadius:'12px',border:'1px solid #e2e6ea',overflow:'hidden'}}>
         <div style={{display:'flex',alignItems:'center'}}>
-          {/* Main conversation area — tappable */}
-          <div 
-            onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}} 
+          <div
+            onClick={()=>{
+              if (singleThread) { setActiveConversation(topConv); setPage("chat"); markAsRead(topConv.id); }
+              else setExpandedPersonUid(isExpanded ? "" : otherUid);
+            }}
             style={{flex:1,padding:'16px',cursor:'pointer',display:'flex',gap:'12px',minWidth:0}}
           >
-            <div style={{
-              width:'48px',
-              height:'48px',
-              borderRadius:'50%',
-              backgroundImage:otherPerson.avatar?`url(${otherPerson.avatar})`:'none',
-              backgroundColor:!otherPerson.avatar?'#06d6c7':'transparent',
-              backgroundSize:'cover',
-              backgroundPosition:'center',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              color:'#fff',
-              fontWeight:'700',
-              fontSize:'16px',
-              flexShrink:0
-            }}>
-              {!otherPerson.avatar&&otherPerson.name.split(" ").map(n=>n[0]).join("")}
-            </div>
+            <AvatarCircle />
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
                 <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
-                {conv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(conv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
+                {topConv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(topConv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
               </div>
-              <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
-              <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
+              {singleThread ? (
+                <>
+                  <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
+                  <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
+                  <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
+                </>
+              )}
             </div>
-            {unread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#ef4444',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,alignSelf:'center'}}>{unread}</div>}
+            {totalUnread>0&&<div style={{width:'22px',height:'22px',borderRadius:'50%',background:'#22c55e',color:'#fff',fontSize:'11px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,alignSelf:'center'}}>{totalUnread}</div>}
           </div>
-          
-          {/* 3-dot menu button */}
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteConversation(conv.id);
-            }}
-            style={{
-              padding:'16px 12px',
-              background:'none',
-              border:'none',
-              borderLeft:'1px solid #f0f0f0',
-              cursor:'pointer',
-              fontSize:'18px',
-              color:'#8a9bb0',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              flexShrink:0
-            }}
-          >
-            🗑
-          </button>
+
+          {singleThread && (
+            <button
+              onClick={(e) => { e.stopPropagation(); deleteConversation(topConv.id); }}
+              style={{padding:'16px 12px',background:'none',border:'none',borderLeft:'1px solid #f0f0f0',cursor:'pointer',fontSize:'18px',color:'#8a9bb0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
+            >
+              🗑
+            </button>
+          )}
         </div>
+
+        {!singleThread && isExpanded && (
+          <div style={{borderTop:'1px solid #f0f0f0'}}>
+            {personConvs.map(conv => {
+              const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+              return (
+                <div key={conv.id} style={{display:'flex',alignItems:'center',borderTop:'1px solid #f6f7f9'}}>
+                  <div
+                    onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}}
+                    style={{flex:1,padding:'12px 16px 12px 60px',cursor:'pointer',minWidth:0}}
+                  >
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}}>
+                      <div style={{fontSize:'12px',color:'#06d6c7',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+                      {unread>0 && <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
+                    </div>
+                    <div style={{fontSize:'12px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                    style={{padding:'12px',background:'none',border:'none',borderLeft:'1px solid #f0f0f0',cursor:'pointer',fontSize:'16px',color:'#8a9bb0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
+                  >
+                    🗑
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   })}
@@ -6969,7 +7026,7 @@ return (
               <div style={{
                 fontSize:'15px',
                 fontWeight:'600',
-                color:'#0f1b2d',
+                color:isDarkMode?'#e9edef':'#0f1b2d',
                 overflow:'hidden',
                 textOverflow:'ellipsis',
                 whiteSpace:'nowrap'
@@ -6978,7 +7035,7 @@ return (
               </div>
               <div style={{
                 fontSize:'11px',
-                color:'#6b7280',
+                color:isDarkMode?'#8696a0':'#6b7280',
                 overflow:'hidden',
                 textOverflow:'ellipsis',
                 whiteSpace:'nowrap'
@@ -11917,7 +11974,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         </button>
         <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
         <button onClick={()=>setShowQuickActions(true)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>+</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Add</span></button>
-        <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#ef4444',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(239,68,68,0.3)'}}>{unreadCount}</span>}</button>
+        <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(34,197,94,0.3)'}}>{unreadCount}</span>}</button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
     width:'24px',

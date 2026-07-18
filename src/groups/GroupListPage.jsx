@@ -24,6 +24,7 @@ export function GroupListPage({
   const hasGroups = groups.length > 0;
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [groupsViewMode, setGroupsViewMode] = useState("mine");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const normalizedSearch = searchText.trim().toLowerCase();
@@ -113,21 +114,22 @@ export function GroupListPage({
           <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
         </div>
         <div className="groups-mode-grid" aria-label="Kampasika overview">
-          <div className="groups-mode-card active">
+          <button type="button" className={`groups-mode-card ${groupsViewMode === "mine" ? "active" : ""}`} onClick={() => setGroupsViewMode("mine")}>
             <strong>My Groups</strong>
             <span>{filteredGroups.length} joined</span>
-          </div>
-          <div className="groups-mode-card">
+          </button>
+          <button type="button" className={`groups-mode-card ${groupsViewMode === "recent" ? "active" : ""}`} onClick={() => setGroupsViewMode("recent")}>
             <strong>Recent Updates</strong>
             <span>{recentGroups.length} new</span>
-          </div>
+          </button>
         </div>
       </div>
 
-      {recentGroups.length > 0 && (
-        <div className="group-section">
-          <div className="group-section-title">Recent updates</div>
-          {recentGroups.slice(0, 3).map(group => (
+      {groupsViewMode === "recent" ? (
+      <div className="group-section">
+        <div className="group-section-title">Recent updates</div>
+        {recentGroups.length > 0 ? (
+          recentGroups.map(group => (
             <button key={group.id} type="button" className="group-card" onClick={() => handleGroupOpen(group)}>
               <div className="group-avatar" style={{ backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
                 {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
@@ -138,9 +140,12 @@ export function GroupListPage({
               </div>
               <span className="group-new-pill">New</span>
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        ) : (
+          <div className="group-empty">No recent updates. You're all caught up.</div>
+        )}
+      </div>
+      ) : (
 
       <div className="group-section">
         <div className="group-section-title">My Groups</div>
@@ -206,6 +211,7 @@ export function GroupListPage({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

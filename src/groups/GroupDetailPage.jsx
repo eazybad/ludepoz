@@ -474,6 +474,7 @@ export function GroupDetailPage({
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
   const [queuedMessages, setQueuedMessages] = useState([]);
+  const [pendingSendMessages, setPendingSendMessages] = useState([]);
   const [resources, setResources] = useState([]);
   const [workGroups, setWorkGroups] = useState([]);
   const [collections, setCollections] = useState(initialCollection ? [initialCollection] : []);
@@ -667,9 +668,9 @@ export function GroupDetailPage({
   }, {}), [activeMembers]);
   const summary = memberCanVerify ? paymentSummary(selectedCollection, payments) : paymentSummary(selectedCollection, myPayment ? [myPayment] : []);
   const currentAction = group.currentAction || null;
-  const chatMessages = useMemo(() => [...messages, ...queuedMessages].sort((a, b) => (
+  const chatMessages = useMemo(() => [...messages, ...queuedMessages, ...pendingSendMessages].sort((a, b) => (
     (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0)
-  )), [messages, queuedMessages]);
+  )), [messages, queuedMessages, pendingSendMessages]);
   const unreadChatMessages = useMemo(() => chatMessages.filter(message => (
     message.authorUid !== user?.uid
     && message.createdAt?.getTime
@@ -1264,6 +1265,59 @@ export function GroupDetailPage({
       onError(new Error("Only admins, owners, and treasurers can tag members in this group."));
       return;
     }
+
+    if (kind === "message" && chatAttachments.length === 0 && messageText.trim()) {
+      const text = messageText.trim();
+      const tempId = `pending-${group.id}-${user.uid}-${Date.now()}`;
+      const replySnapshot = replyToMessage ? {
+        id: replyToMessage.id,
+        authorName: replyToMessage.authorName || "Member",
+        text: (replyToMessage.text || replyToMessage.attachments?.[0]?.name || "Attachment").slice(0, 140),
+      } : null;
+      const pendingReplyTo = replyToMessage;
+      setPendingSendMessages(prev => [...prev, {
+        id: tempId,
+        groupId: group.id,
+        channelId: "chats",
+        text,
+        authorName: profile.name || user.email || "Member",
+        authorUid: user.uid,
+        kind: "message",
+        pinned: false,
+        replyTo: replySnapshot,
+        attachments: [],
+        reactions: {},
+        createdAt: new Date(),
+        sending: true,
+      }]);
+      setMessageText("");
+      setShowChatComposer(false);
+      setShowChatTools(false);
+      setReplyToMessage(null);
+      try {
+        await sendGroupMessage(db, {
+          groupId: group.id,
+          channelId: "chats",
+          text,
+          user,
+          profile,
+          kind: "message",
+          pinned: false,
+          group,
+          members,
+          replyTo: pendingReplyTo,
+          attachments: [],
+        });
+        markCurrentGroupRead();
+      } catch (err) {
+        onError(err);
+        setMessageText(text);
+      } finally {
+        setPendingSendMessages(prev => prev.filter(m => m.id !== tempId));
+      }
+      return;
+    }
+
     setPosting(true);
     try {
       if (chatAttachments.length > 0 && !storage) {
@@ -3122,8 +3176,10 @@ export function GroupDetailPage({
             <div className="chat-empty-friendly">💬 No messages yet — say hi!</div>
           ) : (
             <div className="message-list" ref={messageListRef} onScroll={handleChatScroll}>
-              {chatMessages.map((message, index) => (
-                <div key={message.id} className="message-stack">
+              {chatMessages.map((message, index) => {
+                const isOwnMessage = message.authorUid === user?.uid;
+                return (
+                <div key={message.id} className={`message-stack ${isOwnMessage ? "own" : "incoming"}`}>
                   {(index === 0 || !sameMessageDay(chatMessages[index - 1]?.createdAt, message.createdAt)) && (
                     <div className="message-date-chip">{formatMessageDay(message.createdAt)}</div>
                   )}
@@ -3132,11 +3188,17 @@ export function GroupDetailPage({
                       {unreadChatMessages.length} unread {unreadChatMessages.length === 1 ? "message" : "messages"}
                     </div>
                   )}
-                  <div
+                  <div className="message-row">
+                    {!isOwnMessage && (
+                      <div className="message-avatar" style={{ background: getUserColor(message.authorUid) }}>
+                        {(message.authorName || "?").trim().charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div
                     role="button"
                     tabIndex={0}
-                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.offlinePending ? "pending" : ""}`}
-                    style={{ borderLeftColor: getUserColor(message.authorUid) }}
+                    className={`message-bubble ${isOwnMessage ? "own" : "incoming"} ${message.kind === "announcement" ? "announcement" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
+                    style={{ borderLeftColor: isOwnMessage ? "transparent" : getUserColor(message.authorUid) }}
                     onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
                     onMouseLeave={clearMessageHold}
@@ -3145,7 +3207,7 @@ export function GroupDetailPage({
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
                   >
-                    <div className="message-author" style={{ color: getUserColor(message.authorUid) }}>{message.authorName || "Member"}</div>
+                    {!isOwnMessage && <div className="message-author" style={{ color: getUserColor(message.authorUid) }}>{message.authorName || "Member"}</div>}
                     {message.replyTo && (
                       <div className="message-reply-preview">
                         <strong>{message.replyTo.authorName}</strong>
@@ -3216,12 +3278,14 @@ export function GroupDetailPage({
                         ))}
                       </div>
                     )}
-                    <div className={`message-time ${message.offlinePending ? "pending" : ""}`}>
-                      {message.offlinePending ? "Pending" : formatDate(message.createdAt)}
+                    <div className={`message-time ${(message.offlinePending || message.sending) ? "pending" : ""}`}>
+                      {message.offlinePending ? "Pending" : message.sending ? "Sending..." : formatDate(message.createdAt)}
                     </div>
                   </div>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
               <div ref={chatBottomRef} />
             </div>
           )}
