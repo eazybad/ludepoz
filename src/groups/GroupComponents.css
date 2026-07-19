@@ -2720,6 +2720,77 @@
   margin-bottom: 9px;
 }
 
+.resource-file-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.resource-file-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  gap: 1px;
+}
+
+.resource-file-badge svg {
+  width: 16px;
+  height: 16px;
+}
+
+.resource-file-badge span {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.resource-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background-color: #d3d1c7;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.resource-thumb svg {
+  width: 18px;
+  height: 18px;
+}
+
+.resource-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.resource-file-info .resource-title {
+  margin-bottom: 2px;
+}
+
+.resource-link-domain,
+.resource-file-size {
+  font-size: 11px;
+  color: #667085;
+  font-weight: 700;
+}
+
+.dark-mode .resource-link-domain,
+.dark-mode .resource-file-size {
+  color: #8696a0;
+}
+
 .resource-title {
   color: #0f1b2d;
   font-size: 15px;
@@ -2976,6 +3047,11 @@
   justify-content: center;
   font-size: 20px;
   font-weight: 900;
+}
+
+.class-board-folder-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .class-board-folder-header {

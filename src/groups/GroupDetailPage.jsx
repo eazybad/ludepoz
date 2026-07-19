@@ -344,6 +344,13 @@ function getMentionContext(text, cursorPos) {
   };
 }
 
+function collectionTypeAccent(type = "") {
+  const key = String(type).toLowerCase();
+  if (key === "event") return { bg: "#f5f0ff", text: "#7c3aed", accent: "#7c3aed" };
+  if (key === "order") return { bg: "#eff6ff", text: "#2563eb", accent: "#2563eb" };
+  return { bg: "#ecfdf5", text: "#16a34a", accent: "#16a34a" };
+}
+
 function statusClass(status) {
   if (status === "paid") return "paid";
   if (status === "rejected" || status === "failed") return "rejected";
@@ -391,6 +398,24 @@ function resourcePreviewKind(resource = {}) {
   if (/(sheet|xls)/i.test(type) || /\.(xlsx?)(\s|$|\?)/i.test(source)) return "office";
   if (/\.(txt|csv)(\s|$|\?)/i.test(source)) return "text";
   return "generic";
+}
+
+function resourceBadgeInfo(resource = {}) {
+  const kind = resourcePreviewKind(resource);
+  const source = [resource.fileName, resource.name, resource.title, resource.url].filter(Boolean).join(" ").toLowerCase();
+  if (kind === "image") return { label: "IMG", bg: "#0d9488", isImage: true };
+  if (kind === "pdf") return { label: "PDF", bg: "#e11d48", icon: "file" };
+  if (kind === "convertible") {
+    if (/\.pptx?(\s|$|\?)/i.test(source)) return { label: "PPT", bg: "#ea580c", icon: "file" };
+    return { label: "DOC", bg: "#2563eb", icon: "file" };
+  }
+  if (kind === "office") return { label: "XLS", bg: "#16a34a", icon: "file" };
+  if (kind === "text") {
+    if (/\.csv(\s|$|\?)/i.test(source)) return { label: "CSV", bg: "#0891b2", icon: "file" };
+    return { label: "TXT", bg: "#64748b", icon: "file" };
+  }
+  if (resource.url && !resource.fileName) return { label: "LINK", bg: "#7c3aed", icon: "link", isLink: true };
+  return { label: "FILE", bg: "#64748b", icon: "file" };
 }
 
 function eventPosterStatus(item = {}) {
@@ -1635,6 +1660,7 @@ export function GroupDetailPage({
       let resourceUrl = resourceData.url.trim();
       let fileName = resourceData.fileName || "";
       let storagePath = "";
+      let fileSize = 0;
       if (storage && resourceData.file) {
         const uploadFile = await prepareResourceUploadFile(resourceData.file);
         const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "resource";
@@ -1643,6 +1669,7 @@ export function GroupDetailPage({
         resourceUrl = await getDownloadURL(snap.ref);
         fileName = resourceData.file.name;
         storagePath = fileRef.fullPath;
+        fileSize = uploadFile.size;
       }
       const title = resourceData.title || fileName || resourceUrl;
       const resourceType = resourceData.resourceType || inferResourceType(fileName || resourceUrl || title) || "Resource";
@@ -1653,6 +1680,7 @@ export function GroupDetailPage({
         fileName,
         resourceType,
         storagePath,
+        size: fileSize || resourceData.size || 0,
       };
       if (editingResourceId) {
         await updateGroupResource(db, {
@@ -1896,14 +1924,7 @@ export function GroupDetailPage({
   };
 
   const getOriginalOpenUrl = (resource = {}) => {
-    const url = resource.url || "";
-    if (!url) return "";
-    if (url.includes("docs.google.com/") || url.includes("drive.google.com/drive/folders/")) return url;
-    const kind = resourcePreviewKind(resource);
-    if (kind === "convertible" || kind === "office") {
-      return `https://docs.google.com/gview?url=${encodeURIComponent(url)}`;
-    }
-    return url;
+    return resource.url || "";
   };
 
   const handleOpenResourceInApp = (resource) => {
@@ -1982,6 +2003,7 @@ export function GroupDetailPage({
       resourceType: inferResourceType(uploadFile.name || file.name) || "File",
       fileName: file.name,
       storagePath: filePath,
+      size: uploadFile.size,
     });
     if (ENABLE_DOCUMENT_PDF_PREVIEWS && resourcePreviewKind({ fileName: file.name, resourceType: inferResourceType(uploadFile.name || file.name) }) === "convertible") {
       await handlePrepareDocumentPreview({ id: resourceRef.id });
@@ -3518,12 +3540,13 @@ export function GroupDetailPage({
                 <div className="tracker-list">
                   {paymentCollections.map(item => {
                     const needsPayment = Number(item.amount || 0) > 0;
+                    const accent = collectionTypeAccent(item.collectionType);
                     return (
-                      <button key={item.id} type="button" className="tracker-card" onClick={() => openTracker(item.id)}>
+                      <button key={item.id} type="button" className="tracker-card" style={{ borderLeft: `4px solid ${accent.accent}` }} onClick={() => openTracker(item.id)}>
                         {item.photoUrl && <img className="tracker-card-photo" src={item.photoUrl} alt="" />}
                         <div>
                           <strong>{collectionDisplayTitle(item)}</strong>
-                          <span>{item.collectionType === "event" ? "Event" : item.collectionType === "order" ? "Group order" : "Contribution"}</span>
+                          <span style={{ background: accent.bg, color: accent.text }}>{item.collectionType === "event" ? "Event" : item.collectionType === "order" ? "Group order" : "Contribution"}</span>
                         </div>
                         <p>{item.description || "No description added."}</p>
                         <div className="tracker-card-meta">
@@ -4223,9 +4246,31 @@ export function GroupDetailPage({
                   )}
                 </div>
               ) : (
-                selectedResourceItems.map(resource => (
+                selectedResourceItems.map(resource => {
+                  const badge = resourceBadgeInfo(resource);
+                  let linkDomain = "";
+                  if (badge.isLink && resource.url) {
+                    try { linkDomain = new URL(resource.url).hostname.replace(/^www\./, ""); } catch (e) { linkDomain = resource.url; }
+                  }
+                  return (
                   <div key={resource.id} className="resource-box class-board-resource">
-                    <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAt && <span className="inline-new-pill">New</span>}</div>
+                    <div className="resource-file-row">
+                      {badge.isImage ? (
+                        <div className="resource-thumb" style={{ backgroundImage: resource.url ? `url(${resource.url})` : undefined }}>
+                          {!resource.url && <MenuIcon name="image" />}
+                        </div>
+                      ) : (
+                        <div className="resource-file-badge" style={{ background: badge.bg }}>
+                          <MenuIcon name={badge.icon} />
+                          <span>{badge.label}</span>
+                        </div>
+                      )}
+                      <div className="resource-file-info">
+                        <div className="resource-title">{resource.title || resource.text}{resource.createdAt?.getTime?.() > openedReadAt && <span className="inline-new-pill">New</span>}</div>
+                        {badge.isLink && linkDomain && <div className="resource-link-domain">{linkDomain}</div>}
+                        {!badge.isLink && !badge.isImage && resource.size > 0 && <div className="resource-file-size">{formatBytes(resource.size)}</div>}
+                      </div>
+                    </div>
                     {resource.topic && <div className="class-board-topic">{resource.topic}</div>}
                     {(resource.description || (resource.text && resource.title && resource.text !== resource.title)) && (
                       <div className="resource-text">{resource.description || resource.text}</div>
@@ -4260,7 +4305,8 @@ export function GroupDetailPage({
                       {memberCanManage && <button className="group-btn danger" type="button" disabled={busy} onClick={() => handleDeleteResource(resource)}>Delete</button>}
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           ) : (
@@ -4270,7 +4316,7 @@ export function GroupDetailPage({
                 const latest = realItems[0];
                 return (
                   <button key={subject} type="button" className="class-board-folder-card" onClick={() => openResourceSubject(subject)}>
-                    <div className="class-board-folder-icon">+</div>
+                    <div className="class-board-folder-icon"><MenuIcon name="folder" /></div>
                     <strong>{subject}</strong>
                     <span>{realItems.length} {realItems.length === 1 ? "resource" : "resources"}</span>
                     {latest && <small>Latest: {latest.title || latest.text}</small>}
@@ -4689,7 +4735,7 @@ export function GroupDetailPage({
               <div className="resource-preview-fallback">
                 <MenuIcon name="file" />
                 <strong>{resourcePreview.type || "File"}</strong>
-                <span>This file type cannot be previewed inside Kampasika yet.</span>
+                <span>This file type can't be previewed inside Kampasika. Open it with another app on your phone instead.</span>
               </div>
             ) : (
               <iframe className="resource-preview-frame" src={resourcePreview.previewUrl} title={resourcePreview.title} />
@@ -4700,9 +4746,9 @@ export function GroupDetailPage({
                   {convertingResourceId === resourcePreview.id ? "Preparing..." : "Prepare PDF preview"}
                 </button>
               )}
-              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">{resourcePreview.kind === "convertible" ? "Open in viewer" : "Open original"}</a>
-              {resourcePreview.kind === "convertible" && (
-                <a className="group-btn ghost group-link-btn" href={resourcePreview.url} target="_blank" rel="noreferrer">Download original</a>
+              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">{resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "Open with another app" : "Open original"}</a>
+              {(resourcePreview.kind === "convertible" || resourcePreview.kind === "office") && (
+                <a className="group-btn ghost group-link-btn" href={getPreviewUrl(resourcePreview)} target="_blank" rel="noreferrer">Try web viewer</a>
               )}
             </div>
           </div>

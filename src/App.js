@@ -224,6 +224,21 @@ const ADMIN_UIDS = ["LTrwUHH6utQJGiw4lcsKflzXvPR2"];
 // files, browser memory limits), fall back to the ORIGINAL file so the upload
 // still succeeds. The user gets their listing/photo posted; they just don't
 // get the size benefit on that one image.
+function collectionTypeStyle(type = "") {
+  const key = String(type).toLowerCase();
+  if (key.includes("event")) return { bg: "#f5f0ff", text: "#7c3aed", accent: "#7c3aed" };
+  if (key.includes("contribution")) return { bg: "#ecfdf5", text: "#16a34a", accent: "#16a34a" };
+  if (key.includes("order")) return { bg: "#eff6ff", text: "#2563eb", accent: "#2563eb" };
+  return { bg: "#f4f6f8", text: "#64748b", accent: "#64748b" };
+}
+
+function groupAccentColor(name = "") {
+  const colors = ["#e11d48", "#f97316", "#0d9488", "#2563eb", "#8b5cf6", "#ec4899", "#0891b2", "#65a30d"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
 async function safeCompress(file, preset, timeoutMs = 15000) {
   try {
     const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Compression timed out")), timeoutMs));
@@ -399,6 +414,10 @@ function App() {
   const homeScrollRef = useRef(null);
   const lastScrollY = useRef(0);
   const [profileTab, setProfileTab] = useState("collections");
+  const [myCollectionsSearchQ, setMyCollectionsSearchQ] = useState("");
+  const [myCollectionsGroupFilter, setMyCollectionsGroupFilter] = useState("all");
+  const [myCollectionsDateFilter, setMyCollectionsDateFilter] = useState("all");
+  const [expandedMyCollectionGroups, setExpandedMyCollectionGroups] = useState({});
   const [activeCat, setActiveCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
   const [committedSearchQ, setCommittedSearchQ] = useState("");
@@ -1959,7 +1978,7 @@ useEffect(() => {
           groupId: item.groupId || group.id,
           groupName: item.groupName || group.name,
         })))
-        .filter(item => item.active !== false && item.status !== "archived" && Number(item.amount || item.price || 0) > 0)
+        .filter(item => item.active !== false && item.status !== "archived" && item.userId === user.uid && Number(item.amount || item.price || 0) > 0)
         .sort((a, b) => {
           const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
           const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
@@ -9994,35 +10013,123 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                     <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>My Collections ({myCollections.length})</h3>
                     <button onClick={()=>setShowQuickActions(true)} style={{padding:'8px 14px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Create</button>
                   </div>
-                  {myCollections.map((collectionItem) => {
-                    const collectionGroup = getMyCollectionGroup(collectionItem);
-                    const collectionGroupName = collectionGroup?.name || collectionItem.groupName || 'Group collection';
-                    const amount = Number(collectionItem.amount || collectionItem.price || 0);
-                    const createdLabel = collectionItem.createdAt instanceof Date
-                      ? collectionItem.createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
-                      : '';
-                    return (
-                      <button
-                        key={`${collectionItem.groupId || 'group'}-${collectionItem.id}`}
-                        type="button"
-                        onClick={() => collectionGroup && openGroup(collectionGroup, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'profileCollections' })}
-                        disabled={!collectionGroup}
-                        style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',padding:'14px',textAlign:'left',cursor:collectionGroup?'pointer':'default',opacity:collectionGroup?1:0.72}}
-                      >
-                        <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
-                          <div style={{minWidth:0}}>
-                            <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
-                            <div style={{fontSize:'12px',color:'#667085',marginTop:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>In: {collectionGroupName}</div>
+                  <div style={{display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+                    <input type="text" placeholder="Search my collections..." value={myCollectionsSearchQ} onChange={e=>setMyCollectionsSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
+                  </div>
+                  <div style={{display:'flex',gap:'8px'}}>
+                    <select value={myCollectionsGroupFilter} onChange={e=>setMyCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                      <option value="all">All groups</option>
+                      {Array.from(new Set(myCollections.map(c => getMyCollectionGroup(c)?.name || c.groupName || 'Group collection'))).sort().map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <select value={myCollectionsDateFilter} onChange={e=>setMyCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                      <option value="all">Any time</option>
+                      <option value="today">Today</option>
+                      <option value="week">Last 7 days</option>
+                      <option value="month">Last 30 days</option>
+                    </select>
+                  </div>
+                  {(() => {
+                    const q = myCollectionsSearchQ.trim().toLowerCase();
+                    const visible = myCollections.filter(collectionItem => {
+                      const groupName = getMyCollectionGroup(collectionItem)?.name || collectionItem.groupName || 'Group collection';
+                      if (q && !(collectionItem.title||'').toLowerCase().includes(q) && !groupName.toLowerCase().includes(q) && !(collectionItem.collectionType||'').toLowerCase().includes(q)) return false;
+                      if (myCollectionsGroupFilter !== "all" && groupName !== myCollectionsGroupFilter) return false;
+                      if (myCollectionsDateFilter !== "all") {
+                        const created = collectionItem.createdAt instanceof Date ? collectionItem.createdAt : null;
+                        if (!created) return false;
+                        const daysAgo = (Date.now() - created.getTime()) / (1000*60*60*24);
+                        if (myCollectionsDateFilter === "today" && daysAgo > 1) return false;
+                        if (myCollectionsDateFilter === "week" && daysAgo > 7) return false;
+                        if (myCollectionsDateFilter === "month" && daysAgo > 30) return false;
+                      }
+                      return true;
+                    });
+
+                    const renderCard = (collectionItem) => {
+                      const collectionGroup = getMyCollectionGroup(collectionItem);
+                      const collectionGroupName = collectionGroup?.name || collectionItem.groupName || 'Group collection';
+                      const amount = Number(collectionItem.amount || collectionItem.price || 0);
+                      const createdLabel = collectionItem.createdAt instanceof Date
+                        ? collectionItem.createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                        : '';
+                      const typeStyle = collectionTypeStyle(collectionItem.collectionType);
+                      const groupColor = groupAccentColor(collectionGroupName);
+                      return (
+                        <button
+                          key={`${collectionItem.groupId || 'group'}-${collectionItem.id}`}
+                          type="button"
+                          onClick={() => collectionGroup && openGroup(collectionGroup, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'profileCollections' })}
+                          disabled={!collectionGroup}
+                          style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:collectionGroup?'pointer':'default',opacity:collectionGroup?1:0.72,width:'100%'}}
+                        >
+                          <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
+                            <div style={{minWidth:0}}>
+                              <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
+                              <div style={{display:'inline-flex',alignItems:'center',gap:'5px',marginTop:'5px',background:`${groupColor}18`,color:groupColor,padding:'2px 8px',borderRadius:'999px',fontSize:'11px',fontWeight:'800',maxWidth:'100%'}}>
+                                <span style={{width:'6px',height:'6px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
+                                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroupName}</span>
+                              </div>
+                            </div>
+                            <div style={{fontSize:'13px',fontWeight:'800',color:'#0d9488',whiteSpace:'nowrap'}}>{amount.toLocaleString()} TSh</div>
                           </div>
-                          <div style={{fontSize:'13px',fontWeight:'800',color:'#0d9488',whiteSpace:'nowrap'}}>{amount.toLocaleString()} TSh</div>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
+                            <span style={{fontSize:'10px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'0.02em',color:typeStyle.text,background:typeStyle.bg,padding:'3px 8px',borderRadius:'999px'}}>{collectionItem.collectionType || 'collection'}</span>
+                            <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                          </div>
+                        </button>
+                      );
+                    };
+
+                    if (visible.length === 0) {
+                      return (
+                        <div style={{textAlign:'center',padding:'32px 16px',background:'#fff',borderRadius:'12px'}}>
+                          <div style={{fontSize:'28px',marginBottom:'8px'}}>🔍</div>
+                          <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>No matches</div>
+                          <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'4px'}}>Try a different search or filter.</div>
                         </div>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
-                          <span style={{fontSize:'11px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'0.02em',color:'#64748b'}}>{collectionItem.collectionType || 'collection'}</span>
-                          <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                      );
+                    }
+
+                    if (myCollectionsGroupFilter !== "all") {
+                      return <>{visible.map(renderCard)}</>;
+                    }
+
+                    const sections = new Map();
+                    const order = [];
+                    visible.forEach(item => {
+                      const groupName = getMyCollectionGroup(item)?.name || item.groupName || 'Group collection';
+                      if (!sections.has(groupName)) { sections.set(groupName, []); order.push(groupName); }
+                      sections.get(groupName).push(item);
+                    });
+
+                    return order.map(groupName => {
+                      const items = sections.get(groupName);
+                      const isExpanded = expandedMyCollectionGroups[groupName] ?? true;
+                      const groupColor = groupAccentColor(groupName);
+                      return (
+                        <div key={groupName} style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
+                          <button
+                            type="button"
+                            onClick={()=>setExpandedMyCollectionGroups(prev=>({...prev,[groupName]:!isExpanded}))}
+                            style={{width:'100%',padding:'12px 14px',background:'none',border:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}
+                          >
+                            <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'#0f1b2d'}}>
+                              <span style={{width:'8px',height:'8px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
+                              {groupName} <span style={{color:'#8a9bb0',fontWeight:'700'}}>({items.length})</span>
+                            </span>
+                            <span style={{fontSize:'12px',color:'#8a9bb0'}}>{isExpanded ? '▲' : '▼'}</span>
+                          </button>
+                          {isExpanded && (
+                            <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 10px 10px'}}>
+                              {items.map(renderCard)}
+                            </div>
+                          )}
                         </div>
-                      </button>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </>
               )}
             </div>
