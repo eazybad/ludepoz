@@ -509,6 +509,7 @@ export function GroupDetailPage({
   const [chatAttachments, setChatAttachments] = useState([]);
   const [showChatComposer, setShowChatComposer] = useState(false);
   const [showChatTools, setShowChatTools] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [activeMessageActions, setActiveMessageActions] = useState(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -519,6 +520,7 @@ export function GroupDetailPage({
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [editingResourceId, setEditingResourceId] = useState("");
   const [selectedResourceSubject, setSelectedResourceSubject] = useState("");
+  const [resourceFolderSearchQ, setResourceFolderSearchQ] = useState("");
   const [resourceSortMode, setResourceSortMode] = useState("latest");
   const [showWorkGroupForm, setShowWorkGroupForm] = useState(false);
   const [showTrackerMore, setShowTrackerMore] = useState(false);
@@ -591,6 +593,7 @@ export function GroupDetailPage({
 
   const profile = useMemo(() => ({ name: userName, avatarUrl: userAvatar }), [userName, userAvatar]);
   const currentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "active") || null, [members, user]);
+  const membersByUid = useMemo(() => new Map(members.map(member => [member.uid, member])), [members]);
   const pendingCurrentMember = useMemo(() => members.find(member => member.uid === user?.uid && member.status === "pending") || null, [members, user]);
   const memberCanManage = canManageGroup(currentMember) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
   const memberCanEditGroup = ["owner", "admin"].includes(currentMember?.role) || group.adminUid === user?.uid || group.ownerUid === user?.uid;
@@ -730,12 +733,16 @@ export function GroupDetailPage({
   }, {}), [sortedResources]);
   const resourceSubjectEntries = useMemo(() => Object.entries(groupedResources).sort(([a], [b]) => a.localeCompare(b)), [groupedResources]);
   const selectedResourceItems = useMemo(() => {
-    const items = selectedResourceSubject ? (groupedResources[selectedResourceSubject] || []).filter(resource => resource.resourceType !== "Folder") : [];
+    let items = selectedResourceSubject ? (groupedResources[selectedResourceSubject] || []).filter(resource => resource.resourceType !== "Folder") : [];
+    const q = resourceFolderSearchQ.trim().toLowerCase();
+    if (q) {
+      items = items.filter(resource => [resource.title, resource.text, resource.fileName, resource.resourceType].filter(Boolean).some(value => String(value).toLowerCase().includes(q)));
+    }
     if (resourceSortMode === "alpha") {
       return items.sort((a, b) => String(a.title || a.text || "").localeCompare(String(b.title || b.text || "")));
     }
     return items.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
-  }, [groupedResources, resourceSortMode, selectedResourceSubject]);
+  }, [groupedResources, resourceSortMode, selectedResourceSubject, resourceFolderSearchQ]);
   const savedOfflineResourceList = useMemo(() => Object.entries(savedOfflineResources)
     .map(([id, saved]) => {
       const liveResource = resources.find(resource => resource.id === id) || {};
@@ -872,6 +879,7 @@ export function GroupDetailPage({
     if (!subject) return;
     if (subject !== selectedResourceSubject) pushGroupHistory();
     setSelectedResourceSubject(subject);
+    setResourceFolderSearchQ("");
   };
 
   const goBackWithinGroup = useCallback(() => {
@@ -3201,7 +3209,7 @@ export function GroupDetailPage({
               {chatMessages.map((message, index) => {
                 const isOwnMessage = message.authorUid === user?.uid;
                 return (
-                <div key={message.id} className={`message-stack ${isOwnMessage ? "own" : "incoming"}`}>
+                <div key={message.id} className="message-stack">
                   {(index === 0 || !sameMessageDay(chatMessages[index - 1]?.createdAt, message.createdAt)) && (
                     <div className="message-date-chip">{formatMessageDay(message.createdAt)}</div>
                   )}
@@ -3211,16 +3219,22 @@ export function GroupDetailPage({
                     </div>
                   )}
                   <div className="message-row">
-                    {!isOwnMessage && (
-                      <div className="message-avatar" style={{ background: getUserColor(message.authorUid) }}>
-                        {(message.authorName || "?").trim().charAt(0).toUpperCase()}
-                      </div>
-                    )}
+                    {(() => {
+                      const senderAvatarUrl = isOwnMessage ? profile.avatarUrl : membersByUid.get(message.authorUid)?.avatarUrl;
+                      if (senderAvatarUrl) {
+                        return <div className="message-avatar" style={{ backgroundImage: `url(${senderAvatarUrl})`, backgroundSize: "cover", backgroundPosition: "center" }} />;
+                      }
+                      return (
+                        <div className="message-avatar" style={{ background: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}>
+                          {isOwnMessage ? "Me" : (message.authorName || "?").trim().charAt(0).toUpperCase()}
+                        </div>
+                      );
+                    })()}
                     <div
                     role="button"
                     tabIndex={0}
-                    className={`message-bubble ${isOwnMessage ? "own" : "incoming"} ${message.kind === "announcement" ? "announcement" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
-                    style={{ borderLeftColor: isOwnMessage ? "transparent" : getUserColor(message.authorUid) }}
+                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
+                    style={{ borderLeftColor: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}
                     onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
                     onMouseLeave={clearMessageHold}
@@ -3229,7 +3243,7 @@ export function GroupDetailPage({
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
                   >
-                    {!isOwnMessage && <div className="message-author" style={{ color: getUserColor(message.authorUid) }}>{message.authorName || "Member"}</div>}
+                    <div className="message-author" style={{ color: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}>{isOwnMessage ? "You" : (message.authorName || "Member")}</div>
                     {message.replyTo && (
                       <div className="message-reply-preview">
                         <strong>{message.replyTo.authorName}</strong>
@@ -3472,9 +3486,26 @@ export function GroupDetailPage({
                         ))}
                       </div>
                     )}
+                    {showEmojiPicker && (
+                      <div className="emoji-picker-dropdown">
+                        {["😀","😂","😅","😊","😍","😘","😎","🤔","😢","😭","😡","😴","👍","👎","🙏","👏","💪","🙌","🔥","💯","❤️","💚","💛","💙","✨","🎉","🎓","📌","✅","❌","⚠️","⏰","📷","📎","🎵","😇","🤝","👋","🥳","😱"].map(emoji => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="emoji-picker-item"
+                            onClick={() => setMessageText(prev => `${prev}${emoji}`)}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="chat-input-row">
-                      <button type="button" className="chat-plus-btn" ref={chatPlusButtonRef} aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); }}>
+                      <button type="button" className="chat-plus-btn" ref={chatPlusButtonRef} aria-label="Open chat tools" onClick={() => { setShowChatComposer(true); setShowChatTools(value => !value); setShowEmojiPicker(false); }}>
                         <MenuIcon name="plus" />
+                      </button>
+                      <button type="button" className="chat-emoji-btn" aria-label="Emoji picker" onClick={() => { setShowChatComposer(true); setShowEmojiPicker(value => !value); }}>
+                        🙂
                       </button>
                       <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="use @username to tag" rows={1} autoFocus />
                       <button
@@ -4236,7 +4267,20 @@ export function GroupDetailPage({
                   </button>
                 )}
               </div>
+              {selectedResourceItems.length > 0 || resourceFolderSearchQ ? (
+                <div className="resource-folder-search">
+                  <input
+                    type="text"
+                    value={resourceFolderSearchQ}
+                    onChange={event => setResourceFolderSearchQ(event.target.value)}
+                    placeholder="Search files in this folder..."
+                  />
+                </div>
+              ) : null}
               {selectedResourceItems.length === 0 ? (
+                resourceFolderSearchQ ? (
+                  <div className="resource-box">No files match "{resourceFolderSearchQ}".</div>
+                ) : (
                 <div className="resource-box">
                   This folder is empty.
                   {memberCanManage && (
@@ -4245,6 +4289,7 @@ export function GroupDetailPage({
                     </button>
                   )}
                 </div>
+                )
               ) : (
                 selectedResourceItems.map(resource => {
                   const badge = resourceBadgeInfo(resource);

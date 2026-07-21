@@ -1280,10 +1280,6 @@
   max-width: 100%;
 }
 
-.message-stack.own .message-row {
-  justify-content: flex-end;
-}
-
 .message-avatar {
   width: 28px;
   height: 28px;
@@ -1301,21 +1297,13 @@
   max-width: 78%;
   align-self: flex-start;
   border: none;
-  border-radius: 12px 12px 12px 2px;
+  border-left: 3px solid transparent;
+  border-radius: 8px 12px 12px 12px;
   padding: 8px 12px;
   background: #ffffff;
   box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
   text-align: left;
   cursor: pointer;
-}
-
-.message-bubble.own {
-  border-radius: 12px 12px 2px 12px;
-  background: #d9fdd3;
-}
-
-.dark-mode .message-bubble.own {
-  background: #005c4b;
 }
 
 .message-bubble.announcement {
@@ -1680,7 +1668,8 @@
 
 .chat-plus-btn,
 .chat-close-btn,
-.chat-send-btn {
+.chat-send-btn,
+.chat-emoji-btn {
   flex-shrink: 0;
   width: 38px;
   height: 38px;
@@ -1690,6 +1679,57 @@
   border: none;
   border-radius: 50%;
   cursor: pointer;
+}
+
+.chat-emoji-btn {
+  background: #f3f6f8;
+  font-size: 19px;
+}
+
+.dark-mode .chat-emoji-btn {
+  background: #2a3942;
+}
+
+.emoji-picker-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e6ea;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 27, 45, 0.14);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 40;
+}
+
+.dark-mode .emoji-picker-dropdown {
+  background: #202c33;
+  border-color: rgba(134, 150, 160, 0.2);
+}
+
+.emoji-picker-item {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.emoji-picker-item:hover {
+  background: #f0fdfa;
+}
+
+.dark-mode .emoji-picker-item:hover {
+  background: #2a3942;
 }
 
 .chat-compose-pill svg,
@@ -3052,6 +3092,28 @@
 .class-board-folder-icon svg {
   width: 18px;
   height: 18px;
+}
+
+.resource-folder-search {
+  margin-bottom: 10px;
+}
+
+.resource-folder-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid #dbe8e7;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13px;
+  color: #0f1b2d;
+  outline: none;
+}
+
+.dark-mode .resource-folder-search input {
+  background: #202c33;
+  border-color: rgba(134, 150, 160, 0.2);
+  color: #e9edef;
 }
 
 .class-board-folder-header {
