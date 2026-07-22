@@ -6832,11 +6832,12 @@ return (
     overflowX:'hidden',
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
-    paddingBottom:'100px'
+    paddingBottom:'100px',
+    background:'#ffffff'
   }}>
-          <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'0 16px',marginBottom:'12px'}}>
-            <button type="button" onClick={()=>setMessageFilterMode("all")} style={{padding:'6px 14px',borderRadius:'999px',border:messageFilterMode==="all"?'1.5px solid #0d9488':'1.5px solid #e2e6ea',background:messageFilterMode==="all"?'#ecfeff':'#fff',color:messageFilterMode==="all"?'#0d9488':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>All</button>
-            <button type="button" onClick={()=>setMessageFilterMode("unread")} style={{padding:'6px 14px',borderRadius:'999px',border:messageFilterMode==="unread"?'1.5px solid #0d9488':'1.5px solid #e2e6ea',background:messageFilterMode==="unread"?'#ecfeff':'#fff',color:messageFilterMode==="unread"?'#0d9488':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Unread{unreadCount>0?` · ${unreadCount}`:""}</button>
+          <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'12px 16px'}}>
+            <button type="button" onClick={()=>setMessageFilterMode("all")} style={{padding:'6px 14px',borderRadius:'999px',border:'none',background:messageFilterMode==="all"?'#0d9488':'#f4f6f8',color:messageFilterMode==="all"?'#fff':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>All</button>
+            <button type="button" onClick={()=>setMessageFilterMode("unread")} style={{padding:'6px 14px',borderRadius:'999px',border:'none',background:messageFilterMode==="unread"?'#0d9488':'#f4f6f8',color:messageFilterMode==="unread"?'#fff':'#667085',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Unread{unreadCount>0?` · ${unreadCount}`:""}</button>
           </div>
           {conversations.length > 0 && (
             <div style={{padding:'0 16px 12px'}}>
@@ -6845,7 +6846,7 @@ return (
                 value={messageSearchQ}
                 onChange={e=>setMessageSearchQ(e.target.value)}
                 placeholder="Search by name, listing, price, or message"
-                style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'#fff'}}
+                style={{width:'100%',padding:'10px 14px',border:'none',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'#f4f6f8'}}
               />
             </div>
           )}
@@ -6858,13 +6859,13 @@ return (
               </div>
             </div>
           ):filteredConversations.length===0?(
-            <div style={{background:'#fff',borderRadius:'12px',padding:'28px',textAlign:'center',margin:'0 16px'}}>
+            <div style={{padding:'28px 16px',textAlign:'center'}}>
               <div style={{fontSize:'34px',marginBottom:'10px'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?'✓':'⌕'}</div>
               <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'#0f1b2d'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"You're all caught up":"No matches"}</h3>
               <p style={{fontSize:'13px',color:'#8a9bb0',margin:0}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"No unread conversations right now.":"Try a different name, listing, price, or message."}</p>
             </div>
           ):(
-           <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 16px'}}>
+           <div style={{display:'flex',flexDirection:'column'}}>
   {groupedConversationsByPerson.map(group=>{
     const { otherUid, otherPerson, conversations: personConvs } = group;
     const totalUnread = personConvs.reduce((sum, conv) => {
@@ -6889,14 +6890,14 @@ return (
     );
 
     return (
-      <div key={otherUid} style={{background:'#fff',borderRadius:'12px',border:'1px solid #e2e6ea',overflow:'hidden'}}>
+      <div key={otherUid} style={{borderBottom:'1px solid #f0f0f0'}}>
         <div style={{display:'flex',alignItems:'center'}}>
           <div
             onClick={()=>{
               if (singleThread) { setActiveConversation(topConv); setPage("chat"); markAsRead(topConv.id); }
               else setExpandedPersonUid(isExpanded ? "" : otherUid);
             }}
-            style={{flex:1,padding:'16px',cursor:'pointer',display:'flex',gap:'12px',minWidth:0}}
+            style={{flex:1,padding:'12px 16px',cursor:'pointer',display:'flex',gap:'12px',minWidth:0}}
           >
             <AvatarCircle />
             <div style={{flex:1,minWidth:0}}>
@@ -6922,7 +6923,7 @@ return (
           {singleThread && (
             <button
               onClick={(e) => { e.stopPropagation(); deleteConversation(topConv.id); }}
-              style={{padding:'16px 12px',background:'none',border:'none',borderLeft:'1px solid #f0f0f0',cursor:'pointer',fontSize:'18px',color:'#8a9bb0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
+              style={{padding:'12px 16px',background:'none',border:'none',cursor:'pointer',fontSize:'17px',color:'#c2c9d1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
             >
               🗑
             </button>
@@ -6930,14 +6931,14 @@ return (
         </div>
 
         {!singleThread && isExpanded && (
-          <div style={{borderTop:'1px solid #f0f0f0'}}>
+          <div style={{background:'#fafbfc'}}>
             {personConvs.map(conv => {
               const unread = user.uid===conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
               return (
-                <div key={conv.id} style={{display:'flex',alignItems:'center',borderTop:'1px solid #f6f7f9'}}>
+                <div key={conv.id} style={{display:'flex',alignItems:'center',borderTop:'1px solid #f0f0f0'}}>
                   <div
                     onClick={()=>{setActiveConversation(conv);setPage("chat");markAsRead(conv.id);}}
-                    style={{flex:1,padding:'12px 16px 12px 60px',cursor:'pointer',minWidth:0}}
+                    style={{flex:1,padding:'10px 16px 10px 60px',cursor:'pointer',minWidth:0}}
                   >
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}}>
                       <div style={{fontSize:'12px',color:'#06d6c7',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
@@ -6947,7 +6948,7 @@ return (
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                    style={{padding:'12px',background:'none',border:'none',borderLeft:'1px solid #f0f0f0',cursor:'pointer',fontSize:'16px',color:'#8a9bb0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
+                    style={{padding:'10px 16px',background:'none',border:'none',cursor:'pointer',fontSize:'16px',color:'#c2c9d1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}
                   >
                     🗑
                   </button>
