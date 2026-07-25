@@ -13,7 +13,6 @@ import {
   filterListings,
   filterServices,
   filterRooms,
-  filterCollections,
   AISearchBadge,
 } from './kampasikaSearch';
 import {
@@ -353,6 +352,8 @@ function App() {
   const [ENABLE_ROOMS, setEnableRooms] = useState(false);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
   const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
+  // Mirrors ENABLE_GROUP_FILES in GroupDetailPage.jsx — Files is hidden group-side, so hide this entry point too.
+  const ENABLE_GROUP_FILES = false;
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [REQUIRE_ROOM_USER_VERIFICATION, setRequireRoomUserVerification] = useState(false);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
@@ -418,6 +419,10 @@ function App() {
   const [myCollectionsGroupFilter, setMyCollectionsGroupFilter] = useState("all");
   const [myCollectionsDateFilter, setMyCollectionsDateFilter] = useState("all");
   const [expandedMyCollectionGroups, setExpandedMyCollectionGroups] = useState({});
+  const [navCollectionsSearchQ, setNavCollectionsSearchQ] = useState("");
+  const [navCollectionsGroupFilter, setNavCollectionsGroupFilter] = useState("all");
+  const [navCollectionsDateFilter, setNavCollectionsDateFilter] = useState("all");
+  const [expandedNavCollectionGroups, setExpandedNavCollectionGroups] = useState({});
   const [activeCat, setActiveCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
   const [committedSearchQ, setCommittedSearchQ] = useState("");
@@ -577,10 +582,6 @@ useEffect(() => {
   const [orderFormData, setOrderFormData] = useState({ selectedOption: "", paymentRef: "", studentName: "", phone: "", amountPaid: "", payerName: "", paymentProofFile: null, paymentProofPreview: null });
   const [myOrderId, setMyOrderId] = useState(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
-  const [collectionSearchQ, setCollectionSearchQ] = useState("");
-  const [committedCollectionSearchQ, setCommittedCollectionSearchQ] = useState("");
-  const [collectionGroupFilter, setCollectionGroupFilter] = useState("all");
-  const [collectionDateFilter, setCollectionDateFilter] = useState("all");
   const [orderSearchQ, setOrderSearchQ] = useState("");
   const [editingCollection, setEditingCollection] = useState(false);
   // Rooms & Housing state
@@ -883,11 +884,6 @@ useEffect(() => {
       clearAISearch();
       return;
     }
-    if (q && q.trim()) runAISearch(q);
-    else clearAISearch();
-  };
-  const commitCollectionsSearch = (q) => {
-    setCommittedCollectionSearchQ(q);
     if (q && q.trim()) runAISearch(q);
     else clearAISearch();
   };
@@ -1568,7 +1564,6 @@ useEffect(() => {
               if (kind === "listing") { setSearchQ(""); setCommittedSearchQ(""); }
               else if (kind === "service") { setServiceSearchQ(""); setCommittedServiceSearchQ(""); }
               else if (kind === "room") { setRoomSearchQ(""); setCommittedRoomSearchQ(""); }
-              else if (kind === "collection") { setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }
               clearAISearch();
             }}
             style={{
@@ -1933,6 +1928,58 @@ useEffect(() => {
     } catch(e) { console.error("Error setting up services listener:", e); }
   }, []);
 
+  const [allMyGroupCollections, setAllMyGroupCollections] = useState([]);
+  useEffect(() => {
+    if (!user?.uid || groups.length === 0) {
+      setAllMyGroupCollections([]);
+      return undefined;
+    }
+
+    const myActiveGroups = groups.filter(group => (
+      group.active !== false
+      && (
+        group.ownerUid === user.uid
+        || group.adminUid === user.uid
+        || group.createdByUid === user.uid
+        || group.createdBy === user.uid
+        || myGroupMemberships[group.id] === "active"
+      )
+    ));
+
+    if (myActiveGroups.length === 0) {
+      setAllMyGroupCollections([]);
+      return undefined;
+    }
+
+    const byGroup = {};
+    const publish = () => {
+      const merged = myActiveGroups
+        .flatMap(group => (byGroup[group.id] || []).map(item => ({
+          ...item,
+          groupId: item.groupId || group.id,
+          groupName: group.name,
+        })))
+        .filter(item => item.active !== false && item.status !== "archived")
+        .sort((a, b) => {
+          const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+      setAllMyGroupCollections(merged);
+    };
+
+    const unsubs = myActiveGroups.map(group => subscribeGroupCollections(db, group.id, (items) => {
+      byGroup[group.id] = items;
+      publish();
+    }, (err) => {
+      console.error("Group collections listener error:", err);
+      byGroup[group.id] = [];
+      publish();
+    }));
+
+    return () => unsubs.forEach(unsub => unsub?.());
+  }, [groups, myGroupMemberships, user?.uid]);
+
   const loadCollections = useCallback(() => {
     if (unsubCollections.current) unsubCollections.current();
     try {
@@ -1978,7 +2025,7 @@ useEffect(() => {
           groupId: item.groupId || group.id,
           groupName: item.groupName || group.name,
         })))
-        .filter(item => item.active !== false && item.status !== "archived" && item.userId === user.uid && Number(item.amount || item.price || 0) > 0)
+        .filter(item => item.active !== false && item.status !== "archived" && item.createdByUid === user.uid)
         .sort((a, b) => {
           const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
           const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
@@ -7974,129 +8021,143 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ COLLECTIONS / ORDERS TRACKER ============ */}
       {page==="collections"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          
+
           <div style={{background:'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
-            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>All Orders & Events</h2>
-            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>T-shirts, event tickets, class contributions — browse everything or open a community first.</p>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Collections</h2>
+            <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Every active collection or event across your groups, in one place.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
               <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By group</button>
-              <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
             </div>
           </div>
 
-          {/* Search collections */}
-          {collections.length > 2 && (
-            <>
-              <div style={{margin:'0 16px 8px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
-                <input type="text" placeholder="Search orders, events, communities..." value={collectionSearchQ}
-                  onChange={e => {
-                    setCollectionSearchQ(e.target.value);
-                    if (!e.target.value.trim()) {
-                      setCommittedCollectionSearchQ("");
-                      clearAISearch();
-                    }
-                  }}
-                  onKeyDown={e => { if (e.key === 'Enter') commitCollectionsSearch(collectionSearchQ); }}
-                  style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-                <button type="button" onClick={() => commitCollectionsSearch(collectionSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
+          {allMyGroupCollections.length === 0 ? (
+            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+              <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
+              <div style={{fontSize:'16px',fontWeight:'600'}}>No active collections yet</div>
+              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Open a group and create one from its Payments tab.</div>
+            </div>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
+              <div style={{display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+                <input type="text" placeholder="Search collections..." value={navCollectionsSearchQ} onChange={e=>setNavCollectionsSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
               </div>
-              <div style={{margin:'0 16px 8px 16px',display:'flex',gap:'8px'}}>
-                <select value={collectionGroupFilter} onChange={e=>setCollectionGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+              <div style={{display:'flex',gap:'8px'}}>
+                <select value={navCollectionsGroupFilter} onChange={e=>setNavCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
                   <option value="all">All groups</option>
-                  {Array.from(new Set(collections.map(c => (c.communityName || c.universityName || "").trim()).filter(Boolean))).sort().map(name => (
+                  {Array.from(new Set(allMyGroupCollections.map(c => c.groupName || 'Group collection'))).sort().map(name => (
                     <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
-                <select value={collectionDateFilter} onChange={e=>setCollectionDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                <select value={navCollectionsDateFilter} onChange={e=>setNavCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
                   <option value="all">Any time</option>
-                  <option value="today">Posted today</option>
+                  <option value="today">Today</option>
                   <option value="week">Last 7 days</option>
                   <option value="month">Last 30 days</option>
                 </select>
               </div>
-              <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setCollectionSearchQ(""); setCommittedCollectionSearchQ(""); }} />
-              {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
-            </>
-          )}
-
-          {(() => {
-            const searchedCollections = aiParsed && committedCollectionSearchQ.trim()
-              ? filterCollections(collections, aiParsed)
-              : collections.filter(col => {
-                  if (!committedCollectionSearchQ.trim()) return true;
-                  const q = committedCollectionSearchQ.toLowerCase();
-                  return col.title?.toLowerCase().includes(q) || col.userName?.toLowerCase().includes(q) || col.description?.toLowerCase().includes(q) || col.communityName?.toLowerCase().includes(q) || col.communityType?.toLowerCase().includes(q) || col.collectionType?.toLowerCase().includes(q);
+              {(() => {
+                const q = navCollectionsSearchQ.trim().toLowerCase();
+                const visible = allMyGroupCollections.filter(collectionItem => {
+                  const groupName = collectionItem.groupName || 'Group collection';
+                  if (q && !(collectionItem.title||'').toLowerCase().includes(q) && !groupName.toLowerCase().includes(q) && !(collectionItem.collectionType||'').toLowerCase().includes(q)) return false;
+                  if (navCollectionsGroupFilter !== "all" && groupName !== navCollectionsGroupFilter) return false;
+                  if (navCollectionsDateFilter !== "all") {
+                    const created = collectionItem.createdAt instanceof Date ? collectionItem.createdAt : null;
+                    if (!created) return false;
+                    const daysAgo = (Date.now() - created.getTime()) / (1000*60*60*24);
+                    if (navCollectionsDateFilter === "today" && daysAgo > 1) return false;
+                    if (navCollectionsDateFilter === "week" && daysAgo > 7) return false;
+                    if (navCollectionsDateFilter === "month" && daysAgo > 30) return false;
+                  }
+                  return true;
                 });
-            const visibleCollections = searchedCollections.filter(col => {
-              if (collectionGroupFilter !== "all" && (col.communityName || col.universityName || "").trim() !== collectionGroupFilter) return false;
-              if (collectionDateFilter !== "all") {
-                const posted = col.createdAt instanceof Date ? col.createdAt : (col.createdAt ? new Date(col.createdAt) : null);
-                if (!posted) return false;
-                const daysAgo = (Date.now() - posted.getTime()) / (1000 * 60 * 60 * 24);
-                if (collectionDateFilter === "today" && daysAgo > 1) return false;
-                if (collectionDateFilter === "week" && daysAgo > 7) return false;
-                if (collectionDateFilter === "month" && daysAgo > 30) return false;
-              }
-              return true;
-            });
-            if (collections.length === 0) return (
-            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
-              <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
-              <div style={{fontSize:'16px',fontWeight:'600'}}>No active orders or events</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Class reps & councils can create group orders and event registrations for their group.</div>
-            </div>
-            );
-            if (visibleCollections.length === 0) return (
-            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
-              <div style={{fontSize:'32px',marginBottom:'12px'}}>🔍</div>
-              <div style={{fontSize:'15px',fontWeight:'600'}}>No matches for these filters</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Try a different group or time range.</div>
-              <button type="button" onClick={()=>{setCollectionGroupFilter("all");setCollectionDateFilter("all");}} style={{marginTop:'12px',padding:'8px 16px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer'}}>Clear filters</button>
-            </div>
-            );
-            return (
-            <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              {visibleCollections.map(col => {
-                const target = col.expectedPeople || col.totalOrders || 0;
-                const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
-                // eslint-disable-next-line no-unused-vars
-                const orderedPercent = target > 0 ? Math.round((col.totalOrders / target) * 100) : 0;
-                return (
-                  <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
-                    <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
-                      {col.photoUrl ? (
-                        <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
-                      ) : (
-                        <div style={{width:'56px',height:'56px',borderRadius:'10px',background:'linear-gradient(135deg,#0d9488,#14b8a6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',flexShrink:0}}>📋</div>
+
+                const renderCard = (collectionItem) => {
+                  const collectionGroupName = collectionItem.groupName || 'Group collection';
+                  const amount = Number(collectionItem.amount || 0);
+                  const createdLabel = collectionItem.createdAt instanceof Date
+                    ? collectionItem.createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                    : '';
+                  const typeStyle = collectionTypeStyle(collectionItem.collectionType);
+                  const groupColor = groupAccentColor(collectionGroupName);
+                  return (
+                    <button
+                      key={`${collectionItem.groupId}-${collectionItem.id}`}
+                      type="button"
+                      onClick={() => {
+                        const group = groups.find(g => g.id === collectionItem.groupId);
+                        if (group) openGroup(group, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'navCollections' });
+                      }}
+                      style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:'pointer',width:'100%'}}
+                    >
+                      <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
+                          <div style={{display:'inline-flex',alignItems:'center',gap:'5px',marginTop:'5px',background:`${groupColor}18`,color:groupColor,padding:'2px 8px',borderRadius:'999px',fontSize:'11px',fontWeight:'800',maxWidth:'100%'}}>
+                            <span style={{width:'6px',height:'6px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
+                            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroupName}</span>
+                          </div>
+                        </div>
+                        <div style={{fontSize:'13px',fontWeight:'800',color:'#0d9488',whiteSpace:'nowrap'}}>{amount ? `${amount.toLocaleString()} TSh` : 'Registration only'}</div>
+                      </div>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
+                        <span style={{fontSize:'10px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'0.02em',color:typeStyle.text,background:typeStyle.bg,padding:'3px 8px',borderRadius:'999px'}}>{collectionItem.collectionType || 'collection'}</span>
+                        <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                      </div>
+                    </button>
+                  );
+                };
+
+                if (visible.length === 0) {
+                  return (
+                    <div style={{textAlign:'center',padding:'32px 16px',background:'#fff',borderRadius:'12px'}}>
+                      <div style={{fontSize:'28px',marginBottom:'8px'}}>🔍</div>
+                      <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>No matches</div>
+                      <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'4px'}}>Try a different search or filter.</div>
+                    </div>
+                  );
+                }
+
+                if (navCollectionsGroupFilter !== "all") {
+                  return <>{visible.map(renderCard)}</>;
+                }
+
+                const sections = new Map();
+                const order = [];
+                visible.forEach(item => {
+                  const groupName = item.groupName || 'Group collection';
+                  if (!sections.has(groupName)) { sections.set(groupName, []); order.push(groupName); }
+                  sections.get(groupName).push(item);
+                });
+
+                return order.map(groupName => {
+                  const items = sections.get(groupName);
+                  const isExpanded = expandedNavCollectionGroups[groupName] ?? true;
+                  const groupColor = groupAccentColor(groupName);
+                  return (
+                    <div key={groupName} style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
+                      <button
+                        type="button"
+                        onClick={()=>setExpandedNavCollectionGroups(prev=>({...prev,[groupName]:!isExpanded}))}
+                        style={{width:'100%',padding:'12px 14px',background:'none',border:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}
+                      >
+                        <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'#0f1b2d'}}>
+                          <span style={{width:'8px',height:'8px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
+                          {groupName} <span style={{color:'#8a9bb0',fontWeight:'700'}}>({items.length})</span>
+                        </span>
+                        <span style={{fontSize:'12px',color:'#8a9bb0'}}>{isExpanded ? '▲' : '▼'}</span>
+                      </button>
+                      {isExpanded && (
+                        <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 10px 10px'}}>
+                          {items.map(renderCard)}
+                        </div>
                       )}
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{col.title}</div>
-                        <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px'}}>{col.communityName || col.universityName} • {(()=>{const t=col.collectionType||"order";const m={order:"Group Order",event:"Event",contribution:"Contribution",freshers:"Freshers Support"};return m[t]||t;})()}</div>
-                        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px'}}>by {col.userName}</div>
-                        <div style={{fontFamily:'serif',fontSize:'16px',fontWeight:'700',color:'#f59e0b'}}>{col.price?.toLocaleString()} TSh</div>
-                      </div>
                     </div>
-                    {/* Progress bar */}
-                    <div style={{marginTop:'12px'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'#6b7280',marginBottom:'4px'}}>
-                        <span>{col.totalOrders || 0}{col.expectedPeople ? `/${col.expectedPeople}` : ''} ordered</span>
-                        <span>{col.totalPaid || 0} paid ({paidPercent}%)</span>
-                      </div>
-                      <div style={{height:'6px',background:'#f4f6f8',borderRadius:'3px',overflow:'hidden'}}>
-                        <div style={{height:'100%',width:`${Math.min(paidPercent,100)}%`,background:paidPercent>=100?'#22c55e':'#06d6c7',borderRadius:'3px',transition:'width 0.3s'}}/>
-                      </div>
-                    </div>
-                    {col.options && col.options.length > 0 && (
-                      <div style={{display:'flex',gap:'4px',marginTop:'8px',flexWrap:'wrap'}}>
-                        {col.options.slice(0,4).map((opt,i)=><span key={i} style={{fontSize:'10px',background:'#ccfbf1',color:'#0f766e',padding:'2px 8px',borderRadius:'8px'}}>{opt}</span>)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
-            );
-          })()}
+          )}
         </div>
       )}
 
@@ -11967,10 +12028,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <button type="button" onClick={() => setShowQuickActions(false)} style={{border:0,background:'#f1f5f7',borderRadius:'999px',width:'34px',height:'34px',fontSize:'18px',fontWeight:900,color:'#486171'}}>×</button>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'9px'}}>
-              <button type="button" onClick={() => { if (!user) { requireAuth("upload files", () => setShowQuickActions(true)); return; } setShowQuickUpload(true); if (!quickUploadGroupId) { const firstGroup = groupsForSelectedUni.find(group => myGroupMemberships[group.id] === "active" || group.ownerUid === user.uid || group.adminUid === user.uid); if (firstGroup) setQuickUploadGroupId(firstGroup.id); } }} style={{border:'1px solid #ccebea',background:'#effefe',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+              {ENABLE_GROUP_FILES && <button type="button" onClick={() => { if (!user) { requireAuth("upload files", () => setShowQuickActions(true)); return; } setShowQuickUpload(true); if (!quickUploadGroupId) { const firstGroup = groupsForSelectedUni.find(group => myGroupMemberships[group.id] === "active" || group.ownerUid === user.uid || group.adminUid === user.uid); if (firstGroup) setQuickUploadGroupId(firstGroup.id); } }} style={{border:'1px solid #ccebea',background:'#effefe',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f766e'}}>Upload files</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#486171',marginTop:'3px'}}>PDF, PPTX, DOCX, images</span>
-              </button>
+              </button>}
               <button type="button" onClick={() => { setShowQuickActions(false); user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create group</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Class, course, club</span>
@@ -12058,31 +12119,36 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       <div style={{
   position:'fixed',
-  bottom:0,
-  left:0,
-  right:0,
-  width:'100%',
-  maxWidth:'100vw',
-  height:'70px',
+  bottom:'calc(14px + env(safe-area-inset-bottom, 0px))',
+  left:'16px',
+  right:'16px',
+  width:'auto',
+  maxWidth:'420px',
+  margin:'0 auto',
+  height:'62px',
   background:'rgba(255,255,255,0.92)',
   backdropFilter:'blur(20px)',
   WebkitBackdropFilter:'blur(20px)',
-  borderTop:'1px solid rgba(226,230,234,0.6)',
+  border:'1px solid rgba(226,230,234,0.6)',
+  borderRadius:'24px',
+  boxShadow:'0 8px 28px rgba(15,27,45,0.16)',
   display:!user||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
   boxSizing:'border-box',
-  padding:'6px 0 env(safe-area-inset-bottom, 8px) 0'
+  padding:'6px 4px'
 }}>
         <button onClick={()=>setPage("communities")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
           {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount}</span>}
         </button>
-        <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>
-        <button onClick={()=>setShowQuickActions(true)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0',cursor:'pointer',padding:'0',border:'none',background:'none',marginTop:'-20px'}}><div style={{width:'48px',height:'48px',borderRadius:'16px',background:'linear-gradient(135deg,#06d6c7,#06d6c7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(6,214,199,0.35)'}}><span style={{fontSize:'24px',color:'#fff',lineHeight:1}}>+</span></div><span style={{fontSize:'10px',color:'#06d6c7',fontWeight:'600',marginTop:'2px'}}>Add</span></button>
-        <button onClick={()=>{ if(!user){requireAuth("messages",()=>setPage("messages"));return;} setPage("messages"); }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><span style={{fontSize:'22px',color:page==="messages"?'#06d6c7':'#8a9bb0',transition:'color 0.2s ease'}}>💬</span><span style={{fontSize:'10px',color:page==="messages"?'#06d6c7':'#8a9bb0',fontWeight:page==="messages"?'700':'500',transition:'all 0.2s ease'}}>Messages</span>{unreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 6px rgba(34,197,94,0.3)'}}>{unreadCount}</span>}</button>
+        {discoverHasEnabledSection && <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>}
+        <button onClick={()=>setPage("collections")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="collections"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v3"/><path d="M16 4v3"/></svg>
+          <span style={{fontSize:'10px',color:page==="collections"?'#06d6c7':'#8a9bb0',fontWeight:page==="collections"?'700':'500',transition:'all 0.2s ease'}}>Collections</span>
+        </button>
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
     width:'24px',

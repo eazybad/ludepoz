@@ -1437,9 +1437,11 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
-  max-width: 240px;
+  width: calc(100% + 24px);
+  max-width: calc(100% + 24px);
+  margin: 4px -12px 2px -12px;
 }
 
 .message-image-grid.count-1 {
@@ -1455,10 +1457,13 @@
   border: none;
   padding: 0;
   cursor: pointer;
+  width: 100%;
 }
 
 .message-image-grid.count-1 .message-image-thumb {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
+  min-height: 260px;
+  max-height: 380px;
 }
 
 .message-image-overlay {

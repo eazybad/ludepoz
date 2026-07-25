@@ -2178,7 +2178,8 @@ export function GroupDetailPage({
       setBusy(false);
     }
   };
-
+   
+  // eslint-disable-next-line no-unused-vars
   const handleUploadResourceFile = async (event) => {
     if (guardOfflineAction("Uploading files")) return;
     const files = Array.from(event.target.files || []);
@@ -3453,27 +3454,6 @@ export function GroupDetailPage({
                           <MenuIcon name="image" />
                           <span>Photo</span>
                         </button>
-                        <button type="button" className="chat-tool-action" onClick={() => openChatPicker("file")} disabled={posting || busy}>
-                          <MenuIcon name="file" />
-                          <span>Document</span>
-                        </button>
-                        {memberCanManage && (
-                          <>
-                            <button type="button" className="chat-tool-action" onClick={openResourceAddMenu} disabled={busy}>
-                              <MenuIcon name="folder" />
-                              <span>Board</span>
-                            </button>
-                            <label className="chat-tool-action">
-                              <MenuIcon name="file" />
-                              <span>Save to board</span>
-                              <input type="file" multiple onChange={handleUploadResourceFile} disabled={busy} />
-                            </label>
-                            <button type="button" className="chat-tool-action" onClick={() => { setShowChatTools(false); handlePost("announcement"); }} disabled={!messageText.trim()}>
-                              <MenuIcon name="plus" />
-                              <span>Pin</span>
-                            </button>
-                          </>
-                        )}
                         <small>Files up to {MAX_UPLOAD_FILE_MB}MB each.</small>
                       </div>
                     )}
@@ -3768,7 +3748,7 @@ export function GroupDetailPage({
                 </div>
               )}
 
-              {memberCanVerify && <div className="payment-card">
+              {selectedCollection && memberCanVerify && <div className="payment-card">
                 <h4>People</h4>
                 {payments.length > 0 && <div className="group-field"><label>Search people</label><input value={paymentSearch} onChange={event => setPaymentSearch(event.target.value)} placeholder="Search by name, phone, ref, or status" /></div>}
                 {filteredPayments.length === 0 ? (
