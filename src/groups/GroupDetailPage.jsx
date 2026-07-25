@@ -3579,22 +3579,6 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "payments" && (
         <div className="group-panel">
-          {selectedCollection && <div className="payment-grid">
-            {memberCanVerify ? (
-              <>
-                <div className="payment-stat"><strong>{summary.paidCount}</strong><span>Paid</span></div>
-                <div className="payment-stat"><strong>{summary.unpaidCount}</strong><span>Unpaid</span></div>
-                <div className="payment-stat"><strong>{summary.pendingCount}</strong><span>Proof to review</span></div>
-                <div className="payment-stat"><strong>{summary.totalCollected.toLocaleString()}</strong><span>TSh collected</span></div>
-              </>
-            ) : (
-              <>
-                <div className="payment-stat"><strong className={`payment-status-word ${myPayment?.status ? statusClass(myPayment.status) : ""}`}>{myPayment?.status || "Not registered"}</strong><span>Your status</span></div>
-                <div className="payment-stat"><strong>{selectedCollection?.amount ? Number(selectedCollection.amount).toLocaleString() : "0"}</strong><span>TSh required</span></div>
-              </>
-            )}
-          </div>}
-
           {memberCanManage && !selectedCollection && (
             <div style={{ marginBottom: 10 }}>
               <button className="group-btn primary" type="button" onClick={() => {
@@ -3647,6 +3631,31 @@ export function GroupDetailPage({
                     {selectedNeedsPayment ? `${(selectedCollection.amount || 0).toLocaleString()} TSh per member` : "Registration only"}
                     {selectedCollection.expectedPeople ? ` - ${selectedCollection.expectedPeople} expected` : ""}
                     {selectedCollection.paymentMethods?.length ? ` - Pay: ${selectedCollection.paymentMethods.join(" / ")}` : ""}
+                  </div>
+                  <div className="payment-grid">
+                    {memberCanVerify ? (
+                      <>
+                        <div className="payment-stat"><strong>{summary.paidCount}</strong><span>Paid</span></div>
+                        <div className="payment-stat"><strong>{summary.unpaidCount}</strong><span>Unpaid</span></div>
+                        <div className="payment-stat"><strong>{summary.pendingCount}</strong><span>Proof to review</span></div>
+                        <div className="payment-stat"><strong>{summary.totalCollected.toLocaleString()}</strong><span>TSh collected</span></div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="payment-stat">
+                          <span>Your status</span>
+                          <strong
+                            className={`payment-status-word ${myPayment?.status ? statusClass(myPayment.status) : "not-registered"}`}
+                          >
+                            {myPayment?.status || "Not registered"}
+                          </strong>
+                        </div>
+                        <div className="payment-stat">
+                          <span>TSh required</span>
+                          <strong className="payment-required-amount">{selectedCollection?.amount ? Number(selectedCollection.amount).toLocaleString() : "0"}</strong>
+                        </div>
+                      </>
+                    )}
                   </div>
                   {memberCanManage && (
                     <div className="group-inline-actions" style={{ marginTop: 10 }}>
