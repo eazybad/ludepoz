@@ -146,6 +146,9 @@ const OFFLINE_GROUP_MESSAGE_QUEUE = "kampasika-offline-group-message-queue-v1";
 const MAX_RESOURCE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILE_MB = Math.round(MAX_RESOURCE_FILE_BYTES / (1024 * 1024));
 const ENABLE_DOCUMENT_PDF_PREVIEWS = false;
+// Hidden for this stage — focusing on Collections. Flip back to true to restore.
+const ENABLE_GROUP_FILES = false;
+const ENABLE_SUBGROUPS = false;
 const RESOURCE_FILE_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.heic";
 const ALLOWED_RESOURCE_FILE_EXTENSIONS = /\.(pdf|docx?|xlsx?|csv|pptx?|jpe?g|png|webp|heic)$/i;
 const ALLOWED_RESOURCE_MIME_TYPES = new Set([
@@ -763,13 +766,13 @@ export function GroupDetailPage({
   const upcomingActivity = eventCollections[0] || null;
   const latestResource = visibleSortedResources[0] || null;
   const groupScreenSavedAt = screenCacheRef.current?.savedAt || 0;
-  const showSubGroups = group.type === "class";
+  const showSubGroups = group.type === "class" && ENABLE_SUBGROUPS;
   const groupMenuItems = [
     ["overview", "Overview"],
     ["chats", "Chat"],
     ["payments", "Payments"],
     ["events", "Activities"],
-    ["resources", "Files"],
+    ...(ENABLE_GROUP_FILES ? [["resources", "Files"]] : []),
     ["members", "Members"],
     ...(showSubGroups ? [["workgroups", "Sub-groups"]] : []),
   ];
@@ -788,7 +791,7 @@ export function GroupDetailPage({
     ["chats", "Chat"],
     ["payments", "Payments"],
     ["events", "Activities"],
-    ["resources", "Files"],
+    ...(ENABLE_GROUP_FILES ? [["resources", "Files"]] : []),
     ["members", "Members"],
   ];
   const guardOfflineAction = (label = "This action") => {
@@ -3161,18 +3164,20 @@ export function GroupDetailPage({
               <strong>{upcomingActivity?.title || "No activity yet"}</strong>
               <span>{upcomingActivity?.deadline ? `Deadline: ${upcomingActivity.deadline}` : upcomingActivity?.collectionType === "order" ? "Group order" : "Events and orders live here."}</span>
             </button>
-            <button
-              type="button"
-              className="group-overview-card"
-              onClick={() => {
-                switchGroupTab("resources");
-                if (latestResource?.subject) openResourceSubject((latestResource.subject || "General").trim() || "General");
-              }}
-            >
-              <small>Latest file</small>
-              <strong>{latestResource?.title || latestResource?.text || "No files yet"}</strong>
-              <span>{latestResource?.subject || "Files and resources for this group."}</span>
-            </button>
+            {ENABLE_GROUP_FILES && (
+              <button
+                type="button"
+                className="group-overview-card"
+                onClick={() => {
+                  switchGroupTab("resources");
+                  if (latestResource?.subject) openResourceSubject((latestResource.subject || "General").trim() || "General");
+                }}
+              >
+                <small>Latest file</small>
+                <strong>{latestResource?.title || latestResource?.text || "No files yet"}</strong>
+                <span>{latestResource?.subject || "Files and resources for this group."}</span>
+              </button>
+            )}
           </div>
 
           <div className="group-overview-actions">
