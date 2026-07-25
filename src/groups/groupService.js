@@ -934,6 +934,17 @@ export async function reactToGroupMessage(db, { groupId, channelId = "chats", me
   });
 }
 
+export async function pinGroupMessage(db, { groupId, channelId = "chats", messageId, pinned, user }) {
+  const isPinning = !!pinned;
+  await updateDoc(doc(db, "groups", groupId, "channels", channelId, "messages", messageId), {
+    pinned: isPinning,
+    ...(isPinning
+      ? { pinnedByUid: user.uid, pinnedAt: serverTimestamp() }
+      : { pinnedByUid: "", pinnedAt: null }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function addGroupResource(db, { groupId, user, profile, title, url = "", subject = "", topic = "", resourceType = "", fileName = "", storagePath = "", description = "", deadline = "" }) {
   const text = title.trim();
   const cleanUrl = url.trim();

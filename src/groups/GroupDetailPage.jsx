@@ -24,6 +24,7 @@ import {
   addGroupResource,
   archiveGroupCollectionRound,
   approveGroupMember,
+  pinGroupMessage,
   reactToGroupMessage,
   rejectGroupMember,
   sendGroupMessage,
@@ -291,6 +292,7 @@ function MenuIcon({ name }) {
     close: <><path d="M18 6L6 18" /><path d="M6 6l12 12" /></>,
     share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.7l6.8-4.4" /><path d="M8.6 13.3l6.8 4.4" /></>,
     more: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
+    pin: <><path d="M12 17v5" /><path d="M9 10.5 5 12l1.5-4L5 4l7 3 7-3-1.5 4L19 12l-4 1.5" /><path d="M9 10.5 14.5 16" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -498,6 +500,7 @@ export function GroupDetailPage({
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuActivitySeen, setMenuActivitySeen] = useState(false);
+  const [pinDotSeen, setPinDotSeen] = useState(false);
   const [members, setMembers] = useState([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -844,6 +847,10 @@ export function GroupDetailPage({
   useEffect(() => {
     setMenuActivitySeen(false);
   }, [group.id, groupHasUnread]);
+
+  useEffect(() => {
+    setPinDotSeen(false);
+  }, [group.id, currentAction?.targetId]);
 
   useEffect(() => {
     if (!showSubGroups && activeTab === "workgroups") setActiveTab("overview");
@@ -1538,6 +1545,7 @@ export function GroupDetailPage({
     if (!memberCanManage || !user || !message?.text) return;
     setBusy(true);
     try {
+      await pinGroupMessage(db, { groupId: group.id, channelId: "chats", messageId: message.id, pinned: true, user });
       const nextAction = {
         ...(currentAction || {}),
         type: "message",
@@ -1549,6 +1557,25 @@ export function GroupDetailPage({
       onGroupUpdated?.({ ...group, currentAction: nextAction });
       setActiveMessageActions(null);
       onSuccess("Message pinned as update.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnpinMessage = async (message) => {
+    if (guardOfflineAction("Unpinning updates")) return;
+    if (!memberCanManage || !user || !message?.id) return;
+    setBusy(true);
+    try {
+      await pinGroupMessage(db, { groupId: group.id, channelId: "chats", messageId: message.id, pinned: false, user });
+      if (currentAction?.targetId === message.id) {
+        await updateGroupCurrentAction(db, { groupId: group.id, currentAction: null, user });
+        onGroupUpdated?.({ ...group, currentAction: null });
+      }
+      setActiveMessageActions(null);
+      onSuccess("Message unpinned.");
     } catch (err) {
       onError(err);
     } finally {
@@ -3109,33 +3136,32 @@ export function GroupDetailPage({
 
       {canViewGroupContent && activeTab === "overview" && (
         <div className="group-panel group-overview-panel">
-          {currentAction?.description && (
-            <div className="group-overview-active">
-              <div>
-                <small>Active now</small>
-                <strong>{currentAction.title || "Pinned update"}</strong>
-                <span>{currentAction.description}</span>
-              </div>
-              <button
-                type="button"
-                className="group-btn primary compact"
-                onClick={() => {
-                  const target = collections.find(item => item.id === currentAction.targetId);
-                  if (target) {
-                    switchGroupTab(["event", "order"].includes(target.collectionType || "") ? "events" : "payments");
-                    openTracker(target.id);
-                  } else {
-                    switchGroupTab("chats");
-                  }
-                }}
-              >
-                Open
-              </button>
-            </div>
-          )}
-
           <div className="group-overview-grid">
-            <button type="button" className="group-overview-card" onClick={() => switchGroupTab("chats")}>
+            <button
+              type="button"
+              className="group-overview-card"
+              style={{ position: "relative" }}
+              onClick={() => {
+                setPinDotSeen(true);
+                switchGroupTab("chats");
+              }}
+            >
+              {currentAction?.description && !pinDotSeen && (
+                <span
+                  aria-hidden="true"
+                  title={currentAction.title || "Pinned update"}
+                  style={{
+                    position: "absolute",
+                    bottom: "10px",
+                    right: "10px",
+                    width: "10px",
+                    height: "10px",
+                    borderRadius: "50%",
+                    background: "#2ecc71",
+                    boxShadow: "0 0 0 6px rgba(46, 204, 113, 0.25)",
+                  }}
+                />
+              )}
               <small>Latest chat</small>
               <strong>{latestMessage?.authorName || "Chat"}</strong>
               <span>{latestMessage?.text || latestMessage?.attachments?.[0]?.name || "No messages yet."}</span>
@@ -3155,6 +3181,7 @@ export function GroupDetailPage({
             <button
               type="button"
               className="group-overview-card"
+              style={!ENABLE_GROUP_FILES ? { gridColumn: "1 / -1" } : undefined}
               onClick={() => {
                 switchGroupTab("events");
                 if (upcomingActivity) openTracker(upcomingActivity.id);
@@ -3248,7 +3275,20 @@ export function GroupDetailPage({
                     onTouchEnd={clearMessageHold}
                     onTouchCancel={clearMessageHold}
                   >
-                    <div className="message-author" style={{ color: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}>{isOwnMessage ? "You" : (message.authorName || "Member")}</div>
+                    <div className="message-author" style={{ color: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}>
+                      {isOwnMessage ? "You" : (message.authorName || "Member")}
+                      {message.pinned && (
+                        <span
+                          className="message-pinned-badge"
+                          title="Pinned"
+                          style={{ display: "inline-flex", alignItems: "center", marginLeft: "6px", color: "#0d9488", width: "13px", height: "13px", overflow: "hidden" }}
+                        >
+                          <span style={{ display: "inline-block", transform: "scale(0.6)", transformOrigin: "top left" }}>
+                            <MenuIcon name="pin" />
+                          </span>
+                        </span>
+                      )}
+                    </div>
                     {message.replyTo && (
                       <div className="message-reply-preview">
                         <strong>{message.replyTo.authorName}</strong>
@@ -3351,7 +3391,11 @@ export function GroupDetailPage({
                       ))}
                     </div>
                     <button type="button" className="message-action-row" onClick={() => { setReplyToMessage(activeMessageActions); setShowChatComposer(true); setActiveMessageActions(null); }}>Reply</button>
-                    {memberCanManage && <button type="button" className="message-action-row" disabled={busy} onClick={() => handlePinMessageUpdate(activeMessageActions)}>Pin update</button>}
+                    {memberCanManage && (
+                      activeMessageActions.pinned
+                        ? <button type="button" className="message-action-row" disabled={busy} onClick={() => handleUnpinMessage(activeMessageActions)}>Unpin</button>
+                        : <button type="button" className="message-action-row" disabled={busy} onClick={() => handlePinMessageUpdate(activeMessageActions)}>Pin update</button>
+                    )}
                     {memberCanManage && <button type="button" className="message-action-row" onClick={() => { setMessageText(activeMessageActions.text || ""); setActiveMessageActions(null); }}>Copy to composer</button>}
                     {(activeMessageActions.authorUid === user?.uid || memberCanManage) && (
                       <button type="button" className="message-action-row danger" disabled={busy} onClick={() => handleDeleteMessage(activeMessageActions)}>
