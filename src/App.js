@@ -5714,7 +5714,7 @@ return (
 )}
       
       {/* EMAIL VERIFICATION BANNER REMOVED */}
-    {page !== "chat" && page !== "groupDetail" && page !== "communities" && page !== "profile" && (
+    {page !== "chat" && page !== "groupDetail" && page !== "communities" && page !== "profile" && page !== "collections" && (
   <div
     style={{
       background:'#fff',
