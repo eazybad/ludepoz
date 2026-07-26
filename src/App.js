@@ -895,7 +895,7 @@ useEffect(() => {
     setPublicSellerServices([]);
     setPublicSellerStats(null);
     window.history.pushState({}, '', '/');
-    document.title = 'Kampasika - Student Marketplace';
+    document.title = 'Kampasika - Group Collections for Campus';
     setPage("home");
   };
 
@@ -3066,7 +3066,7 @@ await updateDoc(convRef, {
         setPageRaw("home");
         pageHistory.current = ["home"];
         window.history.replaceState({ page: 'home' }, '', '/');
-        document.title = 'Kampasika - Student Marketplace';
+        document.title = 'Kampasika - Group Collections for Campus';
       } else {
         if (pageHistory.current[pageHistory.current.length - 1] === "groupDetail") {
           if (unsubGroupAnnouncements.current) unsubGroupAnnouncements.current();
@@ -5999,10 +5999,10 @@ return (
           Kam<em style={{color:'#5eead4',fontStyle:'normal'}}>pa</em>sika
         </div>
         <p style={{color:'rgba(255,255,255,0.9)',fontSize:'11px',lineHeight:'1.45',margin:0}}>
-          Mtandao wa wanachuo — ambapo unaweza kununua, kuuza, kutoa huduma, na kukutana na jamii za chuo. Salama na haraka.
+          Mtandao wa wanachuo — kwa kuunda vikundi, kukusanya michango, na kulipiana kwa urahisi. Salama na haraka.
         </p>
         <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'8px'}}>
-          {['Goods', 'Services', 'Communities', 'Verified'].map(tag => (
+          {['Groups', 'Collections', 'Payments', 'Verified'].map(tag => (
             <span key={tag} style={{fontSize:'9px',fontWeight:'700',color:'#fff',background:'rgba(255,255,255,0.12)',padding:'3px 7px',borderRadius:'6px'}}>{tag}</span>
           ))}
         </div>
@@ -8020,7 +8020,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
       {/* ============ COLLECTIONS / ORDERS TRACKER ============ */}
       {page==="collections"&&(
-        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingTop:'14px',paddingBottom:'100px'}}>
 
           <div style={{background:'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Collections</h2>
@@ -9864,10 +9864,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika
                   </div>
                   <p style={{fontSize:'12px',lineHeight:1.55,color:'#4a5568',margin:'0 0 10px'}}>
-                    Mtandao wa wanachuo kwa kumanage group, kununua, kuuza, kutoa huduma, na kuunda jamii za chuo.
+                    Mtandao wa wanachuo kwa kuunda na kumanage vikundi, kukusanya michango na malipo, na kuunganisha jamii za chuo.
                   </p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
-                    {['Goods', 'Services', 'Groups', 'Verified'].map(tag => (
+                    {['Groups', 'Collections', 'Payments', 'Verified'].map(tag => (
                       <span key={tag} style={{fontSize:'10px',fontWeight:'800',color:'#0f766e',background:'#ecfeff',padding:'4px 8px',borderRadius:'8px'}}>{tag}</span>
                     ))}
                   </div>
