@@ -14,6 +14,10 @@
   padding-top: 8px;
 }
 
+.groups-page.groups-searching {
+  padding-bottom: 24px;
+}
+
 .groups-hero {
   margin: 0 16px 14px;
   padding: 14px;
@@ -71,6 +75,19 @@
   color: #0f1b2d;
   font: inherit;
   font-size: 15px;
+}
+
+.groups-search-clear {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: #dbe8e7;
+  color: #486171;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .groups-hero p {

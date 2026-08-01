@@ -802,6 +802,121 @@ async function verifyAzamPayCallbackSignature(payload) {
   }
 }
 
+// ---- PawaPay callback signature verification (RFC 9421 HTTP Message Signatures) ----
+// Docs: https://docs.pawapay.io/v2/docs/signatures
+// This only works once "Signed callbacks" is enabled in the PawaPay Dashboard —
+// otherwise PawaPay never sends these headers and every callback will be rejected below.
+const PAWAPAY_PUBLIC_KEY_CACHE_MS = 60 * 60 * 1000;
+let pawaPayPublicKeyCache = { keys: {}, loadedAt: 0 };
+
+async function getPawaPayPublicKeys(token) {
+  if (Object.keys(pawaPayPublicKeyCache.keys).length && Date.now() - pawaPayPublicKeyCache.loadedAt < PAWAPAY_PUBLIC_KEY_CACHE_MS) {
+    return pawaPayPublicKeyCache.keys;
+  }
+  const response = await fetch(`${PAWAPAY_SANDBOX_BASE_URL}/public-key/http`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  const list = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(list)) {
+    console.error("Could not fetch PawaPay public keys:", response.status);
+    return pawaPayPublicKeyCache.keys;
+  }
+  const keys = {};
+  list.forEach(item => { if (item?.id && item?.key) keys[item.id] = item.key; });
+  pawaPayPublicKeyCache = { keys, loadedAt: Date.now() };
+  return keys;
+}
+
+function parsePawaPaySignatureInput(headerValue) {
+  // e.g. sig-pp=("@method" "@authority" "@path" "signature-date" "content-digest" "content-type");alg="ecdsa-p256-sha256";keyid="HTTP_EC_P256_KEY:1";created=...;expires=...
+  const match = /^sig-pp=(\(.*)$/.exec(String(headerValue || "").trim());
+  if (!match) return null;
+  const paramsPart = match[1];
+  const componentsMatch = /^\(([^)]*)\)/.exec(paramsPart);
+  if (!componentsMatch) return null;
+  const components = componentsMatch[1]
+    .split(" ")
+    .map(item => item.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+  const metaPart = paramsPart.slice(componentsMatch[0].length);
+  const keyidMatch = /keyid="([^"]+)"/.exec(metaPart);
+  const algMatch = /alg="([^"]+)"/.exec(metaPart);
+  return {
+    components,
+    keyid: keyidMatch ? keyidMatch[1] : "",
+    alg: algMatch ? algMatch[1] : "",
+    signatureParamsValue: paramsPart,
+  };
+}
+
+function resolvePawaPaySignatureComponent(name, req) {
+  switch (name) {
+    case "@method":
+      return req.method.toUpperCase();
+    case "@authority":
+      return req.get("host") || "";
+    case "@path":
+      return (req.originalUrl || req.url || "/").split("?")[0];
+    default:
+      return req.get(name) || "";
+  }
+}
+
+function verifyPawaPayContentDigest(req) {
+  const header = req.get("content-digest") || "";
+  const match = /^(sha-256|sha-512)=:([^:]+):$/i.exec(header.trim());
+  if (!match) return false;
+  const algo = match[1].toLowerCase() === "sha-256" ? "sha256" : "sha512";
+  const expected = match[2];
+  const actual = crypto.createHash(algo).update(req.rawBody || Buffer.from("")).digest("base64");
+  return expected === actual;
+}
+
+async function verifyPawaPayCallbackSignature(req, token) {
+  const signatureHeader = req.get("signature") || "";
+  const signatureInputHeader = req.get("signature-input") || "";
+  if (!signatureHeader || !signatureInputHeader) return false;
+
+  const parsedInput = parsePawaPaySignatureInput(signatureInputHeader);
+  if (!parsedInput || !parsedInput.keyid) return false;
+  if (parsedInput.alg && parsedInput.alg !== "ecdsa-p256-sha256") {
+    console.error("Unexpected PawaPay signature algorithm:", parsedInput.alg);
+    return false;
+  }
+
+  if (!verifyPawaPayContentDigest(req)) {
+    console.error("PawaPay Content-Digest did not match request body.");
+    return false;
+  }
+
+  const sigMatch = /^sig-pp=:([^:]+):$/.exec(signatureHeader.trim());
+  if (!sigMatch) return false;
+  const signatureBytes = Buffer.from(sigMatch[1], "base64");
+
+  const baseLines = parsedInput.components.map(name => `"${name}": ${resolvePawaPaySignatureComponent(name, req)}`);
+  baseLines.push(`"@signature-params": ${parsedInput.signatureParamsValue}`);
+  const signatureBase = baseLines.join("\n");
+
+  const keys = await getPawaPayPublicKeys(token);
+  const publicKey = keys[parsedInput.keyid];
+  if (!publicKey) {
+    console.error("No cached PawaPay public key for keyid:", parsedInput.keyid);
+    return false;
+  }
+
+  try {
+    return crypto.verify(
+      "sha256",
+      Buffer.from(signatureBase),
+      { key: publicKey, dsaEncoding: "ieee-p1363" },
+      signatureBytes
+    );
+  } catch (err) {
+    console.error("PawaPay signature verification failed:", err);
+    return false;
+  }
+}
+
 exports.createAzamPayCheckout = onCall({
   secrets: [AZAMPAY_APP_NAME, AZAMPAY_CLIENT_ID, AZAMPAY_CLIENT_SECRET],
 }, async (request) => {
@@ -1297,9 +1412,22 @@ exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => 
   res.status(200).json({ success: true });
 });
 
-exports.pawapayCallback = onRequest({ cors: false }, async (req, res) => {
+exports.pawapayCallback = onRequest({ cors: false, secrets: [PAWAPAY_API_TOKEN] }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  const pawaPayToken = PAWAPAY_API_TOKEN.value();
+  const signatureOk = pawaPayToken ? await verifyPawaPayCallbackSignature(req, pawaPayToken) : false;
+  if (!signatureOk) {
+    console.error("Rejected PawaPay callback: signature verification failed or missing.", {
+      hasSignature: !!req.get("signature"),
+      hasSignatureInput: !!req.get("signature-input"),
+    });
+    // Respond 200 so PawaPay doesn't endlessly retry a request that will never verify,
+    // but do NOT touch Firestore below — an unverified callback is never trusted.
+    res.status(200).json({ success: false, reason: "signature_verification_failed" });
     return;
   }
 
@@ -1339,6 +1467,7 @@ exports.pawapayCallback = onRequest({ cors: false }, async (req, res) => {
     provider: "PawaPay",
     operationType,
     referenceId,
+    signatureVerified: true,
     status: statusText || "unknown",
     payload,
     headers: {

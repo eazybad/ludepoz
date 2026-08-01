@@ -488,6 +488,7 @@ export function GroupDetailPage({
   onBackHandlerChange,
   onGroupUpdated,
   onOpenScanner,
+  onMessageMember,
   isDarkMode = false,
   initialTab = "overview",
   initialCollectionId = "",
@@ -4199,6 +4200,16 @@ export function GroupDetailPage({
                     <div className="member-role">{member.role || "member"}{memberCanSeePhone && member.phone ? ` - ${member.phone}` : ""}</div>
                   </div>
                   <div className="member-actions">
+                    {member.uid !== user?.uid && (
+                      <button
+                        type="button"
+                        className="group-btn secondary compact"
+                        disabled={busy}
+                        onClick={() => onMessageMember?.(member, group)}
+                      >
+                        Message
+                      </button>
+                    )}
                     {memberCanEditGroup && member.role !== "owner" ? (
                       <select className="member-role-select" value={member.role || "member"} disabled={busy} onChange={event => handleRoleChange(member, event.target.value)}>
                         {GROUP_ROLES.filter(role => role !== "owner").map(role => <option key={role} value={role}>{role}</option>)}

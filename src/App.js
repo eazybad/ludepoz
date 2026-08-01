@@ -482,6 +482,7 @@ function App() {
     catch (_) { return {}; }
   });
   const [viewingGroup, setViewingGroup] = useState(null);
+  const [groupSearchActive, setGroupSearchActive] = useState(false);
   const [groupInitialView, setGroupInitialView] = useState({ tab: "overview", collectionId: "", collection: null, source: "" });
   const [createGroupData, setCreateGroupData] = useState({ name: "", desc: "", type: "class", visibility: "inviteOnly" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -2714,7 +2715,7 @@ const requestNotificationPermission = async (currentUser) => {
     return () => unsubs.forEach(u => u());
   }, [user]);
 
-  const startConversation = async (listing) => {
+const startConversation = async (listing) => {
   if (!user) {
     requireAuth("message", () => startConversation(listing));
     return;
@@ -2770,6 +2771,61 @@ const requestNotificationPermission = async (currentUser) => {
   }
 };
 
+  const startGroupMemberConversation = async (member, group) => {
+    if (!user) {
+      requireAuth("message", () => startGroupMemberConversation(member, group));
+      return;
+    }
+    if (!member?.uid || member.uid === user.uid) return;
+
+    const memberName = member.name || member.username || member.email || "Member";
+    const groupName = group?.name || "Group";
+    const participantIds = [user.uid, member.uid].sort();
+    const conversationId = `group_${group.id}_${participantIds.join("_")}`.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 900);
+
+    try {
+      setSuccess("Opening conversation...");
+      const existingSnap = await getDoc(doc(db, "conversations", conversationId));
+      if (existingSnap.exists()) {
+        const conv = { id: existingSnap.id, ...existingSnap.data() };
+        setActiveConversation(conv);
+        setMessages([]);
+        setPage("chat");
+        setSuccess("");
+        markAsRead(conv.id);
+        return;
+      }
+
+      const draft = {
+        id: null,
+        _draft: true,
+        _presetId: conversationId,
+        source: "group",
+        sourceGroupId: group.id,
+        sourceGroupName: groupName,
+        contextKey: conversationId,
+        listingId: conversationId,
+        listingTitle: `${groupName}: ${memberName}`,
+        listingPrice: "",
+        listingPhoto: group.avatarUrl || null,
+        buyerId: user.uid,
+        buyerName: userName,
+        buyerAvatar: userAvatar,
+        sellerId: member.uid,
+        sellerName: memberName,
+        sellerAvatar: member.avatarUrl || null,
+      };
+      setActiveConversation(draft);
+      setMessages([]);
+      setPage("chat");
+      setSuccess("");
+    } catch (err) {
+      console.error("Error starting group member conversation:", err);
+      setError("Failed to open conversation. Check your connection.");
+      setSuccess("");
+    }
+  };
+
  const sendMessage = async () => {
     if (!messageText.trim() || !activeConversation) return;
     
@@ -2791,7 +2847,9 @@ _pending: true
     try {
 
       if (!activeConversation.id) {
-  const convRef = doc(collection(db, "conversations"));
+  const convRef = activeConversation._presetId
+    ? doc(db, "conversations", activeConversation._presetId)
+    : doc(collection(db, "conversations"));
   const msgRef = doc(collection(db, "conversations", convRef.id, "messages"));
   const isFromBuyer = user.uid === activeConversation.buyerId;
 
@@ -2802,6 +2860,10 @@ _pending: true
     listingTitle: activeConversation.listingTitle,
     listingPrice: activeConversation.listingPrice,
     listingPhoto: activeConversation.listingPhoto || null,
+    source: activeConversation.source || "listing",
+    sourceGroupId: activeConversation.sourceGroupId || "",
+    sourceGroupName: activeConversation.sourceGroupName || "",
+    contextKey: activeConversation.contextKey || "",
     buyerId: activeConversation.buyerId,
     buyerName: activeConversation.buyerName,
     buyerAvatar: activeConversation.buyerAvatar || null,
@@ -2875,7 +2937,9 @@ createdAt: serverTimestamp()
 
       let convId = activeConversation.id;
       if (!convId) {
-        const convRef = doc(collection(db, "conversations"));
+        const convRef = activeConversation._presetId
+          ? doc(db, "conversations", activeConversation._presetId)
+          : doc(collection(db, "conversations"));
         const msgRef = doc(collection(db, "conversations", convRef.id, "messages"));
         const isFromBuyer = user.uid === activeConversation.buyerId;
         const batch = writeBatch(db);
@@ -2884,6 +2948,10 @@ createdAt: serverTimestamp()
           listingTitle: activeConversation.listingTitle,
           listingPrice: activeConversation.listingPrice,
           listingPhoto: activeConversation.listingPhoto || null,
+          source: activeConversation.source || "listing",
+          sourceGroupId: activeConversation.sourceGroupId || "",
+          sourceGroupName: activeConversation.sourceGroupName || "",
+          contextKey: activeConversation.contextKey || "",
           buyerId: activeConversation.buyerId,
           buyerName: activeConversation.buyerName,
           buyerAvatar: activeConversation.buyerAvatar || null,
@@ -5368,6 +5436,7 @@ const loadSellerStats = useCallback(async (userId) => {
         return [
           otherName,
           conv.listingTitle,
+          conv.sourceGroupName,
           conv.lastMessage,
           conv.listingPrice ? String(conv.listingPrice) : "",
         ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedMessageSearch));
@@ -7683,6 +7752,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               groupReadAt={groupReadAt}
               currentUserId={user?.uid || ""}
               isGroupAdmin={isGroupAdmin}
+              onSearchActiveChange={setGroupSearchActive}
             />
           )}
           {showCreateGroup && (
@@ -7849,6 +7919,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             setGroups(prev => prev.map(group => group.id === updatedGroup.id ? { ...group, ...updatedGroup } : group));
           }}
           onOpenScanner={openScanner}
+          onMessageMember={startGroupMemberConversation}
           onError={(err) => setError(err.message || String(err))}
           onSuccess={(msg) => {
             setSuccess(msg);
@@ -12132,7 +12203,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid rgba(226,230,234,0.6)',
   borderRadius:'24px',
   boxShadow:'0 8px 28px rgba(15,27,45,0.16)',
-  display:!user||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
+  display:!user||groupSearchActive||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,

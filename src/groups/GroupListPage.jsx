@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./GroupComponents.css";
 import { groupAvatarText } from "./groupService";
 
@@ -20,6 +20,7 @@ export function GroupListPage({
   isGroupAdmin,
   groupReadAt = {},
   currentUserId = "",
+  onSearchActiveChange,
 }) {
   const hasGroups = groups.length > 0;
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -28,6 +29,12 @@ export function GroupListPage({
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const normalizedSearch = searchText.trim().toLowerCase();
+  const searchActive = Boolean(normalizedSearch);
+
+  useEffect(() => {
+    onSearchActiveChange?.(searchActive);
+    return () => onSearchActiveChange?.(false);
+  }, [onSearchActiveChange, searchActive]);
 
   const clearLongPress = () => {
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
@@ -86,7 +93,7 @@ export function GroupListPage({
   });
 
   return (
-    <div className="groups-page">
+    <div className={`groups-page ${searchActive ? "groups-searching" : ""}`}>
       <div className="groups-hero">
         <div className="groups-topbar">
           <h2>Kampasika</h2>
@@ -108,24 +115,33 @@ export function GroupListPage({
             onChange={event => setSearchText(event.target.value)}
             placeholder="Search my groups..."
           />
+          {searchActive && (
+            <button className="groups-search-clear" type="button" aria-label="Clear group search" onClick={() => setSearchText("")}>
+              ×
+            </button>
+          )}
         </div>
-        <div className="group-actions">
-          <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
-          <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
-        </div>
-        <div className="groups-mode-grid" aria-label="Kampasika overview">
-          <button type="button" className={`groups-mode-card ${groupsViewMode === "mine" ? "active" : ""}`} onClick={() => setGroupsViewMode("mine")}>
-            <strong>My Groups</strong>
-            <span>{filteredGroups.length} joined</span>
-          </button>
-          <button type="button" className={`groups-mode-card ${groupsViewMode === "recent" ? "active" : ""}`} onClick={() => setGroupsViewMode("recent")}>
-            <strong>Recent Updates</strong>
-            <span>{recentGroups.length} new</span>
-          </button>
-        </div>
+        {!searchActive && (
+          <>
+            <div className="group-actions">
+              <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
+              <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
+            </div>
+            <div className="groups-mode-grid" aria-label="Kampasika overview">
+              <button type="button" className={`groups-mode-card ${groupsViewMode === "mine" ? "active" : ""}`} onClick={() => setGroupsViewMode("mine")}>
+                <strong>My Groups</strong>
+                <span>{filteredGroups.length} joined</span>
+              </button>
+              <button type="button" className={`groups-mode-card ${groupsViewMode === "recent" ? "active" : ""}`} onClick={() => setGroupsViewMode("recent")}>
+                <strong>Recent Updates</strong>
+                <span>{recentGroups.length} new</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      {groupsViewMode === "recent" ? (
+      {!searchActive && groupsViewMode === "recent" ? (
       <div className="group-section">
         <div className="group-section-title">Recent updates</div>
         {recentGroups.length > 0 ? (
