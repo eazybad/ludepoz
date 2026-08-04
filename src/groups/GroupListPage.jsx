@@ -25,11 +25,16 @@ export function GroupListPage({
   const hasGroups = groups.length > 0;
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [groupsViewMode, setGroupsViewMode] = useState("mine");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const normalizedSearch = searchText.trim().toLowerCase();
-  const searchActive = Boolean(normalizedSearch);
+  // Active the instant the field is focused (not only once text is typed) so
+  // the "search mode" layout (nav hidden, hero collapsed) appears immediately
+  // on tap, skipping the frame where the keyboard is open but the layout
+  // hasn't switched yet.
+  const searchActive = isSearchFocused || Boolean(normalizedSearch);
 
   useEffect(() => {
     onSearchActiveChange?.(searchActive);
@@ -113,10 +118,21 @@ export function GroupListPage({
             type="search"
             value={searchText}
             onChange={event => setSearchText(event.target.value)}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
             placeholder="Search my groups..."
           />
           {searchActive && (
-            <button className="groups-search-clear" type="button" aria-label="Clear group search" onClick={() => setSearchText("")}>
+            <button
+              className="groups-search-clear"
+              type="button"
+              aria-label="Clear group search"
+              // onMouseDown (not onClick) fires before the input's onBlur,
+              // so we can clear the text and keep focus/search-mode intact
+              // instead of the layout flashing back to the non-search state.
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => setSearchText("")}
+            >
               ×
             </button>
           )}
