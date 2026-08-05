@@ -29,6 +29,7 @@ export function GroupListPage({
   const [groupsViewMode, setGroupsViewMode] = useState("mine");
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
+  const searchInputRef = useRef(null);
   const normalizedSearch = searchText.trim().toLowerCase();
   // Active the instant the field is focused (not only once text is typed) so
   // the "search mode" layout (nav hidden, hero collapsed) appears immediately
@@ -40,6 +41,15 @@ export function GroupListPage({
     onSearchActiveChange?.(searchActive);
     return () => onSearchActiveChange?.(false);
   }, [onSearchActiveChange, searchActive]);
+
+  // Fully leaves search mode: clears the text, drops focus state (so the
+  // nav bar and hero controls come back), and blurs the input to dismiss
+  // the keyboard — mirrors the WhatsApp back-arrow behavior.
+  const exitSearch = () => {
+    setSearchText("");
+    setIsSearchFocused(false);
+    searchInputRef.current?.blur();
+  };
 
   const clearLongPress = () => {
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
@@ -110,11 +120,26 @@ export function GroupListPage({
           </button>
         </div>
         <div className="groups-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          {searchActive ? (
+            <button
+              className="groups-search-back"
+              type="button"
+              aria-label="Close search"
+              onMouseDown={event => event.preventDefault()}
+              onClick={exitSearch}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          )}
           <input
+            ref={searchInputRef}
             type="search"
             value={searchText}
             onChange={event => setSearchText(event.target.value)}

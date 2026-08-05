@@ -90,6 +90,18 @@
   cursor: pointer;
 }
 
+.groups-search-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .groups-hero p {
   margin: 0 0 14px;
   color: #536173;
