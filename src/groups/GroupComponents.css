@@ -156,6 +156,117 @@
   box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.1);
 }
 
+.groups-new-chat-wrap {
+  position: relative;
+}
+
+.groups-new-chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+}
+
+.groups-new-chat-menu {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  z-index: 21;
+  min-width: 180px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 27, 45, 0.18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groups-new-chat-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f1b2d;
+  cursor: pointer;
+}
+
+.groups-new-chat-menu button:hover {
+  background: #ecfeff;
+}
+
+.groups-new-chat-menu-icon {
+  width: 20px;
+  text-align: center;
+  color: #0d9488;
+  font-size: 15px;
+}
+
+.groups-filter-chips {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.groups-filter-chip {
+  border: 1px solid #dbe8e7;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #536173;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.groups-filter-chip.active {
+  border-color: #0d9488;
+  background: #0d9488;
+  color: #ffffff;
+}
+
+.chat-time-label {
+  font-size: 11px;
+  color: #8a9bb0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chat-unread-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #22c55e;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-context-label {
+  color: #0d9488;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-count {
+  color: #8a9bb0;
+  font-weight: 600;
+}
+
 .group-btn {
   border: none;
   border-radius: 8px;

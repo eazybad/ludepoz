@@ -21,12 +21,15 @@ export function GroupListPage({
   groupReadAt = {},
   currentUserId = "",
   onSearchActiveChange,
+  dmThreads = [],
+  onOpenConversation,
 }) {
-  const hasGroups = groups.length > 0;
+  const hasAnyChats = groups.length > 0 || dmThreads.length > 0;
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [searchText, setSearchText] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [groupsViewMode, setGroupsViewMode] = useState("mine");
+  const [chatFilter, setChatFilter] = useState("all"); // "all" | "groups" | "direct"
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const searchInputRef = useRef(null);
@@ -95,29 +98,85 @@ export function GroupListPage({
         }
       })
     : groups;
-  const recentGroups = filteredGroups.filter(group => {
-    try {
-      const activityTime = group.activityAt?.toMillis?.() || group.activityAt?.getTime?.() || 0;
-      return group.lastActivityByUid !== currentUserId
-        && activityTime > 0
-        && activityTime > (groupReadAt[group.id] || 0);
-    } catch (err) {
-      console.error("Recent group filter error:", err);
-      return false;
-    }
-  });
+
+  const filteredDmThreads = normalizedSearch
+    ? dmThreads.filter(thread => {
+        try {
+          const topConv = thread.conversations[0];
+          return (thread.otherPerson?.name?.toLowerCase().includes(normalizedSearch) || false)
+            || (topConv?.lastMessage?.toLowerCase().includes(normalizedSearch) || false)
+            || (topConv?.listingTitle?.toLowerCase().includes(normalizedSearch) || false)
+            || (topConv?.sourceGroupName?.toLowerCase().includes(normalizedSearch) || false);
+        } catch (err) {
+          console.error("DM thread filter error:", err);
+          return false;
+        }
+      })
+    : dmThreads;
+
+  const getGroupTime = (group) => group.activityAt?.toMillis?.() || group.activityAt?.getTime?.() || 0;
+  const getThreadTime = (thread) => thread.conversations[0]?.lastMessageAt?.seconds
+    ? thread.conversations[0].lastMessageAt.seconds * 1000
+    : 0;
+  const getThreadUnread = (thread) => thread.conversations.reduce((sum, conv) => {
+    const mine = currentUserId === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+    return sum + (mine || 0);
+  }, 0);
+
+  // Merge groups + DM threads into one recency-sorted feed for the "All" tab.
+  const mergedItems = [
+    ...filteredGroups.map(group => ({ kind: "group", key: `g:${group.id}`, sortTime: getGroupTime(group), data: group })),
+    ...filteredDmThreads.map(thread => ({ kind: "dm", key: `d:${thread.otherUid}`, sortTime: getThreadTime(thread), data: thread })),
+  ].sort((a, b) => b.sortTime - a.sortTime);
+
+  const visibleItems = chatFilter === "groups"
+    ? mergedItems.filter(item => item.kind === "group")
+    : chatFilter === "direct"
+      ? mergedItems.filter(item => item.kind === "dm")
+      : mergedItems;
+
+  const formatThreadTime = (ms) => {
+    if (!ms) return "";
+    const diffMin = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (diffMin < 1) return "now";
+    if (diffMin < 60) return `${diffMin}m`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h`;
+    const diffDay = Math.round(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d`;
+    return new Date(ms).toLocaleDateString();
+  };
 
   return (
     <div className={`groups-page ${searchActive ? "groups-searching" : ""}`}>
       <div className="groups-hero">
         <div className="groups-topbar">
           <h2>Kampasika</h2>
-          <button className="groups-camera-btn" type="button" aria-label="Scan group QR" onClick={onOpenScanner}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 8a2 2 0 0 1 2-2h2l1.3-2h5.4L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="12" cy="12.5" r="3.5" stroke="currentColor" strokeWidth="2" />
-            </svg>
-          </button>
+          <div className="groups-new-chat-wrap">
+            <button
+              className="groups-camera-btn"
+              type="button"
+              aria-label="New chat or group"
+              onClick={() => setShowCreateMenu(value => !value)}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            </button>
+            {showCreateMenu && (
+              <>
+                <div className="groups-new-chat-backdrop" onClick={() => setShowCreateMenu(false)} />
+                <div className="groups-new-chat-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); onCreateGroup(); }}>
+                    <span className="groups-new-chat-menu-icon">＋</span> Create Group
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setShowCreateMenu(false); onOpenScanner(); }}>
+                    <span className="groups-new-chat-menu-icon">▤</span> Scan / Join
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <div className="groups-search">
           {searchActive ? (
@@ -145,7 +204,7 @@ export function GroupListPage({
             onChange={event => setSearchText(event.target.value)}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => setIsSearchFocused(false)}
-            placeholder="Search my groups..."
+            placeholder="Search chats..."
           />
           {searchActive && (
             <button
@@ -162,113 +221,119 @@ export function GroupListPage({
             </button>
           )}
         </div>
-        {!searchActive && (
-          <>
-            <div className="group-actions">
-              <button className="group-btn primary" type="button" onClick={onCreateGroup}>Create Group</button>
-              <button className="group-btn secondary" type="button" onClick={onOpenScanner}>Scan / Join</button>
-            </div>
-            <div className="groups-mode-grid" aria-label="Kampasika overview">
-              <button type="button" className={`groups-mode-card ${groupsViewMode === "mine" ? "active" : ""}`} onClick={() => setGroupsViewMode("mine")}>
-                <strong>My Groups</strong>
-                <span>{filteredGroups.length} joined</span>
-              </button>
-              <button type="button" className={`groups-mode-card ${groupsViewMode === "recent" ? "active" : ""}`} onClick={() => setGroupsViewMode("recent")}>
-                <strong>Recent Updates</strong>
-                <span>{recentGroups.length} new</span>
-              </button>
-            </div>
-          </>
-        )}
+        <div className="groups-filter-chips" role="tablist" aria-label="Filter chats">
+          <button type="button" role="tab" aria-selected={chatFilter === "all"} className={`groups-filter-chip ${chatFilter === "all" ? "active" : ""}`} onClick={() => setChatFilter("all")}>All</button>
+          <button type="button" role="tab" aria-selected={chatFilter === "groups"} className={`groups-filter-chip ${chatFilter === "groups" ? "active" : ""}`} onClick={() => setChatFilter("groups")}>Groups</button>
+          <button type="button" role="tab" aria-selected={chatFilter === "direct"} className={`groups-filter-chip ${chatFilter === "direct" ? "active" : ""}`} onClick={() => setChatFilter("direct")}>Direct</button>
+        </div>
       </div>
 
-      {!searchActive && groupsViewMode === "recent" ? (
       <div className="group-section">
-        <div className="group-section-title">Recent updates</div>
-        {recentGroups.length > 0 ? (
-          recentGroups.map(group => (
-            <button key={group.id} type="button" className="group-card" onClick={() => handleGroupOpen(group)}>
-              <div className="group-avatar" style={{ backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}>
-                {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="group-card-title">{group.name}</div>
-                <div className="group-card-subtitle">New activity in this group</div>
-              </div>
-              <span className="group-new-pill">New</span>
-            </button>
-          ))
-        ) : (
-          <div className="group-empty">No recent updates. You're all caught up.</div>
-        )}
-      </div>
-      ) : (
-
-      <div className="group-section">
-        <div className="group-section-title">My Groups</div>
-        {filteredGroups.length > 0 ? (
-          filteredGroups.map(group => {
-            const isSelected = selectedGroupId === group.id;
-            return (
-              <div key={group.id} className={`group-card-wrap${isSelected ? " has-selection" : ""}`}>
-                {isSelected && canDeleteGroup(group) && (
-                  <div className="group-selection-bar" role="toolbar" aria-label={`Actions for ${group.name}`}>
-                    <div>
-                      <button type="button" className="group-btn ghost" onClick={() => { onDeleteGroup?.(group, "archive"); setSelectedGroupId(""); }}>Archive</button>
-                      <button type="button" className="group-btn danger" onClick={() => { onDeleteGroup?.(group, "delete"); setSelectedGroupId(""); }}>Delete</button>
-                      <button type="button" className="group-btn ghost" onClick={() => setSelectedGroupId("")}>Cancel</button>
+        {visibleItems.length > 0 ? (
+          visibleItems.map(item => {
+            if (item.kind === "group") {
+              const group = item.data;
+              const isSelected = selectedGroupId === group.id;
+              return (
+                <div key={item.key} className={`group-card-wrap${isSelected ? " has-selection" : ""}`}>
+                  {isSelected && canDeleteGroup(group) && (
+                    <div className="group-selection-bar" role="toolbar" aria-label={`Actions for ${group.name}`}>
+                      <div>
+                        <button type="button" className="group-btn ghost" onClick={() => { onDeleteGroup?.(group, "archive"); setSelectedGroupId(""); }}>Archive</button>
+                        <button type="button" className="group-btn danger" onClick={() => { onDeleteGroup?.(group, "delete"); setSelectedGroupId(""); }}>Delete</button>
+                        <button type="button" className="group-btn ghost" onClick={() => setSelectedGroupId("")}>Cancel</button>
+                      </div>
                     </div>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={`group-card ${isSelected ? "selected" : ""}`}
-                  onClick={() => handleGroupOpen(group)}
-                  onContextMenu={event => {
-                    if (!canDeleteGroup(group)) return;
-                    event.preventDefault();
-                    setSelectedGroupId(group.id);
-                  }}
-                  onMouseDown={() => startGroupLongPress(group)}
-                  onMouseUp={clearLongPress}
-                  onMouseLeave={clearLongPress}
-                  onTouchStart={() => startGroupLongPress(group)}
-                  onTouchEnd={clearLongPress}
-                  onTouchCancel={clearLongPress}
-                >
-                  <div
-                    className="group-avatar"
-                    style={{
-                      backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
+                  )}
+                  <button
+                    type="button"
+                    className={`group-card ${isSelected ? "selected" : ""}`}
+                    onClick={() => handleGroupOpen(group)}
+                    onContextMenu={event => {
+                      if (!canDeleteGroup(group)) return;
+                      event.preventDefault();
+                      setSelectedGroupId(group.id);
                     }}
+                    onMouseDown={() => startGroupLongPress(group)}
+                    onMouseUp={clearLongPress}
+                    onMouseLeave={clearLongPress}
+                    onTouchStart={() => startGroupLongPress(group)}
+                    onTouchEnd={clearLongPress}
+                    onTouchCancel={clearLongPress}
                   >
-                    {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="group-card-title">{group.name}</div>
-                    <div className="group-card-subtitle">
-                      {(group.memberCount || 0).toLocaleString()} members - {groupTypes[group.type] || "Group"}
-                      {group.desc ? ` - ${group.desc}` : ""}
+                    <div
+                      className="group-avatar"
+                      style={{
+                        backgroundImage: group.avatarUrl ? `url(${group.avatarUrl})` : undefined,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }}
+                    >
+                      {!group.avatarUrl && (group.avatarText || groupAvatarText(group.name))}
                     </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="group-card-title">{group.name}</div>
+                      <div className="group-card-subtitle">
+                        {(group.memberCount || 0).toLocaleString()} members - {groupTypes[group.type] || "Group"}
+                        {group.desc ? ` - ${group.desc}` : ""}
+                      </div>
+                    </div>
+                    {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
+                    <span className="group-visibility-pill">
+                      {group.joinPolicy === "approvalRequired" ? "Approval" : "Invite"}
+                    </span>
+                    {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
+                  </button>
+                </div>
+              );
+            }
+
+            const thread = item.data;
+            const topConv = thread.conversations[0];
+            const unread = getThreadUnread(thread);
+            const itemCount = thread.conversations.length;
+            const contextLabel = topConv.listingTitle
+              ? `${topConv.listingTitle}${topConv.listingPrice ? ` • ${Number(topConv.listingPrice).toLocaleString()} TSh` : ""}`
+              : (topConv.sourceGroupName ? `via ${topConv.sourceGroupName}` : "");
+            return (
+              <button key={item.key} type="button" className="group-card" onClick={() => onOpenConversation?.(thread)}>
+                <div
+                  className="group-avatar"
+                  style={{
+                    backgroundImage: thread.otherPerson?.avatar ? `url(${thread.otherPerson.avatar})` : undefined,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }}
+                >
+                  {!thread.otherPerson?.avatar && groupAvatarText(thread.otherPerson?.name || "?")}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="group-card-title">{thread.otherPerson?.name || "Unknown"}</div>
+                  {contextLabel && (
+                    <div className="chat-context-label">
+                      {contextLabel}
+                      {itemCount > 1 && <span className="chat-context-count"> · {itemCount} items</span>}
+                    </div>
+                  )}
+                  <div className="group-card-subtitle">
+                    {topConv.lastMessage || "No messages yet"}
                   </div>
-                  {group.lastActivityByUid !== currentUserId && group.activityAt?.toMillis && group.activityAt.toMillis() > (groupReadAt[group.id] || 0) && <span className="group-new-pill">New</span>}
-                  <span className="group-visibility-pill">
-                    {group.joinPolicy === "approvalRequired" ? "Approval" : "Invite"}
-                  </span>
-                  {isGroupAdmin(group) && <span className="group-role-pill">Admin</span>}
-                </button>
-              </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                  <span className="chat-time-label">{formatThreadTime(item.sortTime)}</span>
+                  {unread > 0 && <span className="chat-unread-badge">{unread}</span>}
+                </div>
+              </button>
             );
           })
         ) : (
           <div className="group-empty">
-            {hasGroups ? "No groups match your search." : "No groups yet. Create one or scan a group QR to join."}
+            {hasAnyChats
+              ? (normalizedSearch ? "No chats match your search." : "Nothing here yet.")
+              : "No chats yet. Create a group or scan a group QR to join."}
           </div>
         )}
       </div>
-      )}
     </div>
   );
 }

@@ -1840,7 +1840,7 @@ useEffect(() => {
     if (activeConversation?.id === conversationId) {
       setActiveConversation(null);
       setMessages([]);
-      setPage("messages");
+      setPage("communities");
     }
 
     setSuccess("Conversation deleted");
@@ -3620,6 +3620,14 @@ await updateDoc(convRef, {
     && group.activityAt.toMillis() > (groupReadAt[group.id] || 0)
   )).length;
 
+  // Total unread DM count across all 1:1 conversations (marketplace + group
+  // member chats share the same `conversations` collection), used for the
+  // Messages tab badge in the bottom nav.
+  const dmUnreadCount = conversations.reduce((sum, conv) => {
+    const myUnread = user?.uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+    return sum + (myUnread || 0);
+  }, 0);
+
   const readAllQuickSavedFiles = useCallback(() => {
     const items = [];
     try {
@@ -3932,7 +3940,7 @@ await updateDoc(convRef, {
   // Conversations now use realtime onSnapshot listener - no polling needed
   // Clear notifications when entering messages page
   useEffect(() => {
-    if (user && page === "messages") {
+    if (user && page === "communities") {
       loadConversations();
       // Clear all PWA notifications
       if ('serviceWorker' in navigator) {
@@ -5464,6 +5472,30 @@ const loadSellerStats = useCallback(async (userId) => {
       const group = groups.get(uid);
       group.conversations.sort((a, b) => getTime(b) - getTime(a));
       return group;
+    }).sort((a, b) => getTime(b.conversations[0]) - getTime(a.conversations[0]));
+  })();
+
+  // Grouped-by-person for the unified Chats tab — a person may have several
+  // conversations (different listings, or a group-member DM), collapsed
+  // into one row showing the most recent one, with a count if there's more
+  // than one (matches the previous Messages page's grouping behavior).
+  const dmThreadsForChatsList = (() => {
+    const byPerson = new Map();
+    const order = [];
+    conversations.forEach(conv => {
+      const otherUid = user?.uid === conv.buyerId ? conv.sellerId : conv.buyerId;
+      const otherPerson = user?.uid === conv.buyerId ? {name:conv.sellerName,avatar:conv.sellerAvatar} : {name:conv.buyerName,avatar:conv.buyerAvatar};
+      if (!byPerson.has(otherUid)) {
+        byPerson.set(otherUid, { otherUid, otherPerson, conversations: [] });
+        order.push(otherUid);
+      }
+      byPerson.get(otherUid).conversations.push(conv);
+    });
+    const getTime = conv => conv.lastMessageAt?.seconds ? conv.lastMessageAt.seconds * 1000 : 0;
+    return order.map(uid => {
+      const thread = byPerson.get(uid);
+      thread.conversations.sort((a, b) => getTime(b) - getTime(a));
+      return thread;
     }).sort((a, b) => getTime(b.conversations[0]) - getTime(a.conversations[0]));
   })();
 if (loading) {
@@ -7108,12 +7140,12 @@ return (
         onClick={() => {
   setActiveConversation(null);
   setMessages([]);
-  setPageRaw("messages");
+  setPageRaw("communities");
   pageHistory.current = pageHistory.current.filter(p => p !== "chat");
-  if (pageHistory.current[pageHistory.current.length - 1] !== "messages") {
-    pageHistory.current.push("messages");
+  if (pageHistory.current[pageHistory.current.length - 1] !== "communities") {
+    pageHistory.current.push("communities");
   }
-  window.history.replaceState({ page: "messages" }, "", "/");
+  window.history.replaceState({ page: "communities" }, "", "/");
 }}
         style={{
           width:'36px',
@@ -7753,6 +7785,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               currentUserId={user?.uid || ""}
               isGroupAdmin={isGroupAdmin}
               onSearchActiveChange={setGroupSearchActive}
+              dmThreads={dmThreadsForChatsList}
+              onOpenConversation={(thread) => {
+                const topConv = thread.conversations[0];
+                setActiveConversation(topConv);
+                setMessages([]);
+                setPage("chat");
+                markAsRead(topConv.id);
+              }}
             />
           )}
           {showCreateGroup && (
@@ -12211,9 +12251,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   padding:'6px 4px'
 }}>
         <button onClick={()=>setPage("communities")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Groups</span>
-          {groupUnreadCount>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount}</span>}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Chats</span>
+          {(groupUnreadCount+dmUnreadCount)>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount+dmUnreadCount}</span>}
         </button>
         {discoverHasEnabledSection && <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>}
         <button onClick={()=>setPage("collections")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
