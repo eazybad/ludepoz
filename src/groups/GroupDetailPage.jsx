@@ -2938,7 +2938,7 @@ export function GroupDetailPage({
   );
 
   return (
-    <div className={`group-detail ${activeTab === "chats" ? "group-detail-chat" : ""}`}>
+    <div className={`group-detail ${isDarkMode ? "dark-mode" : "light-mode"} ${activeTab === "chats" ? "group-detail-chat" : ""}`}>
       <div className="group-wa-header">
         <div className="group-header-main">
           <button

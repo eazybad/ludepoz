@@ -371,14 +371,29 @@
   color: #0f766e;
 }
 
+.dark-mode .group-btn.secondary {
+  background: rgba(6, 214, 199, 0.14);
+  color: #2dd4bf;
+}
+
 .group-btn.warn {
   background: #ecfeff;
   color: #0f766e;
 }
 
+.dark-mode .group-btn.warn {
+  background: rgba(6, 214, 199, 0.14);
+  color: #2dd4bf;
+}
+
 .group-btn.ghost {
   background: #f3f6f8;
   color: #344054;
+}
+
+.dark-mode .group-btn.ghost {
+  background: #2a3942;
+  color: #cfd9df;
 }
 
 .group-btn.resource-back-btn {
@@ -896,6 +911,10 @@
   padding-bottom: 0;
 }
 
+.group-detail.dark-mode {
+  background: #0b141a;
+}
+
 .group-detail-chat {
   background: #f0fffe;
   padding-bottom: 0;
@@ -909,6 +928,10 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.group-detail-chat.dark-mode {
+  background: #0b141a;
 }
 
 .group-wa-header {
@@ -1364,6 +1387,13 @@
   background: #ffffff;
 }
 
+.dark-mode .group-overview-active,
+.dark-mode .group-overview-card,
+.dark-mode .group-overview-members {
+  border-color: rgba(134, 150, 160, 0.25);
+  background: #202c33;
+}
+
 .group-overview-active {
   padding: 13px;
   display: flex;
@@ -1387,6 +1417,11 @@
   letter-spacing: 0.2px;
 }
 
+.dark-mode .group-overview-active small,
+.dark-mode .group-overview-card small {
+  color: #2dd4bf;
+}
+
 .group-overview-active strong,
 .group-overview-card strong {
   display: block;
@@ -1397,6 +1432,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.dark-mode .group-overview-active strong,
+.dark-mode .group-overview-card strong {
+  color: #e9edef;
 }
 
 .group-overview-active span,
@@ -1410,6 +1450,11 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.dark-mode .group-overview-active span,
+.dark-mode .group-overview-card span {
+  color: #8696a0;
 }
 
 .group-overview-grid {
@@ -1440,10 +1485,18 @@
   font-size: 12px;
 }
 
+.dark-mode .group-overview-members {
+  color: #8696a0;
+}
+
 .group-overview-members strong {
   color: #0f1b2d;
   font-size: 22px;
   font-weight: 900;
+}
+
+.dark-mode .group-overview-members strong {
+  color: #e9edef;
 }
 
 .chat-panel {
