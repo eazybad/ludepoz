@@ -5692,12 +5692,47 @@ return (
       @media (hover: hover) {
         .listing-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important; }
       }
+
+      /* ===== Theme tokens: one class flip on .app-container drives every
+         inline style that references var(--token). Add new dark-mode
+         colors here instead of writing another isDarkMode ternary. ===== */
+      .app-container.light-mode {
+        --page-bg: #f4f6f8;
+        --page-bg-outer: #f5f5f7;
+        --surface-bg: #fff;
+        --surface-bg-alt: #f4f6f8;
+        --text-primary: #0f1b2d;
+        --text-secondary: #8a9bb0;
+        --text-tertiary: #344054;
+        --border-color: #e2e6ea;
+        --mint-tint: #f0fffe;
+        --mint-tint-strong: #e6fffe;
+        --nav-bg: rgba(255,255,255,0.92);
+        --nav-border: rgba(226,230,234,0.6);
+        --nav-shadow: 0 8px 28px rgba(15,27,45,0.16);
+      }
+
+      .app-container.dark-mode {
+        --page-bg: #0b141a;
+        --page-bg-outer: #0b141a;
+        --surface-bg: #202c33;
+        --surface-bg-alt: #2a3942;
+        --text-primary: #e9edef;
+        --text-secondary: #8696a0;
+        --text-tertiary: #cfd9df;
+        --border-color: rgba(134,150,160,0.3);
+        --mint-tint: rgba(6,214,199,0.08);
+        --mint-tint-strong: rgba(6,214,199,0.12);
+        --nav-bg: rgba(32,44,51,0.92);
+        --nav-border: rgba(134,150,160,0.25);
+        --nav-shadow: 0 8px 28px rgba(0,0,0,0.45);
+      }
     `}</style>
     {/* ⭐ END OF STYLE TAG */}
 
-  <div className="app-container" style={{
+  <div className={`app-container ${isDarkMode ? "dark-mode" : "light-mode"}`} style={{
   fontFamily:'-apple-system,BlinkMacSystemFont,system-ui,sans-serif',
-  background:'#f5f5f7',
+  background:'var(--page-bg-outer)',
   width:'100%',
   height:'calc(100vh - env(safe-area-inset-bottom))',
   maxWidth:'100vw',
@@ -5984,7 +6019,7 @@ return (
   ) : page==="groupDetail" || page==="home" ? (
     null
   ) : (
-    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>
+    <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)'}}>
       Kam<em style={{color:'#06d6c7'}}>pa</em>sika
     </div>
   )}
@@ -5997,7 +6032,7 @@ return (
   display:'flex',
   alignItems:'center',
   gap:'10px',
-  background:'#fff',
+  background:'var(--surface-bg)',
   height:'40px',
   borderRadius:'999px',
   padding:'0 12px',
@@ -6029,7 +6064,7 @@ return (
             else if (homeTab === "services") commitServicesSearch(serviceSearchQ);
             else commitListingsSearch(searchQ);
           }}
-          style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'#0f1b2d'}}
+          style={{flex:1,minWidth:0,border:'none',background:'none',outline:'none',fontSize:'14px',fontWeight:'400',color:'var(--text-primary)'}}
         />
         <button
           type="button"
@@ -6043,7 +6078,7 @@ return (
             width:'30px',height:'30px',borderRadius:'50%',
             background:'transparent',border:'none',cursor:'pointer',
             display:'flex',alignItems:'center',justifyContent:'center',
-            flexShrink:0,padding:0,color:'#6b7280'
+            flexShrink:0,padding:0,color:'var(--text-secondary)'
           }}>
           🔍
         </button>
@@ -6062,7 +6097,7 @@ return (
     WebkitOverflowScrolling:'touch',
     boxSizing:'border-box',
     paddingBottom:'100px',
-    background:'#f4f6f8'
+    background:'var(--page-bg)'
   }}>
 
          {false && showAboutBanner && (
@@ -6238,7 +6273,7 @@ return (
   gap:'0',
   borderBottom:'none',
   margin:'0',
-  background:'#fff',
+  background:'var(--surface-bg)',
   position:'sticky',
   top:0,
   zIndex:40,
@@ -6323,7 +6358,7 @@ return (
     <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
       <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'#0d9488',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
       <div style={{minWidth:0}}>
-        <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Verify your identity</div>
+        <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Verify your identity</div>
         <div style={{fontSize:'10px',color:'rgba(15,27,45,0.58)',marginTop:'1px'}}>Required before using main app features</div>
       </div>
     </div>
@@ -6331,9 +6366,9 @@ return (
   </div>
 )}
 {featureFlagsLoaded && !discoverHasEnabledSection && (
-  <div style={{margin:'18px 16px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'18px 16px',textAlign:'center',boxShadow:'0 2px 10px rgba(15,27,45,0.05)'}}>
-    <div style={{fontSize:'16px',fontWeight:'800',color:'#0f1b2d',marginBottom:'6px'}}>Discover is being prepared</div>
-    <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.45}}>Rooms near campus will appear here when switched on.</div>
+  <div style={{margin:'18px 16px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'14px',padding:'18px 16px',textAlign:'center',boxShadow:'0 2px 10px rgba(15,27,45,0.05)'}}>
+    <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'6px'}}>Discover is being prepared</div>
+    <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.45}}>Rooms near campus will appear here when switched on.</div>
   </div>
 )}
 {/* ===== GOODS TAB CONTENT ===== */}
@@ -6365,19 +6400,19 @@ return (
                 fallbackTitle="No listings yet" fallbackHint={`Be the first to post in ${selectedUni?.short}!`} />
             ):(
               filteredListings.map((item,idx)=>(
-                <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'#fff',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:openListingId===item.id?'1.5px solid #06d6c7':'1px solid #f0f0f0',boxShadow:openListingId===item.id?'0 4px 16px rgba(6,214,199,0.12)':'0 1px 6px rgba(0,0,0,0.04)',transition:'border 0.15s ease,box-shadow 0.15s ease'}}>
+                <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'var(--surface-bg)',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:openListingId===item.id?'1.5px solid #06d6c7':'1px solid #f0f0f0',boxShadow:openListingId===item.id?'0 4px 16px rgba(6,214,199,0.12)':'0 1px 6px rgba(0,0,0,0.04)',transition:'border 0.15s ease,box-shadow 0.15s ease'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',minWidth:'36px',minHeight:'36px',flexShrink:0,aspectRatio:'1 / 1',borderRadius:'50%',overflow:'hidden',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#06d6c7':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                     <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
                     {item.userIsVerified && (
                       <VerifiedBadge user={{ isVerified: true, verificationBadge: item.userVerificationBadge || "student" }} size="xs" />
                     )}
-                    <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
-                    {item.location && <span style={{fontSize:'11px',color:'#8a9bb0',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>📍 {item.location}</span>}
-                    <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
+                    <span style={{fontSize:'11px',color:'var(--text-secondary)',background:'var(--page-bg)',padding:'2px 8px',borderRadius:'8px'}}>{item.universityName}</span>
+                    {item.location && <span style={{fontSize:'11px',color:'var(--text-secondary)',background:'var(--page-bg)',padding:'2px 8px',borderRadius:'8px'}}>📍 {item.location}</span>}
+                    <span style={{fontSize:'11px',color:'var(--text-secondary)',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
-                  {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
+                  {item.description && <div style={{fontSize:'13px',color:'var(--text-tertiary)',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
                {(item.photos && item.photos.length > 0) ? (
   <div style={{marginBottom:'10px'}}>
     {item.photos.length === 1 ? (
@@ -6462,11 +6497,11 @@ return (
     />
   </div>
 ) : null}
-          <div style={{paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+          <div style={{paddingTop:'10px',borderTop:'1px solid var(--border-color)'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',marginBottom: openListingId===item.id ? '10px' : '0'}}>
               <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',lineHeight:1.1}}>{item.price.toLocaleString()} TSh</div>
               {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(item, discoverListings, "listing")} compact />}
-              {openListingId!==item.id && <span style={{fontSize:'11px',color:'#8a9bb0',marginLeft:'auto'}}>Tap for options</span>}
+              {openListingId!==item.id && <span style={{fontSize:'11px',color:'var(--text-secondary)',marginLeft:'auto'}}>Tap for options</span>}
             </div>
 
             {openListingId===item.id && (
@@ -6476,14 +6511,14 @@ return (
                     <WhatsAppIcon size={15} /><span>WhatsApp</span>
                   </button>
                 )}
-                <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Sharing"))return;shareOnWhatsApp(item);}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'#f4f6f8',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Sharing"))return;shareOnWhatsApp(item);}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'var(--page-bg)',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
                   <span>📲</span><span>Share</span>
                 </button>
-                <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'#fff',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
+                <button onClick={(e)=>{e.stopPropagation();setViewingListing(item);setPhotoIndex(0);incrementViews(item.id);if(item.userId !== user?.uid){loadSellerStats(item.userId);}}} style={{minWidth:0,padding:'9px 6px',background:'var(--surface-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}}>
                   <span>📋</span><span>Details</span>
                 </button>
                 {item.userId !== user?.uid && (
-                  <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Messaging"))return;requireAuth("message",()=>startConversation(item));}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'#e6fffe',color:isOffline?'#8a9bb0':'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
+                  <button onClick={(e)=>{e.stopPropagation();if(guardOfflineDiscoverAction("Messaging"))return;requireAuth("message",()=>startConversation(item));}} disabled={isOffline} style={{minWidth:0,padding:'9px 6px',background:'var(--mint-tint-strong)',color:isOffline?'#8a9bb0':'#0d9488',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px',whiteSpace:'nowrap'}} title="Message seller">
                     <span>💬</span><span>Message</span>
                   </button>
                 )}
@@ -6540,7 +6575,7 @@ return (
           </div>
         ) : (
           filtered.map(svc => (
-            <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+            <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid var(--border-color)'}}>
               {(svc.photos && svc.photos.length > 0) ? (
                 <img src={svc.photos[0]} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
               ) : svc.photoUrl ? (
@@ -6556,14 +6591,14 @@ return (
                   <div style={{width:'18px',height:'18px',borderRadius:'50%',backgroundImage:svc.userAvatar?`url(${svc.userAvatar})`:'none',backgroundColor:!svc.userAvatar?'#0d9488':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',fontWeight:'700',color:'#fff'}}>
                     {!svc.userAvatar&&(svc.userName||"?").split(" ").map(n=>n[0]).join("")}
                   </div>
-                  <span style={{fontSize:'11px',color:'#6b7280'}}>{svc.userName}</span>
+                  <span style={{fontSize:'11px',color:'var(--text-secondary)'}}>{svc.userName}</span>
                 </div>
                 {svc.accountType === "provider" ? (
-                  <div style={{fontSize:'10px',color:'#6b7280',marginBottom:'4px'}}>💼 Near campus{svc.providerLocation ? ` · ${svc.providerLocation}` : ''}</div>
+                  <div style={{fontSize:'10px',color:'var(--text-secondary)',marginBottom:'4px'}}>💼 Near campus{svc.providerLocation ? ` · ${svc.providerLocation}` : ''}</div>
                 ) : (
                   <div style={{fontSize:'10px',color:'#0d9488',fontWeight:'600',marginBottom:'4px'}}>🎓 {svc.universityName || 'ARU'} Student</div>
                 )}
-                <div style={{fontSize:'12px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
+                <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
               </div>
             </div>
           ))
@@ -6579,14 +6614,14 @@ return (
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
   <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
     <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{padding:'10px 16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ List a Room</button>
-    <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;setPage("roommates");}} disabled={isOffline} style={{padding:'10px 16px',background:'#f4f6f8',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>🤝 Find Roommate</button>
+    <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;setPage("roommates");}} disabled={isOffline} style={{padding:'10px 16px',background:'var(--page-bg)',color:isOffline?'#8a9bb0':'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>🤝 Find Roommate</button>
   </div>
-  {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
+  {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'var(--page-bg)',border:'none',borderRadius:'8px',fontSize:'12px',color:'var(--text-secondary)',cursor:'pointer'}}>💰 Set max price filter</button>}
   {roomFilterMaxPrice !== "" && (
     <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
-      <span style={{fontSize:'12px',color:'#6b7280'}}>Max:</span>
-      <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
-      <span style={{fontSize:'12px',color:'#6b7280'}}>TSh</span>
+      <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>Max:</span>
+      <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
+      <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>TSh</span>
       <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
     </div>
   )}
@@ -6620,7 +6655,7 @@ return (
     ) : (
       <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
         {filtered.map(room => (
-          <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+          <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid var(--border-color)'}}>
             {room.photoUrl ? (
               <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
             ) : (
@@ -6632,12 +6667,12 @@ return (
                   <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                   <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'var(--text-secondary)'}}>/mo</span></div>
               </div>
-              <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
+              <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{room.landlordName} • {room.nearUni}</div>
               {room.amenities && room.amenities.length > 0 && (
                 <div style={{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}}>
-                  {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
+                  {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'var(--page-bg)',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
                 </div>
               )}
             </div>
@@ -6660,13 +6695,13 @@ return (
     boxSizing:'border-box',
     paddingBottom:'100px'
   }}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'20px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateSuccess?"Success!":"New Listing"}</h2>
             {showCreateSuccess?(
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
-                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>Listing created!</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Share it to get buyers faster</div>
+                <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'var(--text-primary)'}}>Listing created!</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'28px'}}>Share it to get buyers faster</div>
                 
                 <button 
                   onClick={() => {
@@ -6713,8 +6748,8 @@ return (
                   style={{
                     width:'100%',
                     padding:'14px',
-                    background:'#f4f6f8',
-                    color:'#0f1b2d',
+                    background:'var(--page-bg)',
+                    color:'var(--text-primary)',
                     border:'none',
                     borderRadius:'12px',
                     fontSize:'16px',
@@ -6727,14 +6762,14 @@ return (
               </div>
             ):(
               <>
-                <div style={{background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
+                <div style={{background:'var(--mint-tint)',border:'1px solid #99f0ee',borderRadius:'12px',padding:'14px',marginBottom:'16px'}}>
                   <div style={{fontSize:'13px',fontWeight:'700',color:'#0d9488',marginBottom:'8px'}}>✨ Andika kwa maneno yako</div>
                   <textarea
                     value={createAssistText}
                     onChange={e => setCreateAssistText(e.target.value)}
                     placeholder='Mfano: Nauza iPhone 11 bei 400k pale Mlimani'
                     rows={3}
-                    style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:'8px'}}
+                    style={{width:'100%',padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',marginBottom:'8px'}}
                   />
                   <button
                     type="button"
@@ -6744,7 +6779,7 @@ return (
                   >
                     {createAssistLoading ? 'Inaelewa...' : 'Nijazie Fomu'}
                   </button>
-                  <div style={{fontSize:'11px',color:'#6b7280',marginTop:'8px',lineHeight:1.4}}>
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'8px',lineHeight:1.4}}>
                     Works in Swahili or English. You still add photos and tap Create Listing.
                   </div>
                 </div>
@@ -6885,7 +6920,7 @@ return (
               display:'flex',
               alignItems:'center',
               justifyContent:'center',
-              background:'#f0fffe',
+              background:'var(--mint-tint)',
               flexShrink:0
             }}>
               <span style={{fontSize:'24px',color:'#06d6c7'}}>+</span>
@@ -6903,7 +6938,7 @@ return (
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
-          background:'#f0fffe',
+          background:'var(--mint-tint)',
           gap:'6px'
         }}>
           <span style={{fontSize:'18px',color:'#06d6c7'}}>+</span>
@@ -6913,24 +6948,24 @@ return (
     </div>
   ) : (
     <div style={{
-      border:'2px dashed #e2e6ea',
+      border:'2px dashed var(--border-color)',
       borderRadius:'12px',
       padding:'32px',
       textAlign:'center',
-      background:'#f9fafb',
+      background:'var(--surface-bg)',
       transition:'all 0.2s'
     }}>
       <div style={{fontSize:'48px',marginBottom:'12px'}}>📷</div>
-      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px',color:'#0f1b2d'}}>Add Photos</div>
-      <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'4px'}}>Upload up to 5 photos</div>
-      <div style={{fontSize:'12px',color:'#6b7280'}}>Max 5MB per photo</div>
+      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px',color:'var(--text-primary)'}}>Add Photos</div>
+      <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'4px'}}>Upload up to 5 photos</div>
+      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Max 5MB per photo</div>
     </div>
   )}
 </label>
                 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Category *</label><select value={createData.cat} onChange={e=>setCreateData({...createData,cat:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select category...</option>{CATEGORIES.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Title *</label><input type="text" placeholder="e.g. Business Year 2 Notes" value={createData.title} onChange={e=>setCreateData({...createData,title:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description</label><textarea placeholder="Describe your item..." value={createData.desc} onChange={e=>setCreateData({...createData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'100px',resize:'vertical',fontFamily:'inherit'}}/></div>
                 <div style={{marginBottom:'16px'}}>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Price (TSh) *</label>
                   <input
@@ -6939,7 +6974,7 @@ return (
                     placeholder="e.g. 25,000 or 25k"
                     value={createData.price}
                     onChange={e=>setCreateData({...createData,price:e.target.value})}
-                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none'}}
                   />
                   {createData.price && (
                     <div style={{fontSize:'11px',color:formatPriceHint(createData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
@@ -6947,11 +6982,11 @@ return (
                     </div>
                   )}
                 </div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="New">New</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Condition</label><select value={createData.cond} onChange={e=>setCreateData({...createData,cond:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none'}}><option value="">Select condition...</option><option value="New">New</option><option value="Like New">Like New</option><option value="Good">Good</option><option value="Fair">Fair</option><option value="Worn">Worn</option></select></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Pickup Location *</label><input type="text" placeholder="e.g. Old Library, Mlimani City, Kijitonyama" value={createData.location} onChange={e=>setCreateData({...createData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>Where can the buyer pick up or meet you?</div></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createData.whatsapp} onChange={e=>setCreateData({...createData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>Let buyers contact you directly on WhatsApp (visible on your listing)</div></div>
                 <div style={{width:'100%',marginTop:'16px',display:'flex',gap:'8px',alignItems:'center'}}>
-                  <button onClick={handleCreateListing} disabled={uploading} style={{flex:1,padding:'12px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+                  <button onClick={handleCreateListing} disabled={uploading} style={{flex:1,padding:'12px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
                     {uploading && (
                       <span style={{position:'relative',width:'18px',height:'18px',flexShrink:0}}>
                         <svg width="18" height="18" viewBox="0 0 18 18" style={{transform:'rotate(-90deg)'}}>
@@ -6994,7 +7029,7 @@ return (
                 value={messageSearchQ}
                 onChange={e=>setMessageSearchQ(e.target.value)}
                 placeholder="Search by name, listing, price, or message"
-                style={{width:'100%',padding:'10px 14px',border:'none',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'#f4f6f8'}}
+                style={{width:'100%',padding:'10px 14px',border:'none',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'var(--page-bg)'}}
               />
             </div>
           )}
@@ -7002,15 +7037,15 @@ return (
             <div style={{minHeight:'calc(100dvh - 190px)',display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',padding:'24px 28px',boxSizing:'border-box'}}>
               <div style={{maxWidth:'320px'}}>
               <div style={{fontSize:'48px',marginBottom:'16px'}}>💬</div>
-              <h3 style={{fontSize:'22px',fontWeight:'900',margin:'0 0 8px',color:'#0f1b2d'}}>No messages yet</h3>
-              <p style={{fontSize:'15px',lineHeight:1.5,color:'#8a9bb0',margin:0}}>Start a conversation from a listing, service, or room and it will appear here.</p>
+              <h3 style={{fontSize:'22px',fontWeight:'900',margin:'0 0 8px',color:'var(--text-primary)'}}>No messages yet</h3>
+              <p style={{fontSize:'15px',lineHeight:1.5,color:'var(--text-secondary)',margin:0}}>Start a conversation from a listing, service, or room and it will appear here.</p>
               </div>
             </div>
           ):filteredConversations.length===0?(
             <div style={{padding:'28px 16px',textAlign:'center'}}>
               <div style={{fontSize:'34px',marginBottom:'10px'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?'✓':'⌕'}</div>
-              <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'#0f1b2d'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"You're all caught up":"No matches"}</h3>
-              <p style={{fontSize:'13px',color:'#8a9bb0',margin:0}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"No unread conversations right now.":"Try a different name, listing, price, or message."}</p>
+              <h3 style={{fontSize:'16px',fontWeight:'800',marginBottom:'6px',color:'var(--text-primary)'}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"You're all caught up":"No matches"}</h3>
+              <p style={{fontSize:'13px',color:'var(--text-secondary)',margin:0}}>{messageFilterMode==="unread"&&!normalizedMessageSearch?"No unread conversations right now.":"Try a different name, listing, price, or message."}</p>
             </div>
           ):(
            <div style={{display:'flex',flexDirection:'column'}}>
@@ -7050,18 +7085,18 @@ return (
             <AvatarCircle />
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
-                <div style={{fontSize:'15px',fontWeight:'600',color:'#0f1b2d'}}>{otherPerson.name}</div>
-                {topConv.lastMessageAt&&<div style={{fontSize:'11px',color:'#8a9bb0'}}>{new Date(topConv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
+                <div style={{fontSize:'15px',fontWeight:'600',color:'var(--text-primary)'}}>{otherPerson.name}</div>
+                {topConv.lastMessageAt&&<div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{new Date(topConv.lastMessageAt.seconds*1000).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>}
               </div>
               {singleThread ? (
                 <>
                   <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
-                  <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               ) : (
                 <>
                   <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
-                  <div style={{fontSize:'13px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               )}
             </div>
@@ -7092,7 +7127,7 @@ return (
                       <div style={{fontSize:'12px',color:'#06d6c7',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
                       {unread>0 && <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
                     </div>
-                    <div style={{fontSize:'12px',color:'#6b7280',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
+                    <div style={{fontSize:'12px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
@@ -7122,15 +7157,15 @@ return (
     height:'100dvh',
     display:'flex',
     flexDirection:'column',
-    background:isDarkMode?'#0b141a':'#f4f6f8',
+    background:'var(--page-bg)',
     zIndex:100
   }}>
     
     {/* Chat Header - FIXED, never moves */}
     <div style={{
-      background:isDarkMode?'#202c33':'#fff',
+      background:'var(--surface-bg)',
       padding:'12px 16px',
-      borderBottom:isDarkMode?'1px solid rgba(134,150,160,0.3)':'1px solid #e2e6ea',
+      borderBottom:'1px solid var(--border-color)',
       display:'flex',
       alignItems:'center',
       gap:'12px',
@@ -7151,8 +7186,8 @@ return (
           width:'36px',
           height:'36px',
           borderRadius:'50%',
-          background:isDarkMode?'#2a3942':'#f4f6f8',
-          color:isDarkMode?'#e9edef':'#0f1b2d',
+          background:'var(--surface-bg-alt)',
+          color:'var(--text-primary)',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -7195,7 +7230,7 @@ return (
               <div style={{
                 fontSize:'15px',
                 fontWeight:'600',
-                color:isDarkMode?'#e9edef':'#0f1b2d',
+                color:'var(--text-primary)',
                 overflow:'hidden',
                 textOverflow:'ellipsis',
                 whiteSpace:'nowrap'
@@ -7204,7 +7239,7 @@ return (
               </div>
               <div style={{
                 fontSize:'11px',
-                color:isDarkMode?'#8696a0':'#6b7280',
+                color:'var(--text-secondary)',
                 overflow:'hidden',
                 textOverflow:'ellipsis',
                 whiteSpace:'nowrap'
@@ -7274,7 +7309,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               maxWidth:'78%',
               background:isMine
                 ?(isDarkMode?'#005c4b':'#d9fdd3')
-                :(isDarkMode?'#202c33':'#ffffff'),
+                :'var(--surface-bg)',
               color:isDarkMode?'#e9edef':'#111b21',
               padding:'6px 10px 8px 10px',
               borderRadius:isMine?'8px 8px 0 8px':'8px 8px 8px 0',
@@ -7323,8 +7358,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
     {/* Message Input - part of flex layout, NOT fixed */}
     <div style={{
-      background:isDarkMode?'#202c33':'#fff',
-      borderTop:isDarkMode?'1px solid rgba(134,150,160,0.3)':'1px solid #e2e6ea',
+      background:'var(--surface-bg)',
+      borderTop:'1px solid var(--border-color)',
       padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
@@ -7357,8 +7392,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           height:'42px',
           minWidth:'42px',
           borderRadius:'50%',
-          background:isDarkMode?'#2a3942':'#f4f6f8',
-          border:isDarkMode?'1.5px solid rgba(134,150,160,0.3)':'1.5px solid #e2e6ea',
+          background:'var(--surface-bg-alt)',
+          border:'1.5px solid var(--border-color)',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -7382,9 +7417,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           minWidth:0,
           height:'42px',
           padding:'10px 16px',
-          background:isDarkMode?'#2a3942':'#ffffff',
-          color:isDarkMode?'#e9edef':'#0f1b2d',
-          border:isDarkMode?'1.5px solid rgba(134,150,160,0.3)':'1.5px solid #e2e6ea',
+          background:'var(--surface-bg-alt)',
+          color:'var(--text-primary)',
+          border:'1.5px solid var(--border-color)',
           borderRadius:'24px',
           fontSize:'16px',
           outline:'none',
@@ -7399,8 +7434,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           height:'42px',
           minWidth:'42px',
           borderRadius:'50%',
-          background:messageText.trim()?'#06d6c7':(isDarkMode?'#2a3942':'#e2e6ea'),
-          color:messageText.trim()?'#0f1b2d':(isDarkMode?'#8696a0':'#8a9bb0'),
+          background:messageText.trim()?'#06d6c7':'var(--surface-bg-alt)',
+          color:messageText.trim()?'#0f1b2d':'var(--text-secondary)',
           border:'none',
           fontSize:'20px',
           cursor:messageText.trim()?'pointer':'not-allowed',
@@ -8139,32 +8174,32 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingTop:'14px',paddingBottom:'100px'}}>
 
           <div style={{background:'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',borderRadius:'18px',padding:'20px 18px',margin:'0 16px 16px 16px',width:'calc(100% - 32px)',boxSizing:'border-box'}}>
-            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Collections</h2>
+            <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>Collections</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Every active collection or event across your groups, in one place.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-              <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'#fff',color:'#0f1b2d',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By group</button>
+              <button onClick={()=>setPage("communities")} style={{padding:'10px 18px',background:'var(--surface-bg)',color:'var(--text-primary)',border:'1.5px solid rgba(15,27,45,0.15)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🏫 By group</button>
             </div>
           </div>
 
           {allMyGroupCollections.length === 0 ? (
-            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+            <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>📋</div>
               <div style={{fontSize:'16px',fontWeight:'600'}}>No active collections yet</div>
-              <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Open a group and create one from its Payments tab.</div>
+              <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Open a group and create one from its Payments tab.</div>
             </div>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-              <div style={{display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+              <div style={{display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid var(--border-color)'}}>
                 <input type="text" placeholder="Search collections..." value={navCollectionsSearchQ} onChange={e=>setNavCollectionsSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
               </div>
               <div style={{display:'flex',gap:'8px'}}>
-                <select value={navCollectionsGroupFilter} onChange={e=>setNavCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                <select value={navCollectionsGroupFilter} onChange={e=>setNavCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg)',fontSize:'12px',color:'var(--text-primary)'}}>
                   <option value="all">All groups</option>
                   {Array.from(new Set(allMyGroupCollections.map(c => c.groupName || 'Group collection'))).sort().map(name => (
                     <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
-                <select value={navCollectionsDateFilter} onChange={e=>setNavCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                <select value={navCollectionsDateFilter} onChange={e=>setNavCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg)',fontSize:'12px',color:'var(--text-primary)'}}>
                   <option value="all">Any time</option>
                   <option value="today">Today</option>
                   <option value="week">Last 7 days</option>
@@ -8204,11 +8239,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         const group = groups.find(g => g.id === collectionItem.groupId);
                         if (group) openGroup(group, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'navCollections' });
                       }}
-                      style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:'pointer',width:'100%'}}
+                      style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:'pointer',width:'100%'}}
                     >
                       <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
                         <div style={{minWidth:0}}>
-                          <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
+                          <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
                           <div style={{display:'inline-flex',alignItems:'center',gap:'5px',marginTop:'5px',background:`${groupColor}18`,color:groupColor,padding:'2px 8px',borderRadius:'999px',fontSize:'11px',fontWeight:'800',maxWidth:'100%'}}>
                             <span style={{width:'6px',height:'6px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
                             <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroupName}</span>
@@ -8218,7 +8253,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       </div>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
                         <span style={{fontSize:'10px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'0.02em',color:typeStyle.text,background:typeStyle.bg,padding:'3px 8px',borderRadius:'999px'}}>{collectionItem.collectionType || 'collection'}</span>
-                        <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                        <span style={{fontSize:'11px',color:'var(--text-secondary)'}}>{createdLabel || 'Open to manage'}</span>
                       </div>
                     </button>
                   );
@@ -8226,10 +8261,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 if (visible.length === 0) {
                   return (
-                    <div style={{textAlign:'center',padding:'32px 16px',background:'#fff',borderRadius:'12px'}}>
+                    <div style={{textAlign:'center',padding:'32px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                       <div style={{fontSize:'28px',marginBottom:'8px'}}>🔍</div>
-                      <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>No matches</div>
-                      <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'4px'}}>Try a different search or filter.</div>
+                      <div style={{fontSize:'14px',fontWeight:'700',color:'var(--text-primary)'}}>No matches</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'4px'}}>Try a different search or filter.</div>
                     </div>
                   );
                 }
@@ -8251,17 +8286,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   const isExpanded = expandedNavCollectionGroups[groupName] ?? true;
                   const groupColor = groupAccentColor(groupName);
                   return (
-                    <div key={groupName} style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
+                    <div key={groupName} style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
                       <button
                         type="button"
                         onClick={()=>setExpandedNavCollectionGroups(prev=>({...prev,[groupName]:!isExpanded}))}
                         style={{width:'100%',padding:'12px 14px',background:'none',border:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}
                       >
-                        <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'#0f1b2d'}}>
+                        <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'var(--text-primary)'}}>
                           <span style={{width:'8px',height:'8px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
-                          {groupName} <span style={{color:'#8a9bb0',fontWeight:'700'}}>({items.length})</span>
+                          {groupName} <span style={{color:'var(--text-secondary)',fontWeight:'700'}}>({items.length})</span>
                         </span>
-                        <span style={{fontSize:'12px',color:'#8a9bb0'}}>{isExpanded ? '▲' : '▼'}</span>
+                        <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>{isExpanded ? '▲' : '▼'}</span>
                       </button>
                       {isExpanded && (
                         <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 10px 10px'}}>
@@ -9913,10 +9948,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 color:'#fff',
                 boxShadow:'0 8px 24px rgba(13,148,136,0.25)'
               }}>👤</div>
-              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',margin:'0 0 8px'}}>
+              <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--text-primary)',margin:'0 0 8px'}}>
                 You don&apos;t have a profile yet
               </h2>
-              <p style={{fontSize:'14px',color:'#6b7280',lineHeight:1.6,margin:'0 0 24px',maxWidth:'280px',marginLeft:'auto',marginRight:'auto'}}>
+              <p style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.6,margin:'0 0 24px',maxWidth:'280px',marginLeft:'auto',marginRight:'auto'}}>
                 Join your class or campus group and keep events, orders, payments, and files organized.
               </p>
               <button
@@ -9946,8 +9981,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   width:'100%',
                   maxWidth:'280px',
                   padding:'12px 20px',
-                  background:'#f4f6f8',
-                  color:'#0f1b2d',
+                  background:'var(--page-bg)',
+                  color:'var(--text-primary)',
                   border:'none',
                   borderRadius:'12px',
                   fontSize:'15px',
@@ -9963,7 +9998,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   { icon:'🧾', text:'Track events, orders, and payments' },
                   { icon:'📚', text:'Keep files and resources in one place' },
                 ].map(row => (
-                  <div key={row.text} style={{display:'flex',alignItems:'center',gap:'10px',fontSize:'13px',color:'#4a5568'}}>
+                  <div key={row.text} style={{display:'flex',alignItems:'center',gap:'10px',fontSize:'13px',color:'var(--text-tertiary)'}}>
                     <span style={{fontSize:'18px'}}>{row.icon}</span>
                     <span>{row.text}</span>
                   </div>
@@ -9973,13 +10008,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           ) : (
           <>
           {false && showAboutBanner && (
-            <div style={{background:'#fff',borderRadius:'16px',padding:'16px',marginBottom:'16px',border:'1px solid #ccfbf1',boxShadow:'0 4px 16px rgba(15,27,45,0.06)'}}>
+            <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'16px',marginBottom:'16px',border:'1px solid #ccfbf1',boxShadow:'0 4px 16px rgba(15,27,45,0.06)'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
                 <div>
-                  <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
+                  <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>
                     Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika
                   </div>
-                  <p style={{fontSize:'12px',lineHeight:1.55,color:'#4a5568',margin:'0 0 10px'}}>
+                  <p style={{fontSize:'12px',lineHeight:1.55,color:'var(--text-tertiary)',margin:'0 0 10px'}}>
                     Mtandao wa wanachuo kwa kuunda na kumanage vikundi, kukusanya michango na malipo, na kuunganisha jamii za chuo.
                   </p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
@@ -9988,12 +10023,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     ))}
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'12px'}}>
-                    <button type="button" onClick={()=>window.open("/terms.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Terms</button>
-                    <button type="button" onClick={()=>window.open("/privacy.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Privacy</button>
-                    <button type="button" onClick={()=>window.open("/account-deletion.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Account deletion</button>
+                    <button type="button" onClick={()=>window.open("/terms.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Terms</button>
+                    <button type="button" onClick={()=>window.open("/privacy.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Privacy</button>
+                    <button type="button" onClick={()=>window.open("/account-deletion.html", "_blank", "noopener,noreferrer")} style={{padding:'7px 10px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Account deletion</button>
                   </div>
                 </div>
-                <button type="button" aria-label="Close about" onClick={()=>setShowAboutBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'#f4f6f8',color:'#344054',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
+                <button type="button" aria-label="Close about" onClick={()=>setShowAboutBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'var(--page-bg)',color:'var(--text-tertiary)',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
               </div>
             </div>
           )}
@@ -10023,18 +10058,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
                 <button type="button" aria-label="Close get verified" onClick={()=>setShowGetVerifiedBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.18)',color:'#fff',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
               </div>
-              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',padding:'11px',background:'#fff',color:'#0f766e',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>
+              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',padding:'11px',background:'var(--surface-bg)',color:'#0f766e',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>
                 Anza kuthibitisha
               </button>
             </div>
           )}
 
-          <div style={{background:'#fff',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px',position:'relative'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'20px 18px',marginBottom:'16px',position:'relative'}}>
            <button
              type="button"
              aria-label="Profile menu"
              onClick={()=>setShowProfileMenu(value => !value)}
-             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid #e2e6ea',background:'#f8fafb',color:'#0f1b2d',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexDirection:'column',gap:'3px'}}
+             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid var(--border-color)',background:'#f8fafb',color:'var(--text-primary)',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexDirection:'column',gap:'3px'}}
            >
              <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
              <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
@@ -10043,49 +10078,49 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
            {showProfileMenu && (
              <>
                <div onClick={()=>setShowProfileMenu(false)} style={{position:'fixed',inset:0,zIndex:140}} />
-               <div style={{position:'absolute',top:'50px',right:'12px',zIndex:141,minWidth:'150px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'12px',boxShadow:'0 12px 28px rgba(15,27,45,0.16)',overflow:'hidden'}}>
+               <div style={{position:'absolute',top:'50px',right:'12px',zIndex:141,minWidth:'150px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'12px',boxShadow:'0 12px 28px rgba(15,27,45,0.16)',overflow:'hidden'}}>
                  <button
                    type="button"
                    onClick={()=>{setIsDarkMode(!isDarkMode, {persist:true});}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:isDarkMode?'#202c33':'#fff',color:isDarkMode?'#e9edef':'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}
                  >
                    <span>Dark mode</span>
                    <span style={{width:'36px',height:'20px',borderRadius:'999px',background:isDarkMode?'#0d9488':'#d1d5db',position:'relative',flexShrink:0}}>
-                     <span style={{position:'absolute',top:'2px',left:isDarkMode?'18px':'2px',width:'16px',height:'16px',borderRadius:'50%',background:'#fff',transition:'left 0.15s ease'}} />
+                     <span style={{position:'absolute',top:'2px',left:isDarkMode?'18px':'2px',width:'16px',height:'16px',borderRadius:'50%',background:'var(--surface-bg)',transition:'left 0.15s ease'}} />
                    </span>
                  </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);openSetPasswordModal("menu");}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    {userHasPassword ? "Change password" : "Set password"}
                  </button>
                  <button
                    type="button"
                    onClick={()=>{window.open("/terms.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Terms of service
                  </button>
                  <button
                    type="button"
                    onClick={()=>{window.open("/privacy.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#0f1b2d',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Privacy policy
                  </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);setDeleteAccountConfirm("");setShowDeleteAccountModal(true);setError("");}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'#fff',color:'#b91c1c',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'#b91c1c',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Delete account
                  </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);handleLogout();}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',background:'#fff',color:'#dc2626',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',background:'var(--surface-bg)',color:'#dc2626',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Log out
                  </button>
@@ -10104,7 +10139,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     style={{width:'72px',height:'72px',minWidth:'72px',minHeight:'72px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',backgroundImage:userAvatar?`url(${userAvatar})`:'none',
 backgroundColor:!userAvatar?'#06d6c7':'transparent',
 backgroundSize:'cover',
-backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:'700',color:'#0f1b2d',border:'2.5px solid #f0fffe',cursor:'pointer'}}>
+backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',fontWeight:'700',color:'var(--text-primary)',border:'2.5px solid #f0fffe',cursor:'pointer'}}>
     {!userAvatar&&userName.split(" ").map(n=>n[0]).join("")}
   </div>
   <button
@@ -10119,18 +10154,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              {/* Stats */}
              <div style={{display:'flex',gap:'20px',flex:1,justifyContent:'space-around'}}>
                {showProfileListings && <div style={{textAlign:'center'}}>
-                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myActiveListings.length}</div>
-                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Listings</div>
+                 <div style={{fontSize:'18px',fontWeight:'700',color:'var(--text-primary)',lineHeight:1.1}}>{myActiveListings.length}</div>
+                 <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'2px'}}>Listings</div>
                </div>}
                {showProfileServices && <div style={{textAlign:'center'}}>
-                 <div style={{fontSize:'18px',fontWeight:'700',color:'#0f1b2d',lineHeight:1.1}}>{myServices.length}</div>
-                 <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Services</div>
+                 <div style={{fontSize:'18px',fontWeight:'700',color:'var(--text-primary)',lineHeight:1.1}}>{myServices.length}</div>
+                 <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'2px'}}>Services</div>
                </div>}
              </div>
            </div>
            {/* Name + verified badge */}
            <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
-             <div style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>{userName}</div>
+             <div style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>{userName}</div>
              {isVerified && (
                <VerifiedBadge user={{ isVerified: true, verificationBadge: userAccountType === "provider" ? "provider" : "student" }} size="xs" />
              )}
@@ -10141,7 +10176,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
            </div>}
            {/* Edit profile + QR buttons */}
            <div style={{display:'flex',gap:'8px'}}>
-             <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
+             <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
              <button onClick={()=>setShowQRModal(true)} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
                My QR
@@ -10149,7 +10184,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
            </div>
            <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
              <button type="button" onClick={()=>{setShowAboutBanner(false);setShowGetVerifiedBanner(false);isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
-             <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'#f4f6f8',color:'#344054',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
+             <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
            {isAdmin && (
              <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
@@ -10164,13 +10199,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               {userServices.map(sId => {
                 const tag = SERVICE_TAGS.find(t=>t.id===sId);
                 return tag ? (
-                  <span key={sId} style={{fontSize:'12px',background:'#fff',padding:'4px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span>
+                  <span key={sId} style={{fontSize:'12px',background:'var(--surface-bg)',padding:'4px 12px',borderRadius:'20px',color:'var(--text-primary)',fontWeight:'500',display:'flex',alignItems:'center',gap:'4px'}}>{tag.icon} {tag.label}</span>
                 ) : null;
               })}
             </div>
           )}
           
-          <div style={{display:'flex',gap:'4px',background:'#fff',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
+          <div style={{display:'flex',gap:'4px',background:'var(--surface-bg)',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
             <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
             {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
             {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
@@ -10180,28 +10215,28 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {profileTab==="collections"&&(
             <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
               {myCollections.length===0 ? (
-                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+                <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'16px',fontWeight:'600',marginTop:'4px'}}>No collections yet</div>
-                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Money collections you create in groups will appear here.</div>
-                  <button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Money collections you create in groups will appear here.</div>
+                  <button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button>
                 </div>
               ) : (
                 <>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>My Collections ({myCollections.length})</h3>
-                    <button onClick={()=>setShowQuickActions(true)} style={{padding:'8px 14px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Create</button>
+                    <h3 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>My Collections ({myCollections.length})</h3>
+                    <button onClick={()=>setShowQuickActions(true)} style={{padding:'8px 14px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Create</button>
                   </div>
-                  <div style={{display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+                  <div style={{display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid var(--border-color)'}}>
                     <input type="text" placeholder="Search my collections..." value={myCollectionsSearchQ} onChange={e=>setMyCollectionsSearchQ(e.target.value)} style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
                   </div>
                   <div style={{display:'flex',gap:'8px'}}>
-                    <select value={myCollectionsGroupFilter} onChange={e=>setMyCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                    <select value={myCollectionsGroupFilter} onChange={e=>setMyCollectionsGroupFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg)',fontSize:'12px',color:'var(--text-primary)'}}>
                       <option value="all">All groups</option>
                       {Array.from(new Set(myCollections.map(c => getMyCollectionGroup(c)?.name || c.groupName || 'Group collection'))).sort().map(name => (
                         <option key={name} value={name}>{name}</option>
                       ))}
                     </select>
-                    <select value={myCollectionsDateFilter} onChange={e=>setMyCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid #e2e6ea',background:'#fff',fontSize:'12px',color:'#0f1b2d'}}>
+                    <select value={myCollectionsDateFilter} onChange={e=>setMyCollectionsDateFilter(e.target.value)} style={{flex:1,padding:'8px 10px',borderRadius:'8px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg)',fontSize:'12px',color:'var(--text-primary)'}}>
                       <option value="all">Any time</option>
                       <option value="today">Today</option>
                       <option value="week">Last 7 days</option>
@@ -10240,11 +10275,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                           type="button"
                           onClick={() => collectionGroup && openGroup(collectionGroup, { tab: 'payments', collectionId: collectionItem.id, collection: collectionItem, source: 'profileCollections' })}
                           disabled={!collectionGroup}
-                          style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:collectionGroup?'pointer':'default',opacity:collectionGroup?1:0.72,width:'100%'}}
+                          style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderLeft:`4px solid ${typeStyle.accent}`,borderRadius:'12px',padding:'14px',textAlign:'left',cursor:collectionGroup?'pointer':'default',opacity:collectionGroup?1:0.72,width:'100%'}}
                         >
                           <div style={{display:'flex',justifyContent:'space-between',gap:'12px',alignItems:'flex-start'}}>
                             <div style={{minWidth:0}}>
-                              <div style={{fontSize:'15px',fontWeight:'800',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
+                              <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionItem.title || 'Untitled collection'}</div>
                               <div style={{display:'inline-flex',alignItems:'center',gap:'5px',marginTop:'5px',background:`${groupColor}18`,color:groupColor,padding:'2px 8px',borderRadius:'999px',fontSize:'11px',fontWeight:'800',maxWidth:'100%'}}>
                                 <span style={{width:'6px',height:'6px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
                                 <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{collectionGroupName}</span>
@@ -10254,7 +10289,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                           </div>
                           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'12px',paddingTop:'10px',borderTop:'1px solid #eef2f4'}}>
                             <span style={{fontSize:'10px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'0.02em',color:typeStyle.text,background:typeStyle.bg,padding:'3px 8px',borderRadius:'999px'}}>{collectionItem.collectionType || 'collection'}</span>
-                            <span style={{fontSize:'11px',color:'#8a9bb0'}}>{createdLabel || 'Open to manage'}</span>
+                            <span style={{fontSize:'11px',color:'var(--text-secondary)'}}>{createdLabel || 'Open to manage'}</span>
                           </div>
                         </button>
                       );
@@ -10262,10 +10297,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
                     if (visible.length === 0) {
                       return (
-                        <div style={{textAlign:'center',padding:'32px 16px',background:'#fff',borderRadius:'12px'}}>
+                        <div style={{textAlign:'center',padding:'32px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                           <div style={{fontSize:'28px',marginBottom:'8px'}}>🔍</div>
-                          <div style={{fontSize:'14px',fontWeight:'700',color:'#0f1b2d'}}>No matches</div>
-                          <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'4px'}}>Try a different search or filter.</div>
+                          <div style={{fontSize:'14px',fontWeight:'700',color:'var(--text-primary)'}}>No matches</div>
+                          <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'4px'}}>Try a different search or filter.</div>
                         </div>
                       );
                     }
@@ -10287,17 +10322,17 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       const isExpanded = expandedMyCollectionGroups[groupName] ?? true;
                       const groupColor = groupAccentColor(groupName);
                       return (
-                        <div key={groupName} style={{background:'#fff',border:'1px solid #e2e6ea',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
+                        <div key={groupName} style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderLeft:`4px solid ${groupColor}`,borderRadius:'12px',overflow:'hidden'}}>
                           <button
                             type="button"
                             onClick={()=>setExpandedMyCollectionGroups(prev=>({...prev,[groupName]:!isExpanded}))}
                             style={{width:'100%',padding:'12px 14px',background:'none',border:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}
                           >
-                            <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'#0f1b2d'}}>
+                            <span style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',fontWeight:'800',color:'var(--text-primary)'}}>
                               <span style={{width:'8px',height:'8px',borderRadius:'50%',background:groupColor,flexShrink:0}}></span>
-                              {groupName} <span style={{color:'#8a9bb0',fontWeight:'700'}}>({items.length})</span>
+                              {groupName} <span style={{color:'var(--text-secondary)',fontWeight:'700'}}>({items.length})</span>
                             </span>
-                            <span style={{fontSize:'12px',color:'#8a9bb0'}}>{isExpanded ? '▲' : '▼'}</span>
+                            <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>{isExpanded ? '▲' : '▼'}</span>
                           </button>
                           {isExpanded && (
                             <div style={{display:'flex',flexDirection:'column',gap:'8px',padding:'0 10px 10px'}}>
@@ -10319,13 +10354,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'#10b981',marginBottom:'12px'}}>Active Listings ({myActiveListings.length})</h3>
                 <div style={{display:'flex',flexDirection:'column'}}>
                   {myActiveListings.map((item,idx)=>(
-                    <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'#fff',borderBottom:idx===myActiveListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===myActiveListings.length-1?'0 0 12px 12px':'0',cursor:'pointer',border:openListingId===item.id?'1.5px solid #06d6c7':'',transition:'border 0.15s ease'}}>
+                    <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'var(--surface-bg)',borderBottom:idx===myActiveListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===myActiveListings.length-1?'0 0 12px 12px':'0',cursor:'pointer',border:openListingId===item.id?'1.5px solid #06d6c7':'',transition:'border 0.15s ease'}}>
                       {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                       <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
-                      {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid #e2e6ea'}}>
+                      {item.description && <div style={{fontSize:'13px',color:'var(--text-tertiary)',marginBottom:'8px',lineHeight:1.5}}>{item.description}</div>}
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'10px',borderTop:'1px solid var(--border-color)'}}>
                         <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price.toLocaleString()} TSh</div>
-                        {openListingId!==item.id && <span style={{fontSize:'11px',color:'#8a9bb0'}}>Tap to manage</span>}
+                        {openListingId!==item.id && <span style={{fontSize:'11px',color:'var(--text-secondary)'}}>Tap to manage</span>}
                       </div>
                      {openListingId===item.id && <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
                         {!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
@@ -10336,23 +10371,23 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 </div>
               </div>}
 
-              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button></div>}
+              {myActiveListings.length===0&&<div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>📝</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No listings yet</div><button onClick={()=>setShowQuickActions(true)} style={{marginTop:'16px',padding:'10px 20px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>Create</button></div>}
             </>
           )}
           
           {showProfileServices && profileTab==="myServices"&&(
             <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
               {myServices.length === 0 ? (
-                <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+                <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'40px'}}>⚡</div>
                   <div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No services listed</div>
-                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Offer your skills to fellow students</div>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Offer your skills to fellow students</div>
                   <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
                 </div>
               ) : (
                 <>
                   {myServices.map((svc,idx)=>(
-                    <div key={svc.id} style={{background:'#fff',padding:'16px',borderRadius:'12px',border:'1px solid #e2e6ea'}}>
+                    <div key={svc.id} style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',border:'1px solid var(--border-color)'}}>
                       <div style={{display:'flex',gap:'12px',alignItems:'center',marginBottom:'8px'}}>
                         {(svc.photos && svc.photos.length > 0) ? (
                           <img src={svc.photos[0]} alt="" style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
@@ -10364,7 +10399,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'2px'}}>{svc.title}</div>
                           <div style={{fontSize:'13px',color:'#0d9488',fontWeight:'600'}}>{svc.price?.toLocaleString()} TSh</div>
-                          <div style={{fontSize:'11px',color:'#8a9bb0'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
+                          <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
                         </div>
                       </div>
                       <button onClick={()=>deleteService(svc.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
@@ -10379,36 +10414,36 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {ENABLE_ROOMS && profileTab==="myRooms" && (
             <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <h3 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>
+                <h3 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>
                   My Rooms ({myAllRooms.length})
                 </h3>
                 <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
               </div>
 
               {myAllRooms.length === 0 ? (
-                <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
+                <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'40px',marginBottom:'10px'}}>🏠</div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Hauna chumba kilichoorodheshwa bado</div>
-                  <div style={{fontSize:'12px',color:'#8a9bb0'}}>Bonyeza "Add room" hapo juu kuanza.</div>
+                  <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Bonyeza "Add room" hapo juu kuanza.</div>
                 </div>
               ) : (
                 myAllRooms.map(room => {
                   const isAvailable = room.available !== false;
                   return (
-                    <div key={room.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea',display:'flex',gap:'12px',alignItems:'stretch'}}>
+                    <div key={room.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)',display:'flex',gap:'12px',alignItems:'stretch'}}>
                       {/* Photo or placeholder */}
                       {(room.photos && room.photos[0]) ? (
                         <img src={room.photos[0]} alt={room.location||'Chumba'} style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
                       ) : (
-                        <div style={{width:'80px',height:'80px',borderRadius:'10px',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0}}>🏠</div>
+                        <div style={{width:'80px',height:'80px',borderRadius:'10px',background:'var(--page-bg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px',flexShrink:0}}>🏠</div>
                       )}
                       {/* Info + buttons */}
                       <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',minWidth:0}}>
                         <div>
-                          <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                          <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                             {room.location || 'Chumba'}
                           </div>
-                          <div style={{fontSize:'12px',color:'#6b7280',marginBottom:'2px'}}>
+                          <div style={{fontSize:'12px',color:'var(--text-secondary)',marginBottom:'2px'}}>
                             {room.roomType ? `${room.roomType} · ` : ''}{room.price?.toLocaleString()} TSh/mwezi
                           </div>
                           <div style={{
@@ -10446,7 +10481,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                               borderRadius:'8px',
                               border:'1px solid #fecaca',
                               cursor:'pointer',
-                              background:'#fff',
+                              background:'var(--surface-bg)',
                               color:'#ef4444'
                             }}>
                             🗑
@@ -10488,7 +10523,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <div style={{textAlign:'center',color:'#fff',maxWidth:'300px'}}>
                 <div style={{fontSize:'40px',marginBottom:'12px'}}>⚠️</div>
                 <div style={{fontSize:'14px',lineHeight:1.6,marginBottom:'20px'}}>{scanError}</div>
-                <button onClick={()=>{setScanError("");openScanner();}} style={{padding:'12px 24px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>Try Again</button>
+                <button onClick={()=>{setScanError("");openScanner();}} style={{padding:'12px 24px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>Try Again</button>
               </div>
             )}
 
@@ -10511,13 +10546,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
             {/* Scan result */}
             {scanResult && (
-              <div style={{width:'100%',maxWidth:'340px',background:'#fff',borderRadius:'20px',padding:'24px',textAlign:'center'}}>
+              <div style={{width:'100%',maxWidth:'340px',background:'var(--surface-bg)',borderRadius:'20px',padding:'24px',textAlign:'center'}}>
                 <div style={{fontSize:'48px',marginBottom:'8px'}}>{(scanResult.order.approved || scanResult.order.paid) ? '✅' : '⏳'}</div>
                 <div style={{fontSize:'18px',fontWeight:'800',color: (scanResult.order.approved || scanResult.order.paid) ? '#065f46' : '#0f766e',marginBottom:'4px'}}>
                   {scanResult.order.registered ? 'REGISTERED' : scanResult.order.paid ? 'CONFIRMED PAID' : 'NOT YET PAID'}
                 </div>
-                <div style={{fontSize:'20px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
+                <div style={{fontSize:'20px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
                 {scanResult.groupTitle && <div style={{fontSize:'12px',color:'#0d9488',fontWeight:'800',marginBottom:'8px'}}>{scanResult.groupTitle}</div>}
                 {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
                 {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'#166534',background:'#f0fdf4',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
@@ -10527,7 +10562,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       {scanLoading ? 'Confirming...' : '✓ Mark as Paid'}
                     </button>
                   )}
-                  <button onClick={()=>{setScanResult(null);setScanError("");openScanner();}} style={{flex:1,padding:'12px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>
+                  <button onClick={()=>{setScanResult(null);setScanError("");openScanner();}} style={{flex:1,padding:'12px',background:'var(--page-bg)',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>
                     Scan Next
                   </button>
                 </div>
@@ -10554,7 +10589,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <div
             onClick={e=>e.stopPropagation()}
             style={{
-              background:'#fff',
+              background:'var(--surface-bg)',
               borderRadius:'24px',
               padding:'28px 24px',
               width:'100%',
@@ -10566,7 +10601,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           >
             <button
               onClick={()=>setShowQRModal(false)}
-              style={{position:'absolute',top:'14px',right:'16px',background:'none',border:'none',fontSize:'22px',color:'#8a9bb0',cursor:'pointer',lineHeight:1}}
+              style={{position:'absolute',top:'14px',right:'16px',background:'none',border:'none',fontSize:'22px',color:'var(--text-secondary)',cursor:'pointer',lineHeight:1}}
             >×</button>
 
             <div style={{
@@ -10575,23 +10610,23 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               backgroundColor:!userAvatar?'#06d6c7':'transparent',
               backgroundSize:'cover',backgroundPosition:'center',
               display:'flex',alignItems:'center',justifyContent:'center',
-              fontSize:'20px',fontWeight:'700',color:'#0f1b2d',
+              fontSize:'20px',fontWeight:'700',color:'var(--text-primary)',
               margin:'0 auto 8px',
               border:'2.5px solid #f0fffe'
             }}>
               {!userAvatar && userName.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase()}
             </div>
 
-            <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>
+            <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
               {userName}
               {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'#06d6c7'}}>✓</span>}
             </div>
             <div style={{
               display:'inline-block',
               padding:'16px',
-              background:'#fff',
+              background:'var(--surface-bg)',
               borderRadius:'16px',
-              border:'2px solid #e2e6ea',
+              border:'2px solid var(--border-color)',
               marginBottom:'16px'
             }}>
               <QRCodeSVG
@@ -10604,8 +10639,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
 
             <div style={{
-              fontSize:'11px',color:'#8a9bb0',
-              background:'#f4f6f8',borderRadius:'8px',
+              fontSize:'11px',color:'var(--text-secondary)',
+              background:'var(--page-bg)',borderRadius:'8px',
               padding:'6px 10px',marginBottom:'16px',
               wordBreak:'break-all',fontFamily:'monospace'
             }}>
@@ -10625,7 +10660,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                     }).catch(()=>{});
                   }
                 }}
-                style={{flex:1,padding:'11px',background:'#f4f6f8',color:'#0f1b2d',border:'1px solid #e2e6ea',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}
+                style={{flex:1,padding:'11px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}
               >
                 🔗 Share Link
               </button>
@@ -10641,7 +10676,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </button>
             </div>
 
-            <p style={{fontSize:'11px',color:'#8a9bb0',marginTop:'14px',lineHeight:1.5,margin:'14px 0 0'}}>
+            <p style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'14px',lineHeight:1.5,margin:'14px 0 0'}}>
               Anyone who scans this will see your profile, listings and services on Kampasika.
             </p>
           </div>
@@ -10650,7 +10685,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showEditProfile && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowEditProfile(false)}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'20px',width:'100%',maxWidth:'400px',maxHeight:'88vh',overflowY:'auto',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'20px',width:'100%',maxWidth:'400px',maxHeight:'88vh',overflowY:'auto',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
             <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Edit Profile</h3>
             
             <input type="file" id="avatar-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>handlePhotoSelect(e,'profile')} />
@@ -10660,12 +10695,12 @@ backgroundColor:!editProfileData.avatarPreview?'#f4f6f8':'transparent',
 backgroundSize:'cover',
 backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
                 {!editProfileData.avatarPreview && <span style={{fontSize:'32px'}}>📷</span>}
-                <div style={{position:'absolute',bottom:'0',background:'rgba(6,214,199,0.9)',color:'#0f1b2d',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
+                <div style={{position:'absolute',bottom:'0',background:'rgba(6,214,199,0.9)',color:'var(--text-primary)',fontSize:'10px',fontWeight:'600',padding:'4px 8px',borderRadius:'12px'}}>Change</div>
               </div>
             </label>
             
             <div style={{marginBottom:'16px'}}>
-              <div style={{fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'8px',textAlign:'center'}}>Or choose an avatar</div>
+              <div style={{fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'8px',textAlign:'center'}}>Or choose an avatar</div>
               <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
                 {AVATAR_COLORS.map(color => {
                   const selected = editProfileData.avatarPreset === color;
@@ -10707,14 +10742,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   name: nextName,
                   avatarPreview: editProfileData.avatarPreset ? makeInitialAvatarUrl(nextName || userName, editProfileData.avatarPreset) : editProfileData.avatarPreview,
                 });
-              }} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+              }} placeholder="Your name" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
             </div>
 
             {/* BIO FIELD HIDDEN FOR NOW — uncomment to re-enable */}
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Short bio</label>
-              <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="A few words about you" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'76px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
-              <div style={{fontSize:'11px',color:'#8a9bb0',textAlign:'right',marginTop:'4px'}}>{(editProfileData.bio||"").length}/150</div>
+              <textarea value={editProfileData.bio || ""} onChange={e=>setEditProfileData({...editProfileData,bio:e.target.value})} placeholder="A few words about you" maxLength={150} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'76px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}} />
+              <div style={{fontSize:'11px',color:'var(--text-secondary)',textAlign:'right',marginTop:'4px'}}>{(editProfileData.bio||"").length}/150</div>
             </div>
 
             <div style={{display:'none',marginBottom:'16px'}}>
@@ -10738,9 +10773,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
             </div>
             
-            <div style={{position:'sticky',bottom:'-20px',background:'#fff',paddingTop:'10px',paddingBottom:'2px'}}>
-              <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'13px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"Save changes"}</button>
-              <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            <div style={{position:'sticky',bottom:'-20px',background:'var(--surface-bg)',paddingTop:'10px',paddingBottom:'2px'}}>
+              <button onClick={handleUpdateProfile} disabled={uploading} style={{width:'100%',padding:'13px',background:'#06d6c7',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"Save changes"}</button>
+              <button onClick={()=>setShowEditProfile(false)} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
             </div>
           </div>
         </div>
@@ -10748,27 +10783,27 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showSetPasswordModal && user && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:520,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ if (setPasswordReason !== "logout" || userHasPassword) setShowSetPasswordModal(false); }}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'400px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'400px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',marginBottom:'14px'}}>
               <div>
-                <h3 style={{fontSize:'20px',fontWeight:'800',color:'#0f1b2d',margin:'0 0 6px'}}>{userHasPassword ? "Change password" : "Set password"}</h3>
-                <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:0}}>
+                <h3 style={{fontSize:'20px',fontWeight:'800',color:'var(--text-primary)',margin:'0 0 6px'}}>{userHasPassword ? "Change password" : "Set password"}</h3>
+                <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:0}}>
                   {setPasswordReason === "logout" ? "Set a password before logging out so you can sign back in later." : "Use this password when signing in with your username or phone number."}
                 </p>
               </div>
-              <button type="button" onClick={()=>setShowSetPasswordModal(false)} disabled={setPasswordReason === "logout" && !userHasPassword} style={{background:'none',border:'none',fontSize:'24px',cursor:(setPasswordReason === "logout" && !userHasPassword)?'not-allowed':'pointer',color:'#8a9bb0',lineHeight:1,opacity:(setPasswordReason === "logout" && !userHasPassword)?0.35:1}}>×</button>
+              <button type="button" onClick={()=>setShowSetPasswordModal(false)} disabled={setPasswordReason === "logout" && !userHasPassword} style={{background:'none',border:'none',fontSize:'24px',cursor:(setPasswordReason === "logout" && !userHasPassword)?'not-allowed':'pointer',color:'var(--text-secondary)',lineHeight:1,opacity:(setPasswordReason === "logout" && !userHasPassword)?0.35:1}}>×</button>
             </div>
             {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Password</label>
-              <input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={setPasswordData.password} onChange={e=>setSetPasswordData({...setPasswordData,password:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+              <input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={setPasswordData.password} onChange={e=>setSetPasswordData({...setPasswordData,password:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
             </div>
             <div style={{marginBottom:'16px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Confirm password</label>
               <input type={showPassword?"text":"password"} placeholder="Repeat password" value={setPasswordData.confirmPassword} onChange={e=>setSetPasswordData({...setPasswordData,confirmPassword:e.target.value})} style={{width:'100%',padding:'12px',border:setPasswordData.confirmPassword && setPasswordData.password !== setPasswordData.confirmPassword ? '1.5px solid #ef4444' : '1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
               {setPasswordData.confirmPassword && setPasswordData.password !== setPasswordData.confirmPassword && <div style={{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'5px'}}>Password doesn't match</div>}
             </div>
-            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:'700',color:'#344054',marginBottom:'16px',cursor:'pointer'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:'700',color:'var(--text-tertiary)',marginBottom:'16px',cursor:'pointer'}}>
               <input type="checkbox" checked={showPassword} onChange={e=>setShowPassword(e.target.checked)} />
               Show password
             </label>
@@ -10776,7 +10811,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               {settingPassword ? "Saving..." : setPasswordReason === "logout" ? "Set password and log out" : "Save password"}
             </button>
             {setPasswordReason !== "logout" && (
-              <button type="button" onClick={()=>setShowSetPasswordModal(false)} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+              <button type="button" onClick={()=>setShowSetPasswordModal(false)} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
             )}
           </div>
         </div>
@@ -10784,15 +10819,15 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showDeleteAccountModal && user && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:540,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ if (!deletingAccount) setShowDeleteAccountModal(false); }}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',marginBottom:'14px'}}>
               <div>
                 <h3 style={{fontSize:'20px',fontWeight:'900',color:'#991b1b',margin:'0 0 6px'}}>Delete account</h3>
-                <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:0}}>
+                <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:0}}>
                   This deletes your Kampasika profile and account data connected to this login where possible.
                 </p>
               </div>
-              <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{background:'none',border:'none',fontSize:'24px',cursor:deletingAccount?'wait':'pointer',color:'#8a9bb0',lineHeight:1}}>×</button>
+              <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{background:'none',border:'none',fontSize:'24px',cursor:deletingAccount?'wait':'pointer',color:'var(--text-secondary)',lineHeight:1}}>×</button>
             </div>
             {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
             <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'12px',padding:'12px',marginBottom:'14px'}}>
@@ -10803,17 +10838,17 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <li>Some records may be retained when needed for security, payment disputes, legal compliance, or group history.</li>
               </ul>
             </div>
-            <p style={{fontSize:'12px',lineHeight:1.5,color:'#667085',margin:'0 0 12px'}}>
+            <p style={{fontSize:'12px',lineHeight:1.5,color:'var(--text-secondary)',margin:'0 0 12px'}}>
               More details: <a href="/account-deletion.html" target="_blank" rel="noreferrer" style={{color:'#0d9488',fontWeight:'800'}}>Account deletion policy</a>
             </p>
             <div style={{marginBottom:'14px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>Type DELETE to confirm</label>
-              <input type="text" value={deleteAccountConfirm} onChange={e=>setDeleteAccountConfirm(e.target.value)} disabled={deletingAccount} placeholder="DELETE" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
+              <input type="text" value={deleteAccountConfirm} onChange={e=>setDeleteAccountConfirm(e.target.value)} disabled={deletingAccount} placeholder="DELETE" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
             </div>
             <button type="button" onClick={handleDeleteMyAccount} disabled={deletingAccount || deleteAccountConfirm.trim().toUpperCase() !== "DELETE"} style={{width:'100%',padding:'13px',background:'#dc2626',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:(deletingAccount || deleteAccountConfirm.trim().toUpperCase() !== "DELETE")?'not-allowed':'pointer',opacity:deleteAccountConfirm.trim().toUpperCase()==="DELETE"?1:0.55}}>
               {deletingAccount ? "Deleting..." : "Delete my account"}
             </button>
-            <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'800',cursor:deletingAccount?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
+            <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'800',cursor:deletingAccount?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
@@ -10822,18 +10857,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   <div style={{
     position:'fixed',
     inset:0,
-    background:'#f4f6f8',
+    background:'var(--page-bg)',
     zIndex:300,
     overflowY:'auto'
   }}>
     {/* Header */}
     <div style={{
-      background:'#fff',
+      background:'var(--surface-bg)',
       padding:'12px 16px',
       display:'flex',
       alignItems:'center',
       gap:'10px',
-      borderBottom:'1px solid #e2e6ea',
+      borderBottom:'1px solid var(--border-color)',
       position:'sticky',
       top:0,
       zIndex:50
@@ -10844,7 +10879,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           width:'36px',
           height:'36px',
           borderRadius:'50%',
-          background:'#f4f6f8',
+          background:'var(--page-bg)',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -10859,7 +10894,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         fontFamily:'serif',
         fontSize:'20px',
         fontWeight:'700',
-        color:'#0f1b2d'
+        color:'var(--text-primary)'
       }}>
         Listing Details
       </div>
@@ -10952,7 +10987,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     {viewingListing.photos.length > 1 && (
       <div style={{
         padding:'12px 16px',
-        background:'#fff',
+        background:'var(--surface-bg)',
         overflowX:'auto',
         display:'flex',
         gap:'8px'
@@ -11000,7 +11035,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           fontSize:'24px',
           fontWeight:'700',
           marginBottom:'8px',
-          color:'#0f1b2d'
+          color:'var(--text-primary)'
         }}>
           {viewingListing.title}
         </h1>
@@ -11024,10 +11059,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         }}>
           <span style={{
             fontSize:'12px',
-            background:'#f4f6f8',
+            background:'var(--page-bg)',
             padding:'6px 12px',
             borderRadius:'20px',
-            color:'#6b7280',
+            color:'var(--text-secondary)',
             display:'flex',
             alignItems:'center',
             gap:'4px'
@@ -11037,10 +11072,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           {viewingListing.location && (
             <span style={{
               fontSize:'12px',
-              background:'#f0fffe',
+              background:'var(--mint-tint)',
               padding:'6px 12px',
               borderRadius:'20px',
-              color:'#0f1b2d',
+              color:'var(--text-primary)',
               display:'flex',
               alignItems:'center',
               gap:'4px',
@@ -11051,20 +11086,20 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           )}
           <span style={{
             fontSize:'12px',
-            background:'#f4f6f8',
+            background:'var(--page-bg)',
             padding:'6px 12px',
             borderRadius:'20px',
-            color:'#6b7280'
+            color:'var(--text-secondary)'
           }}>
             {CATEGORIES.find(c => c.id === viewingListing.category)?.icon} {CATEGORIES.find(c => c.id === viewingListing.category)?.name}
           </span>
           {viewingListing.condition && (
             <span style={{
               fontSize:'12px',
-              background:'#f4f6f8',
+              background:'var(--page-bg)',
               padding:'6px 12px',
               borderRadius:'20px',
-              color:'#6b7280'
+              color:'var(--text-secondary)'
             }}>
               ✨ {viewingListing.condition}
             </span>
@@ -11074,7 +11109,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         {/* Description */}
         {viewingListing.description && (
           <div style={{
-            background:'#fff',
+            background:'var(--surface-bg)',
             padding:'16px',
             borderRadius:'12px',
             marginBottom:'16px'
@@ -11083,14 +11118,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               fontSize:'16px',
               fontWeight:'600',
               marginBottom:'8px',
-              color:'#6b7280'
+              color:'var(--text-secondary)'
             }}>
               Description
             </h4>
             <p style={{
               fontSize:'15px',
               lineHeight:'1.7',
-              color:'#4a5568',
+              color:'var(--text-tertiary)',
               whiteSpace:'pre-wrap'
             }}>
               {viewingListing.description}
@@ -11101,7 +11136,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         {/* Seller Info */}
         {(!user || viewingListing.userId !== user.uid) && (
           <div style={{
-            background:'#fff',
+            background:'var(--surface-bg)',
             padding:'16px',
             borderRadius:'12px',
             marginBottom:'16px'
@@ -11110,7 +11145,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               fontSize:'16px',
               fontWeight:'600',
               marginBottom:'12px',
-              color:'#6b7280'
+              color:'var(--text-secondary)'
             }}>
               Seller
             </h4>
@@ -11146,13 +11181,13 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <div style={{
                   fontSize:'16px',
                   fontWeight:'600',
-                  color:'#0f1b2d'
+                  color:'var(--text-primary)'
                 }}>
                   {viewingListing.userName}
                 </div>
                 <div style={{
                   fontSize:'13px',
-                  color:'#6b7280'
+                  color:'var(--text-secondary)'
                 }}>
                   {viewingListing.universityName}
                 </div>
@@ -11164,7 +11199,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 display:'flex',
                 gap:'16px',
                 fontSize:'16px',
-                color:'#6b7280'
+                color:'var(--text-secondary)'
               }}>
                 <span>📦 {sellerStats.active} active</span>
                 <span>✅ {sellerStats.sold} sold</span>
@@ -11192,7 +11227,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <WhatsAppIcon size={22} color="#25D366" />
                 <div>
                   <div style={{fontSize:'13px',fontWeight:'600',color:'#166534'}}>WhatsApp Available</div>
-                  <div style={{fontSize:'12px',color:'#6b7280'}}>Tap to chat directly with seller</div>
+                  <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Tap to chat directly with seller</div>
                 </div>
               </div>
             )}
@@ -11201,7 +11236,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
         {/* Stats */}
         <div style={{
-          background:'#fff',
+          background:'var(--surface-bg)',
           padding:'16px',
           borderRadius:'12px',
           marginBottom:'20px'
@@ -11210,12 +11245,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             display:'flex',
             justifyContent:'space-around',
             fontSize:'16px',
-            color:'#6b7280'
+            color:'var(--text-secondary)'
           }}>
             {/* SAVES HIDDEN FOR NOW */}
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:'20px',marginBottom:'4px'}}>📅</div>
-              <div style={{fontWeight:'600',color:'#0f1b2d'}}>
+              <div style={{fontWeight:'600',color:'var(--text-primary)'}}>
                 {viewingListing.createdAt ? 
                   new Date(viewingListing.createdAt).toLocaleDateString('en', {month:'short', day:'numeric'}) : 
                   'Recent'
@@ -11235,8 +11270,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       bottom:0,
       left:0,
       right:0,
-      background:'#fff',
-      borderTop:'1px solid #e2e6ea',
+      background:'var(--surface-bg)',
+      borderTop:'1px solid var(--border-color)',
       padding:'16px',
       display:'flex',
       gap:'8px'
@@ -11253,7 +11288,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               flex:2,
               padding:'16px',
               background:isOffline?'#d1d5db':'#06d6c7',
-              color:'#0f1b2d',
+              color:'var(--text-primary)',
               border:'none',
               borderRadius:'10px',
               fontSize:'15px',
@@ -11335,9 +11370,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           width:'100%',
           textAlign:'center',
           padding:'12px',
-          background:'#f4f6f8',
+          background:'var(--page-bg)',
           borderRadius:'10px',
-          color:'#6b7280',
+          color:'var(--text-secondary)',
           fontSize:'16px'
         }}>
           This is your listing
@@ -11350,9 +11385,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showRoomUserVerifyModal && user && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:560,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowRoomUserVerifyModal(false)}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',maxHeight:'90vh',overflowY:'auto',boxSizing:'border-box'}} onClick={e=>e.stopPropagation()}>
-            <h3 style={{fontSize:'20px',fontWeight:'900',color:'#0f1b2d',margin:'0 0 6px'}}>Room User Verification</h3>
-            <p style={{fontSize:'13px',lineHeight:1.5,color:'#6b7280',margin:'0 0 16px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',maxHeight:'90vh',overflowY:'auto',boxSizing:'border-box'}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{fontSize:'20px',fontWeight:'900',color:'var(--text-primary)',margin:'0 0 6px'}}>Room User Verification</h3>
+            <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:'0 0 16px'}}>
               Add a profile picture and upload a student ID or national ID before viewing room contacts, maps, or posting rooms when this protection is enabled.
             </p>
             {roomUserVerificationStatus === "pending" && (
@@ -11369,24 +11404,24 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             )}
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>Name as shown on ID</label>
-              <input type="text" value={nameOnIdInput} onChange={e=>setNameOnIdInput(e.target.value)} placeholder="Full name" style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}} />
+              <input type="text" value={nameOnIdInput} onChange={e=>setNameOnIdInput(e.target.value)} placeholder="Full name" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}} />
             </div>
             <input type="file" id="room-user-id-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>{const file=e.target.files[0];if(!file)return;if(!file.type.startsWith('image/')){setError("Please choose an image.");return;}if(file.size>5*1024*1024){setError("Image is too large. Max 5MB.");return;}setStudentIdFile(file);const reader=new FileReader();reader.onload=event=>setStudentIdPreview(event.target.result);reader.readAsDataURL(file);}} />
             <label htmlFor="room-user-id-upload" style={{display:'block',cursor:'pointer',marginBottom:'14px'}}>
               {studentIdPreview ? (
-                <img src={studentIdPreview} alt="Room user ID preview" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px',border:'1.5px solid #e2e6ea'}} />
+                <img src={studentIdPreview} alt="Room user ID preview" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px',border:'1.5px solid var(--border-color)'}} />
               ) : (
-                <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
+                <div style={{border:'2px dashed var(--border-color)',borderRadius:'12px',padding:'28px',textAlign:'center',background:'var(--surface-bg)'}}>
                   <div style={{fontSize:'36px',marginBottom:'8px'}}>ID</div>
-                  <div style={{fontSize:'14px',fontWeight:'800',color:'#0f1b2d'}}>Upload student ID or national ID</div>
-                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Image only, max 5MB</div>
+                  <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)'}}>Upload student ID or national ID</div>
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>Image only, max 5MB</div>
                 </div>
               )}
             </label>
             <button type="button" onClick={submitRoomUserVerification} disabled={uploading || !userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved"} style={{width:'100%',padding:'13px',background:(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'#d1d5db':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'900',cursor:uploading?'wait':(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'not-allowed':'pointer'}}>
               {uploading ? "Submitting..." : roomUserVerificationStatus === "pending" ? "Waiting for review" : roomUserVerificationStatus === "approved" ? "Approved" : "Submit for review"}
             </button>
-            <button type="button" onClick={()=>setShowRoomUserVerifyModal(false)} disabled={uploading} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:uploading?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
+            <button type="button" onClick={()=>setShowRoomUserVerifyModal(false)} disabled={uploading} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:uploading?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
@@ -11404,7 +11439,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     padding:'20px'
   }} onClick={()=>setShowVerifyModal(false)}>
     <div style={{
-      background:'#fff',
+      background:'var(--surface-bg)',
       borderRadius:'16px',
       padding:'24px',
       width:'100%',
@@ -11415,7 +11450,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'6px'}}>
         {userAccountType === "provider" ? "Thibitisha akaunti yako" : "Thibitisha kwamba ni mwanafunzi"}
       </h3>
-      <p style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px',lineHeight:1.5}}>
+      <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px',lineHeight:1.5}}>
         {userAccountType === "provider"
           ? "Pakia picha ya kitambulisho cha NIDA. Hii inasaidia wanafunzi kukuamini unaweza kufanya kazi kweli."
           : "Pakia picha ya kitambulisho chako cha mwanafunzi. Hii inasaidia kuhakikisha Kampasika ni salama."}
@@ -11433,7 +11468,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         style={{
           width:'100%',
           padding:'12px',
-          border:'1.5px solid #e2e6ea',
+          border:'1.5px solid var(--border-color)',
           borderRadius:'10px',
           fontSize:'14px',
           outline:'none',
@@ -11456,7 +11491,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             style={{
               width:'100%',
               padding:'12px',
-              border:'1.5px solid #e2e6ea',
+              border:'1.5px solid var(--border-color)',
               borderRadius:'10px',
               fontSize:'14px',
               outline:'none',
@@ -11501,7 +11536,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 height:'200px',
                 objectFit:'cover',
                 borderRadius:'12px',
-                border:'2px solid #e2e6ea'
+                border:'2px solid var(--border-color)'
               }} 
             />
             <div style={{
@@ -11520,11 +11555,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           </div>
         ) : (
           <div style={{
-            border:'2px dashed #e2e6ea',
+            border:'2px dashed var(--border-color)',
             borderRadius:'12px',
             padding:'32px',
             textAlign:'center',
-            background:'#f9fafb'
+            background:'var(--surface-bg)'
           }}>
             <div style={{fontSize:'48px',marginBottom:'12px'}}>
               {userAccountType === "provider" ? "🪪" : "🎓"}
@@ -11532,7 +11567,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>
               {userAccountType === "provider" ? "Pakia picha ya NIDA" : "Pakia picha ya Student ID"}
             </div>
-            <div style={{fontSize:'11px',color:'#8a9bb0'}}>Bonyeza kuchagua (max 5MB)</div>
+            <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>Bonyeza kuchagua (max 5MB)</div>
           </div>
         )}
       </label>
@@ -11589,7 +11624,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           width:'100%',
           padding:'12px',
           background:'transparent',
-          color:'#8a9bb0',
+          color:'var(--text-secondary)',
           border:'none',
           borderRadius:'10px',
           fontSize:'16px',
@@ -11605,9 +11640,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showReportModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowReportModal(false)}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'400px'}} onClick={(e)=>e.stopPropagation()}>
             <h3 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Report {reportTarget?.type==='listing'?'Listing':'User'}</h3>
-            <p style={{fontSize:'16px',color:'#6b7280',marginBottom:'16px'}}>Help us keep Kampasika safe. What's wrong with this {reportTarget?.type}?</p>
+            <p style={{fontSize:'16px',color:'var(--text-secondary)',marginBottom:'16px'}}>Help us keep Kampasika safe. What's wrong with this {reportTarget?.type}?</p>
             
             <div style={{marginBottom:'16px'}}>
               {['Scam/Fraud','Inappropriate Content','Spam','Harassment','Misleading Info','Other'].map(reason=>(
@@ -11619,7 +11654,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
             
             <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
-            <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
+            <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'var(--text-secondary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
       )}
@@ -11824,18 +11859,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       {viewingIdPhoto && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.9)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}} onClick={()=>setViewingIdPhoto(null)}>
           <img src={viewingIdPhoto} alt="ID full size" style={{maxWidth:'100%',maxHeight:'90vh',borderRadius:'8px'}} />
-          <button onClick={()=>setViewingIdPhoto(null)} style={{position:'fixed',top:'20px',right:'20px',background:'#fff',color:'#000',border:'none',borderRadius:'50%',width:'40px',height:'40px',fontSize:'18px',cursor:'pointer'}}>×</button>
+          <button onClick={()=>setViewingIdPhoto(null)} style={{position:'fixed',top:'20px',right:'20px',background:'var(--surface-bg)',color:'#000',border:'none',borderRadius:'50%',width:'40px',height:'40px',fontSize:'18px',cursor:'pointer'}}>×</button>
         </div>
       )}
 
       {phonePromptOpen && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'380px'}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'24px',width:'100%',maxWidth:'380px'}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:'34px',textAlign:'center',marginBottom:'10px'}}>📱</div>
-            <div style={{fontSize:'17px',fontWeight:'700',textAlign:'center',color:'#0f1b2d',marginBottom:'8px'}}>
+            <div style={{fontSize:'17px',fontWeight:'700',textAlign:'center',color:'var(--text-primary)',marginBottom:'8px'}}>
               Tunahitaji namba yako
             </div>
-            <div style={{fontSize:'13px',color:'#6b7280',textAlign:'center',lineHeight:1.5,marginBottom:'18px'}}>
+            <div style={{fontSize:'13px',color:'var(--text-secondary)',textAlign:'center',lineHeight:1.5,marginBottom:'18px'}}>
               Ili nikupate ukipatikana kile unachosaka. Hatutatuma matangazo — ni mawasiliano ya moja kwa moja tu.
               <br/><br/>
               <span style={{fontSize:'11px',color:'#9ca3af'}}>
@@ -11849,12 +11884,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               value={phoneInputValue}
               onChange={e=>setPhoneInputValue(e.target.value)}
               onKeyDown={e=>{ if (e.key==='Enter') submitPhoneAndSaveAlert(); }}
-              style={{width:'100%',padding:'14px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'12px'}}
+              style={{width:'100%',padding:'14px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'12px'}}
             />
             <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
               Hifadhi na uniarifu
             </button>
-            <button onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }} style={{width:'100%',padding:'10px',background:'transparent',color:'#6b7280',border:'none',fontSize:'13px',cursor:'pointer'}}>
+            <button onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }} style={{width:'100%',padding:'10px',background:'transparent',color:'var(--text-secondary)',border:'none',fontSize:'13px',cursor:'pointer'}}>
               Hapana, asante
             </button>
           </div>
@@ -12242,12 +12277,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   maxWidth:'420px',
   margin:'0 auto',
   height:'62px',
-  background:isDarkMode?'rgba(32,44,51,0.92)':'rgba(255,255,255,0.92)',
+  background:'var(--nav-bg)',
   backdropFilter:'blur(20px)',
   WebkitBackdropFilter:'blur(20px)',
-  border:isDarkMode?'1px solid rgba(134,150,160,0.25)':'1px solid rgba(226,230,234,0.6)',
+  border:'1px solid var(--nav-border)',
   borderRadius:'24px',
-  boxShadow:isDarkMode?'0 8px 28px rgba(0,0,0,0.45)':'0 8px 28px rgba(15,27,45,0.16)',
+  boxShadow:'var(--nav-shadow)',
   display:!user||groupSearchActive||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
