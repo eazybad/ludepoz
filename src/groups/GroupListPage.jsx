@@ -23,6 +23,7 @@ export function GroupListPage({
   onSearchActiveChange,
   dmThreads = [],
   onOpenConversation,
+  isDarkMode = false,
 }) {
   const hasAnyChats = groups.length > 0 || dmThreads.length > 0;
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -148,7 +149,7 @@ export function GroupListPage({
   };
 
   return (
-    <div className={`groups-page ${searchActive ? "groups-searching" : ""}`}>
+    <div className={`groups-page ${isDarkMode ? "dark-mode" : "light-mode"} ${searchActive ? "groups-searching" : ""}`}>
       <div className="groups-hero">
         <div className="groups-topbar">
           <h2>Kampasika</h2>

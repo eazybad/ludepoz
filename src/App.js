@@ -7151,7 +7151,8 @@ return (
           width:'36px',
           height:'36px',
           borderRadius:'50%',
-          background:'#f4f6f8',
+          background:isDarkMode?'#2a3942':'#f4f6f8',
+          color:isDarkMode?'#e9edef':'#0f1b2d',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -7356,8 +7357,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           height:'42px',
           minWidth:'42px',
           borderRadius:'50%',
-          background:'#f4f6f8',
-          border:'1.5px solid #e2e6ea',
+          background:isDarkMode?'#2a3942':'#f4f6f8',
+          border:isDarkMode?'1.5px solid rgba(134,150,160,0.3)':'1.5px solid #e2e6ea',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -7375,12 +7376,15 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         onChange={e=>setMessageText(e.target.value)} 
         onKeyPress={e=>e.key==='Enter'&&sendMessage()} 
         placeholder="Type a message..." 
+        className={isDarkMode ? "chat-dm-input chat-dm-input-dark" : "chat-dm-input"}
         style={{
           flex:1,
           minWidth:0,
           height:'42px',
           padding:'10px 16px',
-          border:'1.5px solid #e2e6ea',
+          background:isDarkMode?'#2a3942':'#ffffff',
+          color:isDarkMode?'#e9edef':'#0f1b2d',
+          border:isDarkMode?'1.5px solid rgba(134,150,160,0.3)':'1.5px solid #e2e6ea',
           borderRadius:'24px',
           fontSize:'16px',
           outline:'none',
@@ -7785,6 +7789,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               currentUserId={user?.uid || ""}
               isGroupAdmin={isGroupAdmin}
               onSearchActiveChange={setGroupSearchActive}
+              isDarkMode={isDarkMode}
               dmThreads={dmThreadsForChatsList}
               onOpenConversation={(thread) => {
                 const topConv = thread.conversations[0];
