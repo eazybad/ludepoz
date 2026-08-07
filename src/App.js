@@ -5853,7 +5853,7 @@ return (
     {page !== "chat" && page !== "groupDetail" && page !== "communities" && page !== "profile" && page !== "collections" && (
   <div
     style={{
-      background:'#fff',
+      background:'var(--surface-bg)',
       padding:'6px 10px',
       display:'flex',
       alignItems:'center',
@@ -5878,7 +5878,7 @@ return (
           width:'36px',
           height:'36px',
           borderRadius:'50%',
-          background:'#f4f6f8',
+          background:'var(--surface-bg-alt)',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
@@ -6373,7 +6373,7 @@ return (
 )}
 {/* ===== GOODS TAB CONTENT ===== */}
 <div style={{display: ENABLE_DISCOVER_GOODS && homeTab==="goods" ? "block" : "none"}}>
-<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'#fff',color:activeCat===c.id?'#fff':'#0f1b2d',border:activeCat===c.id?'none':'1.5px solid #e2e6ea',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
+<div style={{display:'flex',gap:'8px',marginBottom:'16px',overflowX:'auto',paddingBottom:'4px',margin:'0 12px 10px 12px',boxSizing:'border-box',width:'calc(100% - 24px)',scrollbarWidth:'none',msOverflowStyle:'none'}}>{CATEGORIES.map(c=><button key={c.id} onClick={()=>setActiveCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 16px',background:activeCat===c.id?'#0f1b2d':'var(--surface-bg)',color:activeCat===c.id?'#fff':'var(--text-primary)',border:activeCat===c.id?'none':'1.5px solid var(--border-color)',borderRadius:'22px',fontSize:'12px',fontWeight:activeCat===c.id?'600':'500',cursor:'pointer',whiteSpace:'nowrap',boxShadow:activeCat===c.id?'0 2px 8px rgba(15,27,45,0.2)':'none',transition:'all 0.2s ease'}}>{c.icon} {c.name}</button>)}</div>
 
     {(() => {
   let filteredListings = discoverListings;
@@ -6540,7 +6540,7 @@ return (
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
     {SERVICE_CATEGORIES.map(c=>(
-      <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+      <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'var(--surface-bg)',color:activeServiceCat===c.id?'#fff':'var(--text-primary)',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid var(--border-color)',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
     ))}
   </div>
   <div style={{margin:'0 16px 12px 16px'}}>
@@ -7523,7 +7523,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {/* Category Filter */}
           <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 16px 16px'}}>
             {SERVICE_CATEGORIES.map(c=>(
-              <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'#fff',color:activeServiceCat===c.id?'#fff':'#0f1b2d',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid #e2e6ea',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
+              <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'var(--surface-bg)',color:activeServiceCat===c.id?'#fff':'var(--text-primary)',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid var(--border-color)',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
             ))}
           </div>
 
