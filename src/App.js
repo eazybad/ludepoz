@@ -6038,7 +6038,7 @@ return (
   padding:'0 12px',
   marginLeft:'4px',
   boxSizing:'border-box',
-  border:'1.5px solid #dbe3ea',
+  border:'1.5px solid var(--border-color)',
   transition:'all 0.2s ease'
 }}>
       
@@ -6400,10 +6400,10 @@ return (
                 fallbackTitle="No listings yet" fallbackHint={`Be the first to post in ${selectedUni?.short}!`} />
             ):(
               filteredListings.map((item,idx)=>(
-                <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'var(--surface-bg)',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:openListingId===item.id?'1.5px solid #06d6c7':'1px solid #f0f0f0',boxShadow:openListingId===item.id?'0 4px 16px rgba(6,214,199,0.12)':'0 1px 6px rgba(0,0,0,0.04)',transition:'border 0.15s ease,box-shadow 0.15s ease'}}>
+                <div key={item.id} onClick={()=>setOpenListingId(openListingId===item.id?null:item.id)} style={{background:'var(--surface-bg)',marginBottom:'12px',padding:'16px',cursor:'pointer',opacity:item.sold?0.5:1,borderRadius:'16px',border:openListingId===item.id?'1.5px solid #06d6c7':'1px solid var(--border-color)',boxShadow:openListingId===item.id?'0 4px 16px rgba(6,214,199,0.12)':'0 1px 6px rgba(0,0,0,0.04)',transition:'border 0.15s ease,box-shadow 0.15s ease'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                     <div onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{width:'36px',height:'36px',minWidth:'36px',minHeight:'36px',flexShrink:0,aspectRatio:'1 / 1',borderRadius:'50%',overflow:'hidden',backgroundImage:item.userAvatar?`url(${item.userAvatar})`:'none',backgroundSize:'cover',backgroundPosition:'center',backgroundColor:!item.userAvatar?'#06d6c7':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>{!item.userAvatar&&(item.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
-                    <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>{item.userName}</span>
+                    <span onClick={(e)=>{e.stopPropagation();openSellerProfile(item);}} style={{fontSize:'13px',fontWeight:'600',cursor:'pointer',color:'var(--text-primary)'}}>{item.userName}</span>
                     {item.userIsVerified && (
                       <VerifiedBadge user={{ isVerified: true, verificationBadge: item.userVerificationBadge || "student" }} size="xs" />
                     )}
@@ -6411,7 +6411,7 @@ return (
                     {item.location && <span style={{fontSize:'11px',color:'var(--text-secondary)',background:'var(--page-bg)',padding:'2px 8px',borderRadius:'8px'}}>📍 {item.location}</span>}
                     <span style={{fontSize:'11px',color:'var(--text-secondary)',marginLeft:'auto'}}>{item.createdAt?new Date(item.createdAt).toLocaleDateString():"Recently"}</span>
                   </div>
-                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
+                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px',color:'var(--text-primary)'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'var(--text-tertiary)',marginBottom:'10px',lineHeight:1.5}}>{item.description}</div>}
                {(item.photos && item.photos.length > 0) ? (
   <div style={{marginBottom:'10px'}}>
@@ -7411,6 +7411,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         onChange={e=>setMessageText(e.target.value)} 
         onKeyPress={e=>e.key==='Enter'&&sendMessage()} 
         placeholder="Type a message..." 
+        autoComplete="off"
+        autoCorrect="on"
+        autoCapitalize="sentences"
+        name="dm-message-text"
+        data-lpignore="true"
+        data-form-type="other"
         className={isDarkMode ? "chat-dm-input chat-dm-input-dark" : "chat-dm-input"}
         style={{
           flex:1,
@@ -10183,7 +10189,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              </button>
            </div>
            <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
-             <button type="button" onClick={()=>{setShowAboutBanner(false);setShowGetVerifiedBanner(false);isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
+             <button type="button" onClick={()=>{setShowAboutBanner(false);setShowGetVerifiedBanner(false);isVerified ? setShowVerifiedBanner(true) : setShowVerifyModal(true);}} style={{flex:1,padding:'8px',background:isDarkMode?'rgba(6,214,199,0.14)':'#ecfeff',color:isDarkMode?'#2dd4bf':'#0f766e',border:isDarkMode?'1px solid rgba(45,212,191,0.3)':'1px solid #99f0ee',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{isVerified ? 'Verification status' : 'Get verified'}</button>
              <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
            {isAdmin && (
