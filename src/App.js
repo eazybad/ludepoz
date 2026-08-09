@@ -12276,6 +12276,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       <div style={{
   position:'fixed',
+  bottom:0,
+  left:0,
+  right:0,
+  height:'128px',
+  background:'linear-gradient(to top, var(--page-bg) 0%, var(--page-bg) 18%, transparent 100%)',
+  pointerEvents:'none',
+  display:!user||groupSearchActive||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'block',
+  zIndex:999
+}} />
+
+      <div style={{
+  position:'fixed',
   bottom:'calc(14px + env(safe-area-inset-bottom, 0px))',
   left:'16px',
   right:'16px',
@@ -12288,7 +12300,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   WebkitBackdropFilter:'blur(20px)',
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
-  boxShadow:'var(--nav-shadow)',
+  boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
   display:!user||groupSearchActive||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
