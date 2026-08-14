@@ -7357,7 +7357,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
     </div>
 
     {/* Message Input - part of flex layout, NOT fixed */}
-    <div style={{
+    <form onSubmit={e=>{e.preventDefault(); sendMessage();}} autoComplete="off" style={{
       background:'var(--surface-bg)',
       borderTop:'1px solid var(--border-color)',
       padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
@@ -7409,9 +7409,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         type="text" 
         value={messageText} 
         onChange={e=>setMessageText(e.target.value)} 
-        onKeyPress={e=>e.key==='Enter'&&sendMessage()} 
         placeholder="Type a message..." 
-        autoComplete="off"
+        autoComplete="nope"
         autoCorrect="on"
         autoCapitalize="sentences"
         name="dm-message-text"
@@ -7433,7 +7432,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         }} 
       />
       <button 
-        onClick={sendMessage} 
+        type="submit"
         disabled={!messageText.trim()} 
         style={{
           width:'42px',
@@ -7453,7 +7452,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       >
         📤
       </button>
-    </div>
+    </form>
 
   </div>
 )}

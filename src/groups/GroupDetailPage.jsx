@@ -1966,6 +1966,34 @@ export function GroupDetailPage({
     return resource.url || "";
   };
 
+  const handleSaveImage = async (url, filename) => {
+    if (!url) return;
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const safeName = filename && /\.[a-z0-9]+$/i.test(filename) ? filename : `${filename || "image"}.jpg`;
+      const file = new File([blob], safeName, { type: blob.type || "image/jpeg" });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = safeName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+      onSuccess("Image saved.");
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      onError(new Error("Couldn't save the image. Try again."));
+    }
+  };
+
   const handleOpenResourceInApp = (resource) => {
     if (!resource.url) return;
     if (resource.url.includes("drive.google.com/drive/folders/")) {
@@ -4802,8 +4830,8 @@ export function GroupDetailPage({
         <div className="group-modal-backdrop" onClick={() => setResourcePreview(null)}>
           <div className="group-modal resource-preview-modal" onClick={event => event.stopPropagation()}>
             <div className="resource-preview-header">
-              <h3>{resourcePreview.title}</h3>
-              <button className="group-btn ghost compact" type="button" onClick={() => setResourcePreview(null)}>Close</button>
+              {resourcePreview.kind !== "image" && <h3>{resourcePreview.title}</h3>}
+              <button className="group-btn ghost compact" type="button" onClick={() => setResourcePreview(null)} style={resourcePreview.kind === "image" ? { marginLeft: "auto" } : undefined}>Close</button>
             </div>
             {resourcePreview.kind === "convertible" && (
               <div className="resource-preview-note">
@@ -4840,7 +4868,11 @@ export function GroupDetailPage({
                   {convertingResourceId === resourcePreview.id ? "Preparing..." : "Prepare PDF preview"}
                 </button>
               )}
-              <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">{resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "Open with another app" : "Open original"}</a>
+              {resourcePreview.kind === "image" ? (
+                <button className="group-btn primary group-link-btn" type="button" onClick={() => handleSaveImage(resourcePreview.previewUrl || resourcePreview.url, resourcePreview.title)}>Save to phone</button>
+              ) : (
+                <a className={`group-btn group-link-btn ${resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "primary" : "ghost"}`} href={getOriginalOpenUrl(resourcePreview)} target="_blank" rel="noreferrer">{resourcePreview.kind === "convertible" || resourcePreview.kind === "generic" ? "Open with another app" : "Open original"}</a>
+              )}
               {(resourcePreview.kind === "convertible" || resourcePreview.kind === "office") && (
                 <a className="group-btn ghost group-link-btn" href={getPreviewUrl(resourcePreview)} target="_blank" rel="noreferrer">Try web viewer</a>
               )}
