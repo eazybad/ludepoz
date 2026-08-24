@@ -1187,6 +1187,7 @@ exports.createPawaPayGroupDeposit = onCall({
   const provider = normalizePawaPayProvider(request.data?.provider || "AIRTEL_TZA");
   const phoneNumber = normalizePawaPayPhone(request.data?.phone);
   const selectedOption = String(request.data?.selectedOption || "").trim();
+  const fromChat = request.data?.fromChat === true;
 
   if (!groupId || !collectionId) {
     throw new HttpsError("invalid-argument", "Missing group or collection.");
@@ -1232,8 +1233,12 @@ exports.createPawaPayGroupDeposit = onCall({
   const studentName = userProfile.username || userProfile.name || request.auth.token?.name || request.auth.token?.email || "Member";
   const paymentRef = azamPayPaymentPath({ groupId, collectionId, paymentId: uid });
   const transactionRef = db.collection("pawaPayTransactions").doc(depositId);
+  const chatMessageRef = fromChat
+    ? db.collection("groups").doc(groupId).collection("channels").doc("chats").collection("messages").doc()
+    : null;
   const clientReferenceId = `KP-${groupId.slice(0, 8)}-${Date.now()}`.slice(0, 50);
   const customerMessage = "KAMPASIKA PAY";
+  const collectionTitle = String(collectionItem.title || "group payment").trim();
   const body = {
     depositId,
     payer: {
@@ -1275,6 +1280,38 @@ exports.createPawaPayGroupDeposit = onCall({
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
+  if (chatMessageRef) {
+    await chatMessageRef.set({
+      text: `${studentName} started payment for ${collectionTitle}.`,
+      authorName: studentName,
+      authorUid: uid,
+      kind: "payment_intent",
+      pinned: false,
+      replyTo: null,
+      attachments: [],
+      reactions: {},
+      mentionedUids: [],
+      paymentIntent: {
+        provider: "PawaPay",
+        status: "pending",
+        depositId,
+        collectionId,
+        paymentId: uid,
+        title: collectionTitle,
+        amount: amountNumber,
+        currency: "TZS",
+        selectedOption,
+      },
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await db.collection("groups").doc(groupId).set({
+      activityAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastActivityByUid: uid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
   await transactionRef.set({
     depositId,
     groupId,
@@ -1285,6 +1322,9 @@ exports.createPawaPayGroupDeposit = onCall({
     currency: "TZS",
     provider,
     phoneNumber,
+    chatMessageId: chatMessageRef ? chatMessageRef.id : "",
+    chatAuthorName: studentName,
+    collectionTitle,
     clientReferenceId,
     status: "pending",
     request: body,
@@ -1317,6 +1357,15 @@ exports.createPawaPayGroupDeposit = onCall({
       pawaPayStartError: payload?.failureReason?.message || payload?.message || "PawaPay could not start payment.",
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+    if (chatMessageRef) {
+      await chatMessageRef.set({
+        text: `${studentName}'s payment for ${collectionTitle} could not start.`,
+        "paymentIntent.status": "failed",
+        "paymentIntent.providerStatus": nextStatus,
+        "paymentIntent.error": payload?.failureReason?.message || payload?.message || "PawaPay could not start payment.",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
     throw new HttpsError("internal", payload?.failureReason?.message || payload?.message || "PawaPay could not start payment.", {
       depositId,
       status: response.status,
@@ -1328,6 +1377,7 @@ exports.createPawaPayGroupDeposit = onCall({
     success: true,
     depositId,
     status: nextStatus,
+    chatMessageId: chatMessageRef ? chatMessageRef.id : "",
     message: "Payment request accepted. Wait for confirmation.",
     response: payload,
   };
@@ -1493,6 +1543,9 @@ exports.pawapayCallback = onRequest({ cors: false, secrets: [PAWAPAY_API_TOKEN] 
       const paymentRef = groupId && collectionId && paymentId
         ? azamPayPaymentPath({ groupId, collectionId, paymentId })
         : null;
+      const chatMessageRef = groupId && transaction.chatMessageId
+        ? db.collection("groups").doc(groupId).collection("channels").doc("chats").collection("messages").doc(transaction.chatMessageId)
+        : null;
 
       await db.runTransaction(async tx => {
         tx.set(transactionRef, {
@@ -1512,6 +1565,21 @@ exports.pawapayCallback = onRequest({ cors: false, secrets: [PAWAPAY_API_TOKEN] 
             pawaPayCallbackStatus: statusText,
             pawaPayProviderTransactionId: payload.providerTransactionId || "",
             verifiedAt: statusCompleted ? admin.firestore.FieldValue.serverTimestamp() : null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+        if (chatMessageRef) {
+          const collectionTitle = transaction.collectionTitle || "group payment";
+          const chatAuthorName = transaction.chatAuthorName || "Member";
+          tx.set(chatMessageRef, {
+            text: statusCompleted
+              ? `${chatAuthorName} paid ${collectionTitle}.`
+              : statusFailed
+                ? `${chatAuthorName}'s payment for ${collectionTitle} failed.`
+                : `${chatAuthorName}'s payment for ${collectionTitle} is being processed.`,
+            "paymentIntent.status": nextStatus,
+            "paymentIntent.callbackStatus": statusText,
+            "paymentIntent.providerTransactionId": payload.providerTransactionId || "",
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, { merge: true });
         }

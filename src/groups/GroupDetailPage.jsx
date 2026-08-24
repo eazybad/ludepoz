@@ -349,6 +349,16 @@ function getMentionContext(text, cursorPos) {
   };
 }
 
+function getPaymentCommandContext(text) {
+  const match = String(text || "").match(/^\s*pay(?:\s+([0-9][0-9,.\s]*))?(?:\s+for\s*(.*))?$/i);
+  if (!match) return null;
+  return {
+    amountText: (match[1] || "").replace(/\s+/g, ""),
+    query: (match[2] || "").trim().toLowerCase(),
+    hasFor: /\bfor\s*$/i.test(text) || /\bfor\s+\S/i.test(text),
+  };
+}
+
 function collectionTypeAccent(type = "") {
   const key = String(type).toLowerCase();
   if (key === "event") return { bg: "#f5f0ff", text: "#7c3aed", accent: "#7c3aed" };
@@ -513,6 +523,7 @@ export function GroupDetailPage({
   const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionId || "");
   const [payments, setPayments] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [chatPaymentTargetId, setChatPaymentTargetId] = useState("");
   const [chatAttachments, setChatAttachments] = useState([]);
   const [showChatComposer, setShowChatComposer] = useState(false);
   const [showChatTools, setShowChatTools] = useState(false);
@@ -627,6 +638,27 @@ export function GroupDetailPage({
     ? eventCollections.filter(item => item.id !== selectedCollection.id)
     : eventCollections;
   const paymentCollections = visibleCollections.filter(item => (item.collectionType || "") !== "event" || Number(item.amount || 0) > 0);
+  const chatPaymentCommand = useMemo(() => getPaymentCommandContext(messageText), [messageText]);
+  const selectedChatPaymentTarget = chatPaymentTargetId
+    ? paymentCollections.find(item => item.id === chatPaymentTargetId) || null
+    : null;
+  const chatPaymentTargets = useMemo(() => {
+    if (!chatPaymentCommand?.hasFor) return [];
+    const query = chatPaymentCommand.query;
+    return paymentCollections
+      .filter(item => Number(item.amount || 0) > 0)
+      .filter(item => {
+        if (!query) return true;
+        return [
+          item.title,
+          item.description,
+          item.collectionType,
+          ...(Array.isArray(item.paymentMethods) ? item.paymentMethods : []),
+        ].filter(Boolean).some(value => String(value).toLowerCase().includes(query));
+      })
+      .slice(0, 8);
+  }, [chatPaymentCommand, paymentCollections]);
+  const chatPaymentMode = Boolean(chatPaymentCommand || selectedChatPaymentTarget);
   const selectedNeedsPayment = Number(selectedCollection?.amount || 0) > 0;
   const selectedPaidEvent = selectedCollection?.collectionType === "event" && selectedNeedsPayment;
   const selectedGroupOrder = selectedCollection?.collectionType === "order";
@@ -1216,6 +1248,11 @@ export function GroupDetailPage({
   }, [group.mentionPermission]);
 
   useEffect(() => {
+    if (chatPaymentCommand) {
+      setShowMentionSuggestions(false);
+      setMentionSuggestions([]);
+      return;
+    }
     const context = getMentionContext(messageText, messageText.length);
     if (context) {
       const query = context.query.toLowerCase();
@@ -1230,7 +1267,11 @@ export function GroupDetailPage({
       setShowMentionSuggestions(false);
       setMentionSuggestions([]);
     }
-  }, [messageText, activeMembers]);
+  }, [messageText, activeMembers, chatPaymentCommand]);
+
+  useEffect(() => {
+    if (!chatPaymentCommand) setChatPaymentTargetId("");
+  }, [chatPaymentCommand]);
 
   useEffect(() => {
     setNotificationPrefsDraft({
@@ -1512,6 +1553,59 @@ export function GroupDetailPage({
     setMessageText(`${before}@${handle} ${after}`);
     setShowMentionSuggestions(false);
     setMentionSuggestions([]);
+  };
+
+  const handleSelectChatPaymentTarget = (item) => {
+    if (!item?.id) return;
+    const amount = Number(item.amount || 0);
+    setChatPaymentTargetId(item.id);
+    setMessageText(`pay ${amount.toLocaleString()} for ${collectionDisplayTitle(item)}`);
+    setShowMentionSuggestions(false);
+    setMentionSuggestions([]);
+    const hasPawaPayProvider = PAWAPAY_PROVIDERS.some(provider => provider.value === paymentData.provider);
+    if (!hasPawaPayProvider) {
+      setPaymentData(prev => ({ ...prev, provider: "AIRTEL_TZA" }));
+    }
+  };
+
+  const handleStartChatPayment = async () => {
+    if (guardOfflineAction("Starting chat payment")) return;
+    if (!selectedChatPaymentTarget || !user) {
+      onError(new Error("Choose what you want to pay for first."));
+      return;
+    }
+    const options = (selectedChatPaymentTarget.options || "").split(",").map(item => item.trim()).filter(Boolean);
+    if (selectedChatPaymentTarget.collectionType === "order" && options.length > 0 && !paymentData.selectedOption) {
+      onError(new Error("Choose an option or size first."));
+      return;
+    }
+    if (!paymentData.phone.trim()) {
+      onError(new Error("Enter the mobile money phone number first."));
+      return;
+    }
+    setPosting(true);
+    try {
+      const startDeposit = httpsCallable(getFunctions(), "createPawaPayGroupDeposit");
+      const result = await startDeposit({
+        groupId: group.id,
+        collectionId: selectedChatPaymentTarget.id,
+        provider: paymentData.provider || "AIRTEL_TZA",
+        phone: paymentData.phone,
+        selectedOption: paymentData.selectedOption,
+        fromChat: true,
+      });
+      setMessageText("");
+      setChatPaymentTargetId("");
+      setShowChatComposer(false);
+      setShowChatTools(false);
+      setReplyToMessage(null);
+      markCurrentGroupRead();
+      onSuccess(result.data?.message || "Payment request sent. Wait for confirmation.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setPosting(false);
+    }
   };
 
   const handleReactToMessage = async (message, emoji) => {
@@ -3295,7 +3389,7 @@ export function GroupDetailPage({
                     <div
                     role="button"
                     tabIndex={0}
-                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
+                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.kind === "payment_intent" ? "payment" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
                     style={{ borderLeftColor: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}
                     onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
@@ -3323,6 +3417,13 @@ export function GroupDetailPage({
                       <div className="message-reply-preview">
                         <strong>{message.replyTo.authorName}</strong>
                         <span>{message.replyTo.text}</span>
+                      </div>
+                    )}
+                    {message.kind === "payment_intent" && message.paymentIntent && (
+                      <div className={`message-payment-card ${statusClass(message.paymentIntent.status)}`}>
+                        <small>{message.paymentIntent.status === "paid" ? "Payment confirmed" : message.paymentIntent.status === "failed" ? "Payment failed" : "Payment started"}</small>
+                        <strong>{message.paymentIntent.title || "Group payment"}</strong>
+                        <span>{Number(message.paymentIntent.amount || 0).toLocaleString()} TSh</span>
                       </div>
                     )}
                     {message.text && <div className="message-text">{message.text}</div>}
@@ -3526,6 +3627,29 @@ export function GroupDetailPage({
                         })}
                       </div>
                     )}
+                    {chatPaymentCommand?.hasFor && chatPaymentTargets.length > 0 && !selectedChatPaymentTarget && (
+                      <div className="payment-suggestions-dropdown">
+                        {chatPaymentTargets.map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="payment-suggestion-item"
+                            onClick={() => handleSelectChatPaymentTarget(item)}
+                          >
+                            <span className="payment-suggestion-icon"><MenuIcon name="payments" /></span>
+                            <span>
+                              <strong>{collectionDisplayTitle(item)}</strong>
+                              <small>{Number(item.amount || 0).toLocaleString()} TSh · {item.collectionType === "event" ? "Event" : item.collectionType === "order" ? "Order" : "Contribution"}</small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {chatPaymentCommand?.hasFor && chatPaymentTargets.length === 0 && !selectedChatPaymentTarget && (
+                      <div className="payment-suggestions-dropdown">
+                        <div className="payment-suggestion-empty">No active payable item matches this.</div>
+                      </div>
+                    )}
                     {showMentionSuggestions && mentionSuggestions.length > 0 && (
                       <div className="mention-suggestions-dropdown">
                         {mentionSuggestions.map(member => (
@@ -3542,6 +3666,30 @@ export function GroupDetailPage({
                             <span className="mention-suggestion-handle">@{memberMentionHandle(member)}</span>
                           </button>
                         ))}
+                      </div>
+                    )}
+                    {selectedChatPaymentTarget && (
+                      <div className="chat-payment-compose-card">
+                        <button type="button" className="chat-payment-clear" aria-label="Clear payment" onClick={() => setChatPaymentTargetId("")}>
+                          <MenuIcon name="close" />
+                        </button>
+                        <div>
+                          <small>Paying</small>
+                          <strong>{collectionDisplayTitle(selectedChatPaymentTarget)}</strong>
+                          <span>{Number(selectedChatPaymentTarget.amount || 0).toLocaleString()} TSh</span>
+                        </div>
+                        {selectedChatPaymentTarget.collectionType === "order" && (selectedChatPaymentTarget.options || "").split(",").map(item => item.trim()).filter(Boolean).length > 0 && (
+                          <select value={paymentData.selectedOption} onChange={event => setPaymentData({ ...paymentData, selectedOption: event.target.value })}>
+                            <option value="">Choose option</option>
+                            {(selectedChatPaymentTarget.options || "").split(",").map(item => item.trim()).filter(Boolean).map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        )}
+                        <div className="chat-payment-fields">
+                          <select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>
+                            {PAWAPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
+                          </select>
+                          <input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="0712345678" inputMode="tel" />
+                        </div>
                       </div>
                     )}
                     {showEmojiPicker && (
@@ -3570,12 +3718,18 @@ export function GroupDetailPage({
                         type="button"
                         className="chat-close-btn"
                         aria-label="Close message composer"
-                        onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); setChatAttachments([]); }}
+                        onClick={() => { setShowChatComposer(false); setShowChatTools(false); setReplyToMessage(null); setChatAttachments([]); setChatPaymentTargetId(""); }}
                       >
                         <MenuIcon name="close" />
                       </button>
-                      <button className="chat-send-btn" type="button" aria-label="Send message" disabled={posting || (!messageText.trim() && chatAttachments.length === 0)} onClick={() => handlePost("message")}>
-                        <MenuIcon name="send" />
+                      <button
+                        className={`chat-send-btn ${chatPaymentMode ? "pay-mode" : ""}`}
+                        type="button"
+                        aria-label={chatPaymentMode ? "Pay" : "Send message"}
+                        disabled={posting || (chatPaymentMode ? !selectedChatPaymentTarget : (!messageText.trim() && chatAttachments.length === 0))}
+                        onClick={chatPaymentMode ? handleStartChatPayment : () => handlePost("message")}
+                      >
+                        {chatPaymentMode ? "Pay" : <MenuIcon name="send" />}
                       </button>
                     </div>
                   </div>
