@@ -94,7 +94,7 @@ const PAWAPAY_PROVIDERS = [
   { value: "TIGO_TZA", label: "Tigo Pesa / Yas" },
   { value: "HALOTEL_TZA", label: "HaloPesa" },
 ];
-const ENABLE_PAWAPAY_PAYMENTS = false;
+const ENABLE_PAWAPAY_PAYMENTS = true;
 
 const emptyManualPayment = {
   studentName: "",
