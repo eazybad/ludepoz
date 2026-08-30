@@ -7784,15 +7784,15 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="communities"&&(
         <>
           {!user ? (
-            <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'#f6f8fb',display:'flex',alignItems:'center'}}>
+            <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'var(--page-bg)',display:'flex',alignItems:'center'}}>
               <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'center'}}>
-                <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'#0f1b2d',margin:'0 auto 14px',lineHeight:1,textAlign:'center'}}>
+                <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'var(--text-primary)',margin:'0 auto 14px',lineHeight:1,textAlign:'center'}}>
                   Kam<em style={{color:'#06d6c7'}}>pa</em>sika
                 </div>
-                <div style={{fontSize:'22px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.2,marginBottom:'12px'}}>
+                <div style={{fontSize:'22px',fontWeight:'900',color:'var(--text-primary)',lineHeight:1.2,marginBottom:'12px'}}>
                   Campus groups, files, events, orders, and members in one place.
                 </div>
-                <div style={{fontSize:'15px',color:'#536173',lineHeight:1.55,marginBottom:'24px'}}>
+                <div style={{fontSize:'15px',color:'var(--text-secondary)',lineHeight:1.55,marginBottom:'24px'}}>
                   Sign in to see your groups, join invites, coordinate contributions, and keep class or organization resources in one place.
                 </div>
                 <div style={{display:'grid',gap:'10px',marginBottom:'22px'}}>
@@ -7806,12 +7806,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <button
                   type="button"
                   onClick={() => { setAuthMode("login"); setShowAuthModal(true); setError(""); }}
-                  style={{width:'100%',padding:'14px',background:'#ecfeff',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
+                  style={{width:'100%',padding:'14px',background:'var(--mint-tint-strong)',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
                 >
                   Sign in
                 </button>
                 </div>
-                <div style={{fontSize:'13px',color:'#667085',lineHeight:1.5}}>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5}}>
                   Joining a group? Open the invite link from your class rep, club leader, or group admin, then sign in to request access.
                 </div>
               </div>
@@ -9583,20 +9583,20 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       
       {/* ─── ADMIN DASHBOARD ─── */}
       {page==="admin" && (
-        <div style={{width:'100%',flex:1,paddingTop:'12px',paddingBottom:'100px',background:'#f9fafb',minHeight:'100vh',height:'100vh',overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
+        <div style={{width:'100%',flex:1,paddingTop:'12px',paddingBottom:'100px',background:'var(--page-bg)',minHeight:'100vh',height:'100vh',overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
           <div style={{maxWidth:'700px',margin:'0 auto',padding:'0 16px'}}>
             {!isAdmin ? (
-              <div style={{textAlign:'center',padding:'60px 16px',background:'#fff',borderRadius:'12px',marginTop:'20px'}}>
+              <div style={{textAlign:'center',padding:'60px 16px',background:'var(--surface-bg)',borderRadius:'12px',marginTop:'20px'}}>
                 <div style={{fontSize:'40px',marginBottom:'12px'}}>🔒</div>
                 <div style={{fontSize:'16px',fontWeight:'600'}}>Admin access only</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Ukurasa huu ni kwa admin tu.</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Ukurasa huu ni kwa admin tu.</div>
                 <button onClick={()=>setPage("home")} style={{marginTop:'20px',padding:'10px 20px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>← Back to home</button>
               </div>
             ) : (
               <>
                 {/* Header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px',marginTop:'12px'}}>
-                  <h1 style={{fontSize:'22px',fontWeight:'700',color:'#0f1b2d',margin:0}}>Admin Dashboard</h1>
+                  <h1 style={{fontSize:'22px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>Admin Dashboard</h1>
                   <button onClick={loadAdminData} disabled={adminLoading} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:adminLoading?'wait':'pointer'}}>
                     {adminLoading ? '...' : '↻ Refresh'}
                   </button>
@@ -9612,21 +9612,21 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {label:'Services', data: adminStats.services, color:'#0d9488'},
                       {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
                     ].map(stat => (
-                      <div key={stat.label} style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea'}}>
-                        <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>{stat.label}</div>
+                      <div key={stat.label} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'14px',border:'1px solid var(--border-color)'}}>
+                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>{stat.label}</div>
                         <div style={{fontSize:'24px',fontWeight:'700',color: stat.color}}>{stat.data.total}</div>
-                        <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>+{stat.data.thisWeek} this week</div>
+                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'2px'}}>+{stat.data.thisWeek} this week</div>
                       </div>
                     ))}
                   </div>
                 )}
                
                 <div style={{
-  background:'#fff',
+  background:'var(--surface-bg)',
   padding:'16px',
   borderRadius:'12px',
   marginBottom:'16px',
-  border:'1px solid #e2e6ea'
+  border:'1px solid var(--border-color)'
 }}>
   <div style={{
     display:'flex',
@@ -9645,7 +9645,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
       <div style={{
         fontSize:'13px',
-        color:'#6b7280'
+        color:'var(--text-secondary)'
       }}>
         Enable or disable room listings platform-wide
       </div>
@@ -9671,11 +9671,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 </div>
 
 
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
                     <div>
                       <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Goods</div>
-                      <div style={{fontSize:'13px',color:'#6b7280'}}>Show or hide goods listings in public Discover</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Show or hide goods listings in public Discover</div>
                     </div>
                     <button onClick={toggleDiscoverGoodsFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_GOODS?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
                       {ENABLE_DISCOVER_GOODS ? 'ON' : 'OFF'}
@@ -9683,11 +9683,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
                     <div>
                       <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Services</div>
-                      <div style={{fontSize:'13px',color:'#6b7280'}}>Show or hide services in public Discover</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Show or hide services in public Discover</div>
                     </div>
                     <button onClick={toggleDiscoverServicesFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_SERVICES?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
                       {ENABLE_DISCOVER_SERVICES ? 'ON' : 'OFF'}
@@ -9695,11 +9695,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
                     <div>
                       <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Identity Verification</div>
-                      <div style={{fontSize:'13px',color:'#6b7280'}}>Require verified accounts before using main app features</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Require verified accounts before using main app features</div>
                     </div>
                     <button onClick={toggleIdentityVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_IDENTITY_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
                       {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
@@ -9707,11 +9707,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid #e2e6ea'}}>
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
                     <div>
                       <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Room User Verification</div>
-                      <div style={{fontSize:'13px',color:'#6b7280'}}>Require profile photo and ID before room posting, contacts, and maps</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Require profile photo and ID before room posting, contacts, and maps</div>
                     </div>
                     <button onClick={toggleRoomUserVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_ROOM_USER_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
                       {REQUIRE_ROOM_USER_VERIFICATION ? 'ON' : 'OFF'}
@@ -9722,7 +9722,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 {/* ─── VERIFICATION QUEUE ─── */}
                 <div style={{marginBottom:'24px'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-                    <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>
+                    <h2 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>
                       Verification Queue
                       {adminVerifications.filter(v => v.status === "pending").length > 0 && (
                         <span style={{marginLeft:'8px',padding:'2px 8px',background:'#ccfbf1',color:'#0f766e',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
@@ -9730,7 +9730,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         </span>
                       )}
                     </h2>
-                    <div style={{fontSize:'11px',color:'#8a9bb0'}}>ID submissions to review</div>
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>ID submissions to review</div>
                   </div>
 
                   {/* Filter chips */}
@@ -9740,7 +9740,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       {id:'approved',label:'Approved'},
                       {id:'rejected',label:'Rejected'},
                     ].map(f => (
-                      <button key={f.id} onClick={()=>setVerificationFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:verificationFilter===f.id?'#0f1b2d':'#fff',color:verificationFilter===f.id?'#fff':'#6b7280',border:verificationFilter===f.id?'none':'1px solid #e2e6ea',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
+                      <button key={f.id} onClick={()=>setVerificationFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:verificationFilter===f.id?'#0f1b2d':'var(--surface-bg)',color:verificationFilter===f.id?'#fff':'var(--text-secondary)',border:verificationFilter===f.id?'none':'1px solid var(--border-color)',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
                         {f.label}
                       </button>
                     ))}
@@ -9750,7 +9750,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {(() => {
                     const filtered = adminVerifications.filter(v => v.status === verificationFilter);
                     if (filtered.length === 0) {
-                      return <div style={{textAlign:'center',padding:'24px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>Hakuna {verificationFilter}</div>;
+                      return <div style={{textAlign:'center',padding:'24px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna {verificationFilter}</div>;
                     }
                     return (
                       <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
@@ -9758,7 +9758,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           const isStudent = req.accountType !== "provider";
                           const idType = isStudent ? "🎓 Student ID" : "🪪 NIDA";
                           return (
-                            <div key={req.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                            <div key={req.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)'}}>
                               <div style={{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'8px'}}>
                                 {/* ID photo */}
                                 {(req.idUrl || req.studentIdUrl) && (
@@ -9766,18 +9766,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                     src={req.idUrl || req.studentIdUrl}
                                     alt="ID"
                                     onClick={() => setViewingIdPhoto(req.idUrl || req.studentIdUrl)}
-                                    style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'8px',flexShrink:0,cursor:'pointer',border:'1px solid #e2e6ea'}}
+                                    style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'8px',flexShrink:0,cursor:'pointer',border:'1px solid var(--border-color)'}}
                                   />
                                 )}
                                 <div style={{flex:1,minWidth:0}}>
                                   <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}}>
                                     <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#ccfbf1',color:isStudent?'#1e40af':'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
-                                    <span style={{fontSize:'10px',color:'#9ca3af'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
+                                    <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
                                   </div>
-                                  <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>
+                                  <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
                                     {req.userName || 'Unknown'}
                                   </div>
-                                  <div style={{fontSize:'11px',color:'#6b7280',lineHeight:1.5}}>
+                                  <div style={{fontSize:'11px',color:'var(--text-secondary)',lineHeight:1.5}}>
                                     Account ID: {req.email}<br/>
                                     {req.phone && <>Phone: {req.phone}<br/></>}
                                     {req.nameOnId && <>Jina kwenye ID: <b>{req.nameOnId}</b><br/></>}
@@ -9801,17 +9801,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                         {id:'wrong_type',label:'Aina mbaya ya ID'},
                                         {id:'expired',label:'Imeisha muda'},
                                       ].map(r => (
-                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'#fff',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'#991b1b',cursor:'pointer',textAlign:'left'}}>
+                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'#991b1b',cursor:'pointer',textAlign:'left'}}>
                                           {r.label}
                                         </button>
                                       ))}
                                     </div>
-                                    <button onClick={()=>setRejectingId(null)} style={{marginTop:'8px',padding:'6px 12px',background:'transparent',border:'none',fontSize:'11px',color:'#6b7280',cursor:'pointer'}}>Ghairi</button>
+                                    <button onClick={()=>setRejectingId(null)} style={{marginTop:'8px',padding:'6px 12px',background:'transparent',border:'none',fontSize:'11px',color:'var(--text-secondary)',cursor:'pointer'}}>Ghairi</button>
                                   </div>
                                 ) : (
                                   <div style={{display:'flex',gap:'6px'}}>
                                     <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
-                                    <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'#fff',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
+                                    <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'var(--surface-bg)',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
                                   </div>
                                 )
                               )}
@@ -9831,8 +9831,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* Demand Inbox header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-                  <h2 style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d',margin:0}}>Demand Inbox</h2>
-                  <div style={{fontSize:'11px',color:'#8a9bb0'}}>Search queries that need supply matching</div>
+                  <h2 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>Demand Inbox</h2>
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>Search queries that need supply matching</div>
                 </div>
 
                 {/* Filter chips */}
@@ -9843,7 +9843,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {id:'fulfilled',label:'Fulfilled'},
                     {id:'all',label:'All'},
                   ].map(f => (
-                    <button key={f.id} onClick={()=>setAdminFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:adminFilter===f.id?'#0f1b2d':'#fff',color:adminFilter===f.id?'#fff':'#6b7280',border:adminFilter===f.id?'none':'1px solid #e2e6ea',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
+                    <button key={f.id} onClick={()=>setAdminFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:adminFilter===f.id?'#0f1b2d':'var(--surface-bg)',color:adminFilter===f.id?'#fff':'var(--text-secondary)',border:adminFilter===f.id?'none':'1px solid var(--border-color)',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
                       {f.label}
                     </button>
                   ))}
@@ -9858,10 +9858,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     return true;
                   });
                   if (adminLoading) {
-                    return <div style={{textAlign:'center',padding:'40px',color:'#8a9bb0'}}>Inapakia...</div>;
+                    return <div style={{textAlign:'center',padding:'40px',color:'var(--text-secondary)'}}>Inapakia...</div>;
                   }
                   if (filtered.length === 0) {
-                    return <div style={{textAlign:'center',padding:'30px',background:'#fff',borderRadius:'12px',color:'#8a9bb0',fontSize:'13px'}}>Hakuna alerts katika {adminFilter}</div>;
+                    return <div style={{textAlign:'center',padding:'30px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna alerts katika {adminFilter}</div>;
                   }
                   return (
                     <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -9874,18 +9874,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         };
                         const k = kindColors[alert.kind] || {bg:'#f3f4f6',color:'#374151'};
                         return (
-                          <div key={alert.id} style={{background:'#fff',borderRadius:'12px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                          <div key={alert.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)'}}>
                             {/* Top row: kind badge + date */}
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
                               <span style={{display:'inline-block',padding:'3px 10px',background:k.bg,color:k.color,fontSize:'10px',fontWeight:'700',borderRadius:'10px',textTransform:'uppercase',letterSpacing:'0.3px'}}>{alert.kind}</span>
-                              <span style={{fontSize:'10px',color:'#9ca3af'}}>{alert.createdAt ? alert.createdAt.toLocaleString() : '—'}</span>
+                              <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{alert.createdAt ? alert.createdAt.toLocaleString() : '—'}</span>
                             </div>
                             {/* Query */}
-                            <div style={{fontSize:'14px',fontWeight:'600',color:'#0f1b2d',marginBottom:'6px',lineHeight:1.4}}>
+                            <div style={{fontSize:'14px',fontWeight:'600',color:'var(--text-primary)',marginBottom:'6px',lineHeight:1.4}}>
                               "{alert.query}"
                             </div>
                             {/* User info */}
-                            <div style={{fontSize:'11px',color:'#6b7280',marginBottom:'10px',lineHeight:1.5}}>
+                            <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'10px',lineHeight:1.5}}>
                               <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no account ID'}</div>
                               {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0d9488',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
                             </div>
@@ -9910,7 +9910,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 })()}
 
                 {/* Footer */}
-                <div style={{textAlign:'center',padding:'30px 0 10px',color:'#9ca3af',fontSize:'11px'}}>
+                <div style={{textAlign:'center',padding:'30px 0 10px',color:'var(--text-secondary)',fontSize:'11px'}}>
                   Use this inbox to drive your WhatsApp Channel demand broadcasts.<br/>
                   Mark <b>Routed</b> after broadcasting. Mark <b>Fulfilled</b> when student is matched.
                 </div>
@@ -10074,11 +10074,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
              type="button"
              aria-label="Profile menu"
              onClick={()=>setShowProfileMenu(value => !value)}
-             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid var(--border-color)',background:'#f8fafb',color:'var(--text-primary)',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexDirection:'column',gap:'3px'}}
+             style={{position:'absolute',top:'12px',right:'12px',width:'34px',height:'34px',borderRadius:'50%',border:'1px solid var(--border-color)',background:'var(--page-bg)',color:'var(--text-primary)',fontSize:'20px',fontWeight:'900',lineHeight:1,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexDirection:'column',gap:'3px'}}
            >
-             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
-             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
-             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'#0f1b2d',display:'block'}} />
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'var(--text-primary)',display:'block'}} />
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'var(--text-primary)',display:'block'}} />
+             <span style={{width:'14px',height:'2px',borderRadius:'999px',background:'var(--text-primary)',display:'block'}} />
            </button>
            {showProfileMenu && (
              <>
@@ -10087,7 +10087,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                  <button
                    type="button"
                    onClick={()=>{setIsDarkMode(!isDarkMode, {persist:true});}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}
                  >
                    <span>Dark mode</span>
                    <span style={{width:'36px',height:'20px',borderRadius:'999px',background:isDarkMode?'#0d9488':'#d1d5db',position:'relative',flexShrink:0}}>
@@ -10104,21 +10104,21 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                  <button
                    type="button"
                    onClick={()=>{window.open("/terms.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Terms of service
                  </button>
                  <button
                    type="button"
                    onClick={()=>{window.open("/privacy.html", "_blank", "noopener,noreferrer");setShowProfileMenu(false);}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Privacy policy
                  </button>
                  <button
                    type="button"
                    onClick={()=>{setShowProfileMenu(false);setDeleteAccountConfirm("");setShowDeleteAccountModal(true);setError("");}}
-                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid #eef2f5',background:'var(--surface-bg)',color:'#b91c1c',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
+                   style={{width:'100%',padding:'12px 14px',border:'none',borderTop:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'#b91c1c',fontSize:'13px',fontWeight:'800',textAlign:'left',cursor:'pointer'}}
                  >
                    Delete account
                  </button>
