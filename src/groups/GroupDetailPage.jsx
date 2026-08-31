@@ -3421,7 +3421,7 @@ export function GroupDetailPage({
                     )}
                     {message.kind === "payment_intent" && message.paymentIntent && (
                       <div className={`message-payment-card ${statusClass(message.paymentIntent.status)}`}>
-                        <small>{message.paymentIntent.status === "paid" ? "Payment confirmed" : message.paymentIntent.status === "failed" ? "Payment failed" : "Payment started"}</small>
+                        <small>{message.paymentIntent.status === "paid" ? "Payment received" : message.paymentIntent.status === "failed" ? "Payment failed" : "Payment processing"}</small>
                         <strong>{message.paymentIntent.title || "Group payment"}</strong>
                         <span>{Number(message.paymentIntent.amount || 0).toLocaleString()} TSh</span>
                       </div>
