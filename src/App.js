@@ -1882,6 +1882,7 @@ useEffect(() => {
   const unsubServices = useRef(null);
   const unsubCollections = useRef(null);
   const unsubCollectionOrders = useRef(null);
+  const unsubFeatureFlags = useRef(null);
 
   // Auto-pop About banner for unverified/guest users after 5s
   useEffect(() => {
@@ -2081,11 +2082,10 @@ useEffect(() => {
     });
   }, [collections, conversations, groupMembers, groups, listings, rooms, services]);
 
-  const loadFeatureFlags = async () => {
-  try {
-    const refDoc = doc(db, "system", "features");
-    const snap = await getDoc(refDoc);
-
+  const loadFeatureFlags = () => {
+  if (unsubFeatureFlags.current) return; // already subscribed
+  const refDoc = doc(db, "system", "features");
+  unsubFeatureFlags.current = onSnapshot(refDoc, (snap) => {
     if (snap.exists()) {
       const data = snap.data();
       setEnableRooms(data.rooms === true);
@@ -2101,16 +2101,16 @@ useEffect(() => {
       setRequireIdentityVerification(false);
       setRequireRoomUserVerification(false);
     }
-  } catch (err) {
+    setFeatureFlagsLoaded(true);
+  }, (err) => {
     console.error("Error loading feature flags:", err);
     setEnableRooms(false);
     setEnableDiscoverGoods(false);
     setEnableDiscoverServices(false);
     setRequireIdentityVerification(false);
     setRequireRoomUserVerification(false);
-  } finally {
     setFeatureFlagsLoaded(true);
-  }
+  });
 };
 
   // ============ ROOMS & HOUSING ============
@@ -3242,6 +3242,7 @@ await updateDoc(convRef, {
       if (unsubServices.current) unsubServices.current();
       if (unsubCollections.current) unsubCollections.current();
       if (unsubCollectionOrders.current) unsubCollectionOrders.current();
+      if (unsubFeatureFlags.current) unsubFeatureFlags.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadUserProfile, loadListings, loadServices, loadCollections, loadRooms, loadRoommatePosts, loadMyAllRooms, loadConversations, loadPublicSellerProfile, setPage]);
