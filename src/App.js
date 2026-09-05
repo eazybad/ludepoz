@@ -1522,7 +1522,7 @@ useEffect(() => {
       if (isOffline) {
         const offlineKind = kind === "listing" ? "Discover posts" : kind === "service" ? "services" : kind === "room" ? "rooms" : "updates";
         return (
-          <div style={{textAlign:'center',padding:'44px 18px',background:'#fff',borderRadius:'12px',border:'1px solid #dbe8e7'}}>
+          <div style={{textAlign:'center',padding:'44px 18px',background:'var(--surface-bg)',borderRadius:'12px',border:'1px solid #dbe8e7'}}>
             <div style={{fontSize:'34px',marginBottom:'12px'}}>⌁</div>
             <div style={{fontSize:'16px',fontWeight:'700',color:'#0f1b2d'}}>You're offline</div>
             <div style={{fontSize:'13px',color:'#667085',marginTop:'6px',lineHeight:1.45}}>
@@ -1533,7 +1533,7 @@ useEffect(() => {
       }
       // No active search — just an empty list. Use the original fallback.
       return (
-        <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}>
+        <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
           <div style={{fontSize:'40px',marginBottom:'16px'}}>📭</div>
           <div style={{fontSize:'16px',fontWeight:'600'}}>{fallbackTitle || 'Hakuna kitu hapa bado'}</div>
           {fallbackHint && <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>{fallbackHint}</div>}
@@ -1569,7 +1569,7 @@ useEffect(() => {
             }}
             style={{
               padding:'10px 24px',
-              background:'#fff',
+              background:'var(--surface-bg)',
               color:'#0d9488',
               border:'1.5px solid #99f0ee',
               borderRadius:'20px',
@@ -1604,7 +1604,7 @@ useEffect(() => {
                     alignItems:'center',
                     justifyContent:'space-between',
                     padding:'10px 14px',
-                    background:'#fff',
+                    background:'var(--surface-bg)',
                     border:'1px solid #99f0ee',
                     borderRadius:'10px',
                     fontSize:'13px',
@@ -1625,7 +1625,7 @@ useEffect(() => {
             cross-category matches. If matches exist elsewhere, the banner
             above is enough — no need to also dominate the screen with an empty state. */}
         {crossHints.length === 0 && (
-          <div style={{textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
+          <div style={{textAlign:'center',padding:'40px 20px',background:'var(--surface-bg)',borderRadius:'14px',border:'1px solid #f0f0f0'}}>
             <div style={{fontSize:'36px',marginBottom:'12px'}}>🔍</div>
             <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>
               Hakuna matokeo sasa hivi katika {kind === "listing" ? "Goods" : kind === "service" ? "Services" : kind === "room" ? "Rooms" : "Collections"}
@@ -5503,7 +5503,7 @@ if (loading) {
     <div style={{
       minHeight:'100vh',
       height:'100dvh',
-      background:'#0f1b2d',
+      background:'var(--accent-navy)',
       fontFamily:'system-ui',
       overflow:'hidden',
       display:'flex',
@@ -5539,7 +5539,7 @@ if (loading) {
           marginBottom:'22px',
           textShadow:'0 14px 34px rgba(6,214,199,0.18)'
         }}>
-          Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+          Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
         </div>
         <div style={{
           width:'138px',
@@ -5696,6 +5696,24 @@ return (
       /* ===== Theme tokens: one class flip on .app-container drives every
          inline style that references var(--token). Add new dark-mode
          colors here instead of writing another isDarkMode ternary. ===== */
+      .app-container {
+        --accent-navy: #0f1b2d;
+        --accent-navy-text: #fff;
+        --accent-teal: #0d9488;
+        --accent-teal-dark: #0f766e;
+        --accent-teal-bright: #06d6c7;
+        --accent-teal-tint: #ccfbf1;
+        --danger: #ef4444;
+        --danger-dark: #991b1b;
+        --danger-tint: #fee2e2;
+        --success: #10b981;
+        --success-dark: #065f46;
+        --success-text: #166534;
+        --success-tint: #f0fdf4;
+        --warning: #f59e0b;
+        --whatsapp-green: #25D366;
+      }
+
       .app-container.light-mode {
         --page-bg: #f4f6f8;
         --page-bg-outer: #f5f5f7;
@@ -5773,7 +5791,7 @@ return (
           <button
             type="button"
             onClick={() => requestNotificationPermission(user)}
-            style={{border:'none',borderRadius:'8px',background:'#0d9488',color:'#fff',fontSize:'12px',fontWeight:'800',padding:'8px 10px',cursor:'pointer',whiteSpace:'nowrap'}}
+            style={{border:'none',borderRadius:'8px',background:'var(--accent-teal)',color:'#fff',fontSize:'12px',fontWeight:'800',padding:'8px 10px',cursor:'pointer',whiteSpace:'nowrap'}}
           >
             Enable
           </button>
@@ -5810,7 +5828,7 @@ return (
     {error}
     <button onClick={(e) => { e.stopPropagation(); setError(""); }} style={{
       position:'absolute', top:'8px', right:'10px', background:'none', border:'none',
-      color:'#991b1b', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
+      color:'var(--danger-dark)', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
     }}>×</button>
   </div>
 )
@@ -5821,7 +5839,7 @@ return (
     onClick={() => setSuccess("")}
     style={{
       background:'#d1fae5',
-      color:'#065f46',
+      color:'var(--success-dark)',
       padding:'12px 40px 12px 12px',
       borderRadius:'8px',
       fontSize:'13px',
@@ -5839,7 +5857,7 @@ return (
     {success}
     <button onClick={(e) => { e.stopPropagation(); setSuccess(""); }} style={{
       position:'absolute', top:'8px', right:'10px', background:'none', border:'none',
-      color:'#065f46', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
+      color:'var(--success-dark)', fontSize:'18px', cursor:'pointer', lineHeight:1, padding:'0 4px'
     }}>×</button>
     <div style={{
       position:'absolute', bottom:0, left:0, height:'3px',
@@ -5909,7 +5927,7 @@ return (
             justifyContent:'center',
             color:'#0d9488',
             fontSize:'18px',
-            background:'#fff',
+            background:'var(--surface-bg)',
             cursor:'pointer',
             padding:0
           }}
@@ -5927,7 +5945,7 @@ return (
               top:'46px',
               left:0,
               zIndex:151,
-              background:'#fff',
+              background:'var(--surface-bg)',
               borderRadius:'12px',
               boxShadow:'0 8px 24px rgba(15,27,45,0.15)',
               border:'1px solid #e2e6ea',
@@ -5999,7 +6017,7 @@ return (
         justifyContent:'center',
         borderRadius:'999px',
         border:'1.5px solid #dbe3ea',
-        background:'#fff',
+        background:'var(--surface-bg)',
         lineHeight:1.05,
         textAlign:'center',
         fontFamily:'Kalam'
@@ -6020,7 +6038,7 @@ return (
     null
   ) : (
     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)'}}>
-      Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+      Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
     </div>
   )}
 </div>
@@ -6316,7 +6334,7 @@ return (
       width:'100%',
       height:'3px',
       borderRadius:'999px',
-      background:'#0f1b2d'
+      background:'var(--accent-navy)'
     }} />
   )}
 </span>
@@ -6356,13 +6374,13 @@ return (
 {featureFlagsLoaded && REQUIRE_IDENTITY_VERIFICATION && user && profileLoaded && !isVerified && (
   <div style={{margin:'0 16px 12px 16px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'14px',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',boxShadow:'0 2px 10px rgba(79,70,229,0.08)'}}>
     <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
-      <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'#0d9488',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
+      <div style={{width:'32px',height:'32px',borderRadius:'10px',background:'var(--accent-teal)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',flexShrink:0}}>✓</div>
       <div style={{minWidth:0}}>
         <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Verify your identity</div>
         <div style={{fontSize:'10px',color:'rgba(15,27,45,0.58)',marginTop:'1px'}}>Required before using main app features</div>
       </div>
     </div>
-    <button type="button" onClick={()=>setShowVerifyModal(true)} style={{padding:'7px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
+    <button type="button" onClick={()=>setShowVerifyModal(true)} style={{padding:'7px 10px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'11px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>Verify</button>
   </div>
 )}
 {featureFlagsLoaded && !discoverHasEnabledSection && (
@@ -6720,7 +6738,7 @@ return (
                   style={{
                     width:'100%',
                     padding:'14px',
-                    background:'#25D366',
+                    background:'var(--whatsapp-green)',
                     color:'#fff',
                     border:'none',
                     borderRadius:'12px',
@@ -6775,7 +6793,7 @@ return (
                     type="button"
                     onClick={() => handleCreateAssist('listing')}
                     disabled={createAssistLoading || !createAssistText.trim()}
-                    style={{width:'100%',padding:'10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:createAssistLoading?'wait':'pointer',opacity:!createAssistText.trim()?0.6:1}}
+                    style={{width:'100%',padding:'10px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:createAssistLoading?'wait':'pointer',opacity:!createAssistText.trim()?0.6:1}}
                   >
                     {createAssistLoading ? 'Inaelewa...' : 'Nijazie Fomu'}
                   </button>
@@ -6894,7 +6912,7 @@ return (
                   width:'20px',
                   height:'20px',
                   borderRadius:'50%',
-                  background:'#ef4444',
+                  background:'var(--danger)',
                   color:'#fff',
                   border:'2px solid #fff',
                   cursor:'pointer',
@@ -6923,7 +6941,7 @@ return (
               background:'var(--mint-tint)',
               flexShrink:0
             }}>
-              <span style={{fontSize:'24px',color:'#06d6c7'}}>+</span>
+              <span style={{fontSize:'24px',color:'var(--accent-teal-bright)'}}>+</span>
             </div>
           )}
         </div>
@@ -6941,8 +6959,8 @@ return (
           background:'var(--mint-tint)',
           gap:'6px'
         }}>
-          <span style={{fontSize:'18px',color:'#06d6c7'}}>+</span>
-          <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>Add more photos</span>
+          <span style={{fontSize:'18px',color:'var(--accent-teal-bright)'}}>+</span>
+          <span style={{fontSize:'13px',color:'var(--accent-teal-bright)',fontWeight:'600'}}>Add more photos</span>
         </div>
       )}
     </div>
@@ -6998,7 +7016,7 @@ return (
                     <span>{uploading?`Uploading... ${createListingProgress}%`:"💾 Create Listing"}</span>
                   </button>
                   {uploading && (
-                    <button type="button" onClick={cancelCreateListingUpload} aria-label="Cancel upload" style={{width:'40px',height:'40px',flexShrink:0,borderRadius:'50%',border:'none',background:'#fee2e2',color:'#b91c1c',fontSize:'18px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+                    <button type="button" onClick={cancelCreateListingUpload} aria-label="Cancel upload" style={{width:'40px',height:'40px',flexShrink:0,borderRadius:'50%',border:'none',background:'var(--danger-tint)',color:'#b91c1c',fontSize:'18px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
                   )}
                 </div>
               </>
@@ -7090,12 +7108,12 @@ return (
               </div>
               {singleThread ? (
                 <>
-                  <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
+                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               ) : (
                 <>
-                  <div style={{fontSize:'12px',color:'#06d6c7',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
+                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               )}
@@ -7124,7 +7142,7 @@ return (
                     style={{flex:1,padding:'10px 16px 10px 60px',cursor:'pointer',minWidth:0}}
                   >
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}}>
-                      <div style={{fontSize:'12px',color:'#06d6c7',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+                      <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
                       {unread>0 && <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
                     </div>
                     <div style={{fontSize:'12px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
@@ -7471,10 +7489,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>Saved Items ({cart.length})</h2>
           <div style={{display:'flex',flexDirection:'column'}}>
             {cart.length===0?(
-              <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>🔖</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No saved items</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Save items from the home feed to see them here</div></div>
+              <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}><div style={{fontSize:'40px'}}>🔖</div><div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No saved items</div><div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Save items from the home feed to see them here</div></div>
             ):(
               cart.map((item,idx)=>(
-                <div key={item.id} style={{background:'#fff',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
+                <div key={item.id} style={{background:'var(--surface-bg)',borderBottom:idx===cart.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===cart.length-1?'0 0 12px 12px':'0'}}>
                   {item.photoUrl && <img src={item.photoUrl} alt={item.title} style={{width:'100%',height:'150px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px'}} />}
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'4px'}}>{item.title}</div>
                   {item.description && <div style={{fontSize:'13px',color:'#4a5568',marginBottom:'10px'}}>{item.description}</div>}
@@ -7498,12 +7516,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>Campus Services</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Book haircuts, order food, hire photographers & more — all from fellow students.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'#fff',color:'#0d9488',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+              <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 18px',background:'var(--surface-bg)',color:'#0d9488',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
             </div>
           </div>
 
           {/* Search */}
-          <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+          <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'12px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
             <input type="text" placeholder="Tafuta huduma..." value={serviceSearchQ}
               onChange={e => {
                 setServiceSearchQ(e.target.value);
@@ -7550,13 +7568,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       fallbackTitle="No services yet" fallbackHint="Be the first to offer a service!" />
                     {!committedServiceSearchQ?.trim() && (
                       <div style={{textAlign:'center',marginTop:'12px'}}>
-                        <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                        <button onClick={()=>{user ? setPage("createService") : requireAuth("list service",()=>setPage("createService"));}} style={{padding:'10px 20px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
                       </div>
                     )}
                   </div>
                 ) : (
                   filtered.map(svc => (
-                    <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                    <div key={svc.id} onClick={()=>setViewingService(svc)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                       {(svc.photos && svc.photos.length > 0) ? (
                         <img src={svc.photos[0]} alt={svc.title} loading="lazy" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
                       ) : svc.photoUrl ? (
@@ -7591,14 +7609,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ CREATE SERVICE ============ */}
       {page==="createService"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateServiceSuccess?"Success!":"Offer a Service"}</h2>
             {showCreateServiceSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🎉</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>Service listed!</div>
                 <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and book you</div>
-                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("services");}} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Services</button>
+                <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("services");}} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Services</button>
                 <button onClick={()=>{setShowCreateServiceSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Go to Home</button>
               </div>
             ) : (
@@ -7613,7 +7631,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         {createServiceData.photoPreviews.slice(1).map((p,i)=>(
                           <div key={i} style={{position:'relative',flexShrink:0}}>
                             <img src={p} alt="" style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'8px'}}/>
-                            <button onClick={(e)=>{e.preventDefault();e.stopPropagation();const nf=[...createServiceData.photoFiles];const np=[...createServiceData.photoPreviews];nf.splice(i+1,1);np.splice(i+1,1);setCreateServiceData({...createServiceData,photoFiles:nf,photoPreviews:np});}} style={{position:'absolute',top:'-4px',right:'-4px',width:'18px',height:'18px',borderRadius:'50%',background:'#ef4444',color:'#fff',border:'2px solid #fff',cursor:'pointer',fontSize:'10px',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+                            <button onClick={(e)=>{e.preventDefault();e.stopPropagation();const nf=[...createServiceData.photoFiles];const np=[...createServiceData.photoPreviews];nf.splice(i+1,1);np.splice(i+1,1);setCreateServiceData({...createServiceData,photoFiles:nf,photoPreviews:np});}} style={{position:'absolute',top:'-4px',right:'-4px',width:'18px',height:'18px',borderRadius:'50%',background:'var(--danger)',color:'#fff',border:'2px solid #fff',cursor:'pointer',fontSize:'10px',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
                           </div>
                         ))}
                         {createServiceData.photoPreviews.length < 3 && (
@@ -7664,7 +7682,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 WhatsApp Number (optional)</label><input type="tel" placeholder="e.g. 0712345678" value={createServiceData.whatsapp} onChange={e=>setCreateServiceData({...createServiceData,whatsapp:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>Let customers contact you directly on WhatsApp</div></div>
 
-                <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
+                <button onClick={handleCreateService} disabled={uploading} style={{width:'100%',marginTop:'16px',padding:'12px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"✨ List My Service"}</button>
               </>
             )}
           </div>
@@ -7674,7 +7692,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ SERVICE DETAIL ============ */}
       {viewingService && (
         <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
-          <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
+          <div style={{background:'var(--surface-bg)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
             <button onClick={()=>setViewingService(null)} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
             <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>Service Details</div>
           </div>
@@ -7692,7 +7710,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
           {/* Thumbnail strip */}
           {viewingService.photos && viewingService.photos.length > 1 && (
-            <div style={{padding:'10px 16px',background:'#fff',display:'flex',gap:'8px',overflowX:'auto'}}>
+            <div style={{padding:'10px 16px',background:'var(--surface-bg)',display:'flex',gap:'8px',overflowX:'auto'}}>
               {viewingService.photos.map((p,i)=>(
                 <img key={i} src={p} alt="" onClick={()=>{setFullScreenImage(p);setFullScreenPhotos(viewingService.photos);setFullScreenIndex(i);}} style={{width:'60px',height:'60px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0}}/>
               ))}
@@ -7716,19 +7734,19 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
               <span style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'20px',color:'#6b7280'}}>🎓 {viewingService.universityName}</span>
               {viewingService.location && <span style={{fontSize:'12px',background:'#f0fffe',padding:'6px 12px',borderRadius:'20px',color:'#0f1b2d',fontWeight:'500'}}>📍 {viewingService.location}</span>}
-              {viewingService.availability && <span style={{fontSize:'12px',background:'#ccfbf1',padding:'6px 12px',borderRadius:'20px',color:'#0f766e',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
+              {viewingService.availability && <span style={{fontSize:'12px',background:'var(--accent-teal-tint)',padding:'6px 12px',borderRadius:'20px',color:'var(--accent-teal-dark)',fontWeight:'500'}}>🕐 {viewingService.availability}</span>}
             </div>
 
             {/* Description */}
             {viewingService.description && (
-              <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+              <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
                 <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>About this service</h4>
                 <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingService.description}</p>
               </div>
             )}
 
             {/* Provider Info */}
-            <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+            <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
               <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Service Provider</h4>
               <div style={{display:'flex',alignItems:'center',gap:'12px'}} onClick={()=>{setViewingService(null);loadPublicSellerProfile(viewingService.userId);}}>
                 <div style={{width:'52px',height:'52px',minWidth:'52px',minHeight:'52px',flexShrink:0,aspectRatio:'1 / 1',overflow:'hidden',borderRadius:'50%',background:viewingService.userAvatar?`url(${viewingService.userAvatar})`:'linear-gradient(135deg,#0d9488,#a78bfa)',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',fontWeight:'700',color:'#fff',cursor:'pointer'}}>
@@ -7743,7 +7761,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           </div>
 
           {/* Sticky Bottom Actions */}
-          <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+          <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
             {(!user || viewingService.userId !== user.uid) ? (
               <>
                 {viewingService.whatsapp ? (
@@ -7773,7 +7791,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <div style={{width:'100%',display:'flex',gap:'8px'}}>
                 <div style={{flex:1,textAlign:'center',padding:'12px',background:'#e6fffe',borderRadius:'10px',color:'#0d9488',fontSize:'14px',fontWeight:'600'}}>This is your service</div>
-                <button onClick={()=>{setViewingService(null);deleteService(viewingService.id);}} style={{padding:'12px 20px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
+                <button onClick={()=>{setViewingService(null);deleteService(viewingService.id);}} style={{padding:'12px 20px',background:'var(--danger-tint)',color:'var(--danger-dark)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
               </div>
             )}
           </div>
@@ -7787,7 +7805,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'var(--page-bg)',display:'flex',alignItems:'center'}}>
               <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'center'}}>
                 <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'var(--text-primary)',margin:'0 auto 14px',lineHeight:1,textAlign:'center'}}>
-                  Kam<em style={{color:'#06d6c7'}}>pa</em>sika
+                  Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
                 </div>
                 <div style={{fontSize:'22px',fontWeight:'900',color:'var(--text-primary)',lineHeight:1.2,marginBottom:'12px'}}>
                   Campus groups, files, events, orders, and members in one place.
@@ -7799,14 +7817,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <button
                   type="button"
                   onClick={() => { setAuthMode("signup"); setShowAuthModal(true); setError(""); }}
-                  style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
+                  style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
                 >
                   Create account
                 </button>
                 <button
                   type="button"
                   onClick={() => { setAuthMode("login"); setShowAuthModal(true); setError(""); }}
-                  style={{width:'100%',padding:'14px',background:'var(--mint-tint-strong)',color:'#0f766e',border:'1px solid #99f0ee',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
+                  style={{width:'100%',padding:'14px',background:'var(--mint-tint-strong)',color:'var(--accent-teal-dark)',border:'1px solid #99f0ee',borderRadius:'10px',fontSize:'16px',fontWeight:'900',cursor:'pointer'}}
                 >
                   Sign in
                 </button>
@@ -7859,7 +7877,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Groups</h2>
             <p style={{color:'rgba(15,27,45,0.7)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Open a group to see all active orders/collections and events inside it.</p>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-              <button onClick={()=>{user ? setShowCreateGroup(true) : requireAuth("createGroup",()=>setShowCreateGroup(true));}} style={{padding:'10px 18px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Group</button>
+              <button onClick={()=>{user ? setShowCreateGroup(true) : requireAuth("createGroup",()=>setShowCreateGroup(true));}} style={{padding:'10px 18px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create Group</button>
               <button onClick={()=>{user ? setPage("createCollection") : requireAuth("create collection",()=>setPage("createCollection"));}} style={{padding:'10px 18px',background:'rgba(15,27,45,0.15)',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Create order / event</button>
             </div>
           </div>
@@ -7870,16 +7888,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               <div style={{fontSize:'12px',fontWeight:'700',color:'#8a9bb0',marginBottom:'8px',letterSpacing:'0.5px'}}>GROUPS</div>
               <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                 {groups.map(group => (
-                  <button key={group.id} type="button" onClick={()=>openGroup(group)} style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:'12px'}}>
+                  <button key={group.id} type="button" onClick={()=>openGroup(group)} style={{background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:'12px'}}>
                     <div style={{width:'44px',height:'44px',borderRadius:'12px',background:'linear-gradient(135deg,#06d6c7,#0d9488)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>
                       {group.type==="church"?"⛪":group.type==="club"?"🏆":group.type==="hostel"?"🏠":group.type==="freshers"?"🎓":"🏫"}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
                       {group.desc && <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{group.desc}</div>}
-                      <div style={{fontSize:'11px',color:'#06d6c7',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
+                      <div style={{fontSize:'11px',color:'var(--accent-teal-bright)',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
                     </div>
-                    {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'#ccfbf1',color:'#0f766e',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
+                    {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
                   </button>
                 ))}
               </div>
@@ -7899,10 +7917,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   else acc[key].orders += 1;
                   return acc;
                 }, {})).sort((a, b) => b.items.length - a.items.length).map(group => (
-                  <button key={group.name} type="button" onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }} style={{background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}>
+                  <button key={group.name} type="button" onClick={() => { setViewingCommunity(group); setPage("communityDetail"); }} style={{background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',cursor:'pointer',textAlign:'left'}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}}>
                       <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{group.name}</div>
-                      <div style={{fontSize:'11px',fontWeight:'700',color:'#0f766e',background:'#ccfbf1',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
+                      <div style={{fontSize:'11px',fontWeight:'700',color:'var(--accent-teal-dark)',background:'var(--accent-teal-tint)',padding:'4px 8px',borderRadius:'8px'}}>{group.items.length} total</div>
                     </div>
                     <div style={{marginTop:'6px',fontSize:'12px',color:'#6b7280'}}>{group.orders} orders • {group.events} events</div>
                   </button>
@@ -7912,7 +7930,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           )}
 
           {groups.length === 0 && collections.length === 0 && (
-            <div style={{textAlign:'center',padding:'48px 16px',background:'#fff',borderRadius:'12px',margin:'0 16px'}}>
+            <div style={{textAlign:'center',padding:'48px 16px',background:'var(--surface-bg)',borderRadius:'12px',margin:'0 16px'}}>
               <div style={{fontSize:'40px',marginBottom:'16px'}}>🏫</div>
               <div style={{fontSize:'16px',fontWeight:'600'}}>No active groups yet</div>
               <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'4px'}}>Create a group or an order/event and it will appear here.</div>
@@ -7922,7 +7940,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {/* Create Group Modal */}
           {showCreateGroup && (
             <div onClick={()=>setShowCreateGroup(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.6)',zIndex:3000,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-              <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px',width:'100%',maxWidth:'480px',maxHeight:'80vh',overflowY:'auto'}}>
+              <div onClick={e=>e.stopPropagation()} style={{background:'var(--surface-bg)',borderRadius:'20px 20px 0 0',padding:'24px',width:'100%',maxWidth:'480px',maxHeight:'80vh',overflowY:'auto'}}>
                 <div style={{fontSize:'18px',fontWeight:'700',marginBottom:'16px'}}>Create a Group</div>
 
                 <div style={{marginBottom:'14px'}}>
@@ -7939,7 +7957,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'8px'}}>Group Type</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {[["class","🏫","Class / Year"],["church","⛪","Church"],["club","🏆","Club"],["hostel","🏠","Hostel"],["freshers","🎓","Freshers"],["other","👥","Other"]].map(([id,icon,label])=>(
-                      <button key={id} type="button" onClick={()=>setCreateGroupData({...createGroupData,type:id})} style={{padding:'8px 14px',borderRadius:'10px',border:createGroupData.type===id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createGroupData.type===id?'#f0fffe':'#fff',fontSize:'13px',fontWeight:createGroupData.type===id?'700':'400',cursor:'pointer'}}>{icon} {label}</button>
+                      <button key={id} type="button" onClick={()=>setCreateGroupData({...createGroupData,type:id})} style={{padding:'8px 14px',borderRadius:'10px',border:createGroupData.type===id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createGroupData.type===id?'#f0fffe':'var(--surface-bg)',fontSize:'13px',fontWeight:createGroupData.type===id?'700':'400',cursor:'pointer'}}>{icon} {label}</button>
                     ))}
                   </div>
                 </div>
@@ -8026,7 +8044,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
             {viewingGroup.desc && <div style={{fontSize:"13px",lineHeight:1.45,color:"rgba(255,255,255,0.86)",marginBottom:"12px"}}>{viewingGroup.desc}</div>}
             {!currentGroupMember && user && (
-              <button onClick={()=>joinGroup(viewingGroup)} disabled={joiningGroup} style={{width:"100%",padding:"11px",background:"#fff",color:"#075e54",border:"none",borderRadius:"10px",fontSize:"14px",fontWeight:"800",cursor:joiningGroup?"wait":"pointer",marginBottom:"12px"}}>{joiningGroup ? "Joining..." : "Join Group"}</button>
+              <button onClick={()=>joinGroup(viewingGroup)} disabled={joiningGroup} style={{width:"100%",padding:"11px",background:"var(--surface-bg)",color:"#075e54",border:"none",borderRadius:"10px",fontSize:"14px",fontWeight:"800",cursor:joiningGroup?"wait":"pointer",marginBottom:"12px"}}>{joiningGroup ? "Joining..." : "Join Group"}</button>
             )}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",background:"rgba(0,0,0,0.16)",borderRadius:"10px",padding:"4px"}}>
               {[
@@ -8042,13 +8060,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           {groupViewTab==="announcements" && (
             <div style={{margin:"0 12px 16px"}}>
               {isGroupAdmin(viewingGroup) && (
-                <div style={{background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea",marginBottom:"10px"}}>
+                <div style={{background:"var(--surface-bg)",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea",marginBottom:"10px"}}>
                   <textarea value={newAnnouncement} onChange={e=>setNewAnnouncement(e.target.value)} placeholder="Post an announcement like you would in WhatsApp..." rows={3} style={{width:"100%",border:"none",outline:"none",fontSize:"14px",fontFamily:"inherit",resize:"none",boxSizing:"border-box",marginBottom:"8px"}} />
                   <button onClick={postAnnouncement} disabled={postingAnnouncement||!newAnnouncement.trim()} style={{padding:"10px 16px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer",opacity:!newAnnouncement.trim()?0.5:1}}>{postingAnnouncement ? "Posting..." : "Post"}</button>
                 </div>
               )}
               {groupAnnouncements.length === 0 ? (
-                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No announcements yet.</div>
+                <div style={{textAlign:"center",padding:"28px 16px",background:"var(--surface-bg)",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No announcements yet.</div>
               ) : (
                 <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                   {groupAnnouncements.map(ann=>(
@@ -8070,14 +8088,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 {isGroupAdmin(viewingGroup) && <button onClick={()=>{ setCreateCollectionData(prev=>({...prev,communityName:viewingGroup.name,groupId:viewingGroup.id})); setPage("createCollection"); }} style={{padding:"8px 12px",background:"#25d366",color:"#063b24",border:"none",borderRadius:"8px",fontSize:"12px",fontWeight:"800",cursor:"pointer"}}>New</button>}
               </div>
               {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).length === 0 ? (
-                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No payment trackers yet.</div>
+                <div style={{textAlign:"center",padding:"28px 16px",background:"var(--surface-bg)",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No payment trackers yet.</div>
               ) : (
                 <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                   {collections.filter(c=>(c.communityName||"").trim()===viewingGroup.name.trim()||c.groupId===viewingGroup.id).map(col=>{
                     const target = col.expectedPeople || col.totalOrders || 0;
                     const paidPercent = target > 0 ? Math.round(((col.totalPaid || 0) / target) * 100) : 0;
                     return (
-                      <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:"#fff",borderRadius:"8px",padding:"14px",cursor:"pointer",border:"1px solid #e2e6ea"}}>
+                      <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:"var(--surface-bg)",borderRadius:"8px",padding:"14px",cursor:"pointer",border:"1px solid #e2e6ea"}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:"10px",alignItems:"flex-start"}}>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:"15px",fontWeight:"800",color:"#0f1b2d",marginBottom:"3px"}}>{col.title}</div>
@@ -8098,11 +8116,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <div style={{margin:"0 12px 16px"}}>
               <div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",marginBottom:"10px"}}>Members</div>
               {groupMembers.length === 0 ? (
-                <div style={{textAlign:"center",padding:"28px 16px",background:"#fff",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No members loaded yet.</div>
+                <div style={{textAlign:"center",padding:"28px 16px",background:"var(--surface-bg)",borderRadius:"8px",color:"#8a9bb0",fontSize:"13px"}}>No members loaded yet.</div>
               ) : (
                 <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                   {groupMembers.map(member => (
-                    <div key={member.uid || member.id} style={{background:"#fff",border:"1px solid #e2e6ea",borderRadius:"8px",padding:"12px",display:"flex",alignItems:"center",gap:"10px"}}>
+                    <div key={member.uid || member.id} style={{background:"var(--surface-bg)",border:"1px solid #e2e6ea",borderRadius:"8px",padding:"12px",display:"flex",alignItems:"center",gap:"10px"}}>
                       <div style={{width:"38px",height:"38px",borderRadius:"50%",background:member.avatarUrl?`url(${member.avatarUrl}) center/cover`:"#075e54",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:"800",flexShrink:0}}>{!member.avatarUrl && (member.name || "?").slice(0,2).toUpperCase()}</div>
                       <div style={{flex:1,minWidth:0}}><div style={{fontSize:"14px",fontWeight:"800",color:"#0f1b2d",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{member.name || "Member"}</div><div style={{fontSize:"11px",color:"#667781"}}>{member.role || "member"}</div></div>
                     </div>
@@ -8110,7 +8128,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
               )}
               {isGroupAdmin(viewingGroup) && (
-                <div style={{marginTop:"12px",background:"#fff",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea"}}>
+                <div style={{marginTop:"12px",background:"var(--surface-bg)",borderRadius:"8px",padding:"12px",border:"1px solid #e2e6ea"}}>
                   <div style={{fontSize:"13px",fontWeight:"800",color:"#0f1b2d",marginBottom:"8px"}}>Admin tools</div>
                   <div style={{display:"flex",gap:"8px"}}><input type="text" id="coAdminEmail" placeholder="co-admin account ID" style={{flex:1,padding:"10px",border:"1.5px solid #e2e6ea",borderRadius:"8px",fontSize:"14px",outline:"none",boxSizing:"border-box"}}/><button onClick={async()=>{ const emailInput = document.getElementById("coAdminEmail"); const email = emailInput?.value?.trim(); if (!email) return; try { await updateDoc(doc(db, "groups", viewingGroup.id), { coAdmins: [...(viewingGroup.coAdmins||[]), email] }); setViewingGroup({...viewingGroup, coAdmins:[...(viewingGroup.coAdmins||[]),email]}); emailInput.value = ""; setSuccess("Co-admin added!"); setTimeout(()=>setSuccess(""),2000); } catch(e){ setError("Failed: "+e.message); } }} style={{padding:"10px 14px",background:"#075e54",color:"#fff",border:"none",borderRadius:"8px",fontSize:"13px",fontWeight:"800",cursor:"pointer"}}>Add</button></div>
                   {canArchiveGroup(viewingGroup) && (
@@ -8136,7 +8154,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {page==="communityDetail"&&viewingCommunity&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{margin:'0 16px 12px 16px',background:'#f0fffe',border:'1px solid #99f0ee',borderRadius:'14px',padding:'14px'}}>
-            <h3 style={{margin:0,fontSize:'18px',fontWeight:'700',color:'#0f766e'}}>{viewingCommunity.name}</h3>
+            <h3 style={{margin:0,fontSize:'18px',fontWeight:'700',color:'var(--accent-teal-dark)'}}>{viewingCommunity.name}</h3>
             <div style={{marginTop:'6px',fontSize:'12px',color:'#7c2d12'}}>{viewingCommunity.items.length} active collections</div>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
@@ -8144,7 +8162,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               const target = col.expectedPeople || col.totalOrders || 0;
               const paidPercent = target > 0 ? Math.round((col.totalPaid / target) * 100) : 0;
               return (
-                <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'#fff',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                <div key={col.id} onClick={async()=>{setViewingCollection(col);setMyOrderId(null);setPaymentConfirmed(false);loadCollectionOrders(col.id);setOrderFormData({...orderFormData,selectedOption:"",paymentRef:"",amountPaid:"",payerName:"",studentName:userName,paymentProofFile:null,paymentProofPreview:null});setPage("collectionDetail");}} style={{background:'var(--surface-bg)',borderRadius:'14px',padding:'16px',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                   <div style={{display:'flex',gap:'12px',alignItems:'center'}}>
                     {col.photoUrl ? (
                       <img src={col.photoUrl} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'10px',flexShrink:0}}/>
@@ -8320,7 +8338,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ CREATE COLLECTION ============ */}
       {page==="createCollection"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>{showCreateCollectionSuccess?"Success!":"Create collection or event"}</h2>
             {showCreateCollectionSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
@@ -8334,7 +8352,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       const link = `https://kampasika.org/c/${lastCreatedCollectionId}`;
                       const msg = `📋 New collection on Kampasika!\n\nOrder here: ${link}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
-                    }} style={{width:'100%',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'8px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
+                    }} style={{width:'100%',padding:'14px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'8px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>📲 Share on WhatsApp</button>
 
                     {/* Copy link */}
                     <button onClick={()=>{
@@ -8351,7 +8369,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <div style={{background:'#f4f6f8',borderRadius:'16px',padding:'20px',marginBottom:'12px',textAlign:'center'}}>
                         <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'4px'}}>📋 Entry QR</div>
                         <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'14px'}}>Useful for posters, noticeboards, or projecting in a meeting</div>
-                        <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #e2e6ea'}}>
+                        <div style={{display:'inline-block',padding:'12px',background:'var(--surface-bg)',borderRadius:'12px',border:'2px solid #e2e6ea'}}>
                           <QRCodeSVG
                             value={`https://kampasika.org/c/${lastCreatedCollectionId}`}
                             size={180}
@@ -8365,12 +8383,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                   </>
                 )}
-                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
+                <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("communities");}} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View Groups</button>
                 <button onClick={()=>{setShowCreateCollectionSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
-                <div style={{background:'#ccfbf1',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'#0f766e',lineHeight:1.5}}>
+                <div style={{background:'var(--accent-teal-tint)',padding:'12px',borderRadius:'10px',marginBottom:'16px',fontSize:'13px',color:'var(--accent-teal-dark)',lineHeight:1.5}}>
                   📋 <strong>For class reps & councils:</strong> Create an order or event — t-shirts, tickets, contributions. Students join by scanning your QR or link.
                 </div>
                 {/* PHOTO */}
@@ -8387,7 +8405,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   )}
                 </label>
                 {uploading && collectionUploadStatus && (
-                  <div style={{marginBottom:'14px',padding:'10px 12px',background:'#f0fdfa',border:'1px solid #99f0ee',borderRadius:'10px',color:'#0f766e',fontSize:'12px',fontWeight:'800'}}>
+                  <div style={{marginBottom:'14px',padding:'10px 12px',background:'#f0fdfa',border:'1px solid #99f0ee',borderRadius:'10px',color:'var(--accent-teal-dark)',fontSize:'12px',fontWeight:'800'}}>
                     {collectionUploadStatus}
                   </div>
                 )}
@@ -8409,7 +8427,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <input type="tel" placeholder="e.g. 0712345678" value={createCollectionData.paymentMethods[0]?.number||''} onChange={e=>{const updated=[{network:createCollectionData.paymentMethods[0]?.network||'M-Pesa',number:e.target.value,name:createCollectionData.paymentMethods[0]?.name||'',saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
                   <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
                     {["M-Pesa","Tigo Pesa","Airtel Money","Halopesa"].map(net=>(
-                      <button key={net} type="button" onClick={()=>{const updated=[{...(createCollectionData.paymentMethods[0]||{}),network:net,saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'5px 12px',borderRadius:'8px',border:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'2px solid #0d9488':'1px solid #e2e6ea',background:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'#ccfbf1':'#fff',fontSize:'12px',cursor:'pointer',fontWeight:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'700':'400'}}>{net}</button>
+                      <button key={net} type="button" onClick={()=>{const updated=[{...(createCollectionData.paymentMethods[0]||{}),network:net,saved:true}];setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'5px 12px',borderRadius:'8px',border:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'2px solid #0d9488':'1px solid #e2e6ea',background:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'#ccfbf1':'var(--surface-bg)',fontSize:'12px',cursor:'pointer',fontWeight:(createCollectionData.paymentMethods[0]?.network||'M-Pesa')===net?'700':'400'}}>{net}</button>
                     ))}
                   </div>
                 </div>
@@ -8422,7 +8440,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {createCollectionData.options.trim() && (
                     <div style={{marginTop:'8px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
                       {createCollectionData.options.split(',').map(o=>o.trim()).filter(o=>o).map((o,i)=>(
-                        <span key={i} style={{padding:'5px 12px',background:'#ccfbf1',color:'#0f766e',borderRadius:'8px',fontSize:'13px',fontWeight:'700',border:'1.5px solid #99f0ee'}}>{o}</span>
+                        <span key={i} style={{padding:'5px 12px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',borderRadius:'8px',fontSize:'13px',fontWeight:'700',border:'1.5px solid #99f0ee'}}>{o}</span>
                       ))}
                     </div>
                   )}
@@ -8461,7 +8479,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Additional payment methods</label>
                       {createCollectionData.paymentMethods.slice(1).map((pm,idx)=>
                         pm.saved ? (
-                          <div key={idx+1} style={{background:'#f0fdf4',borderRadius:'8px',padding:'10px',marginBottom:'8px',border:'1px solid #bbf7d0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <div key={idx+1} style={{background:'var(--success-tint)',borderRadius:'8px',padding:'10px',marginBottom:'8px',border:'1px solid #bbf7d0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                             <span style={{fontSize:'13px',fontWeight:'600'}}>{pm.network}: {pm.number}{pm.name?` (${pm.name})`:''}</span>
                             <div style={{display:'flex',gap:'8px'}}>
                               <button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:false};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#3b82f6',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>Edit</button>
@@ -8471,15 +8489,15 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         ) : (
                           <div key={idx+1} style={{background:'#f9fafb',borderRadius:'10px',padding:'12px',marginBottom:'8px',border:'1.5px solid #0d9488'}}>
                             <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}><span style={{fontSize:'12px',fontWeight:'600',color:'#6b7280'}}>Method {idx+2}</span><button onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated.splice(idx+1,1);setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{fontSize:'11px',color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontWeight:'600'}}>✕ Cancel</button></div>
-                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>{["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","CRDB","NMB"].map(net=>(<button key={net} type="button" onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],network:net};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #0d9488':'1px solid #e2e6ea',background:pm.network===net?'#ccfbf1':'#fff',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>))}</div>
+                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}}>{["M-Pesa","Tigo Pesa","Airtel Money","Halopesa","AzamPesa","CRDB","NMB"].map(net=>(<button key={net} type="button" onClick={()=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],network:net};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{padding:'4px 10px',borderRadius:'6px',border:pm.network===net?'2px solid #0d9488':'1px solid #e2e6ea',background:pm.network===net?'#ccfbf1':'var(--surface-bg)',fontSize:'11px',cursor:'pointer',fontWeight:pm.network===net?'600':'400'}}>{net}</button>))}</div>
                             <input type="tel" placeholder="Number" value={pm.number} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],number:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'6px'}}/>
                             <input type="text" placeholder="Account name" value={pm.name} onChange={e=>{const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],name:e.target.value};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
-                            <button onClick={()=>{if(!pm.number.trim()){setError("Please enter a payment number");return;}const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:true};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save</button>
+                            <button onClick={()=>{if(!pm.number.trim()){setError("Please enter a payment number");return;}const updated=[...createCollectionData.paymentMethods];updated[idx+1]={...updated[idx+1],saved:true};setCreateCollectionData({...createCollectionData,paymentMethods:updated});}} style={{width:'100%',padding:'10px',background:'var(--accent-teal)',color:'#0f1b2d',border:'none',borderRadius:'8px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>✓ Save</button>
                           </div>
                         )
                       )}
                       {createCollectionData.paymentMethods.length < 2 && (
-                        <button type="button" onClick={()=>setCreateCollectionData({...createCollectionData,paymentMethods:[...createCollectionData.paymentMethods,{network:"Tigo Pesa",number:"",name:"",saved:false}]})} style={{padding:'10px 16px',background:'#fff',color:'#0d9488',border:'1.5px dashed #0d9488',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
+                        <button type="button" onClick={()=>setCreateCollectionData({...createCollectionData,paymentMethods:[...createCollectionData.paymentMethods,{network:"Tigo Pesa",number:"",name:"",saved:false}]})} style={{padding:'10px 16px',background:'var(--surface-bg)',color:'#0d9488',border:'1.5px dashed #0d9488',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',width:'100%'}}>+ Add Another Payment Method</button>
                       )}
                     </div>
 
@@ -8496,7 +8514,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 )}
 
-                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
+                <button onClick={handleCreateCollection} disabled={uploading} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Creating...":"📋 Create order / event"}</button>
               </>
             )}
           </div>
@@ -8518,7 +8536,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <span style={{marginLeft:'8px',fontSize:'11px',background:'#dbeafe',color:'#1e40af',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👥 Co-admin</span>
               )}
               {user?.uid === viewingCollection.userId && (
-                <span style={{marginLeft:'8px',fontSize:'11px',background:'#ccfbf1',color:'#0f766e',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
+                <span style={{marginLeft:'8px',fontSize:'11px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'2px 8px',borderRadius:'6px',fontWeight:'600'}}>👑 Creator</span>
               )}
             </div>
 
@@ -8533,7 +8551,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </button>
                 <button
                   onClick={() => deleteCollection(viewingCollection.id)}
-                  style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'10px',background:'#fee2e2',color:'#991b1b',border:'1.5px solid #fecaca',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}
+                  style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',padding:'10px',background:'var(--danger-tint)',color:'var(--danger-dark)',border:'1.5px solid #fecaca',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}
                 >
                   🗑️ Delete
                 </button>
@@ -8542,7 +8560,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             
             <div style={{fontFamily:'serif',fontSize:'28px',fontWeight:'700',color:'#f59e0b',marginBottom:'12px'}}>{viewingCollection.price?.toLocaleString()} TSh <span style={{fontSize:'14px',fontFamily:'system-ui',fontWeight:'400',color:'#8a9bb0'}}>per person</span></div>
 
-            {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'#ccfbf1',color:'#0f766e',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
+            {(viewingCollection.communityType || viewingCollection.collectionType) && <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}}><span style={{fontSize:'11px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.collectionType || "order"}</span><span style={{fontSize:'11px',background:'#f4f6f8',color:'#6b7280',padding:'3px 8px',borderRadius:'8px',fontWeight:'600'}}>{viewingCollection.communityType || "community"}</span></div>}
 
             {viewingCollection.description && <p style={{fontSize:'14px',color:'#4a5568',lineHeight:1.6,marginBottom:'16px',whiteSpace:'pre-wrap'}}>{viewingCollection.description}</p>}
 
@@ -8550,22 +8568,22 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             {/* Stats cards */}
             <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
-              <div style={{flex:1,background:'#ccfbf1',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+              <div style={{flex:1,background:'var(--accent-teal-tint)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'24px',fontWeight:'700',color:'#f59e0b'}}>{viewingCollection.totalOrders || 0}{viewingCollection.expectedPeople ? <span style={{fontSize:'14px',fontWeight:'400',color:'#f59e0b'}}>/{viewingCollection.expectedPeople}</span> : ''}</div>
-                <div style={{fontSize:'11px',color:'#0f766e'}}>Ordered</div>
+                <div style={{fontSize:'11px',color:'var(--accent-teal-dark)'}}>Ordered</div>
               </div>
               <div style={{flex:1,background:'#d1fae5',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'24px',fontWeight:'700',color:'#22c55e'}}>{viewingCollection.totalPaid || 0}</div>
-                <div style={{fontSize:'11px',color:'#065f46'}}>Paid</div>
+                <div style={{fontSize:'11px',color:'var(--success-dark)'}}>Paid</div>
               </div>
-              <div style={{flex:1,background:'#fee2e2',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+              <div style={{flex:1,background:'var(--danger-tint)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'24px',fontWeight:'700',color:'#ef4444'}}>{(viewingCollection.totalOrders||0)-(viewingCollection.totalPaid||0)}</div>
-                <div style={{fontSize:'11px',color:'#991b1b'}}>Unpaid</div>
+                <div style={{fontSize:'11px',color:'var(--danger-dark)'}}>Unpaid</div>
               </div>
             </div>
 
             {/* Amount collected */}
-            <div style={{background:'#fff',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea',marginBottom:'16px'}}>
+            <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'14px',border:'1px solid #e2e6ea',marginBottom:'16px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontSize:'13px',color:'#6b7280'}}>Amount Collected</span>
                 <span style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#22c55e'}}>{((viewingCollection.totalPaid||0) * viewingCollection.price).toLocaleString()} TSh</span>
@@ -8610,7 +8628,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             {/* Edit Collection (for creator) */}
             {editingCollection && isCollectionAdmin(viewingCollection) && (
-              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #3b82f6',marginBottom:'16px'}}>
+              <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'2px solid #3b82f6',marginBottom:'16px'}}>
                 <h3 style={{fontSize:'15px',fontWeight:'700',marginBottom:'12px'}}>Edit Collection</h3>
                 <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Title</label><input type="text" defaultValue={viewingCollection.title} id="edit-col-title" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',marginTop:'4px'}}/></div>
                 <div style={{marginBottom:'10px'}}><label style={{fontSize:'12px',fontWeight:'600'}}>Description</label><textarea defaultValue={viewingCollection.description} id="edit-col-desc" style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',minHeight:'60px',fontFamily:'inherit',boxSizing:'border-box',marginTop:'4px'}}/></div>
@@ -8642,7 +8660,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               }
               msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
-            }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
+            }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
               📲 Share on WhatsApp
             </button>
 
@@ -8652,7 +8670,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* STEP 1: Place Order — collapses after placed */}
                 {!myOrderId ? (
-                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #0d9488',marginBottom:'12px'}}>
+                  <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'2px solid #0d9488',marginBottom:'12px'}}>
                     <h3 style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px',color:'#0f1b2d'}}>{(()=>{
                       const ct = viewingCollection.collectionType || "order";
                       const headers = { order:"📝 Place Your Order", event:"🎟 Register for Event", contribution:"💰 Add Yourself", freshers:"🎓 Join Support" };
@@ -8672,7 +8690,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         </label>
                         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
                           {viewingCollection.options.map((opt,i)=>(
-                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'10px 18px',borderRadius:'10px',border:orderFormData.selectedOption===opt?'2.5px solid #0d9488':'2px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#ccfbf1':'#fff',color:'#0f1b2d',fontSize:'15px',fontWeight:'800',cursor:'pointer',transition:'all 0.1s',boxShadow:orderFormData.selectedOption===opt?'0 2px 8px rgba(245,158,11,0.3)':'none'}}>{opt}</button>
+                            <button key={i} onClick={()=>setOrderFormData({...orderFormData,selectedOption:opt})} style={{padding:'10px 18px',borderRadius:'10px',border:orderFormData.selectedOption===opt?'2.5px solid #0d9488':'2px solid #e2e6ea',background:orderFormData.selectedOption===opt?'#ccfbf1':'var(--surface-bg)',color:'#0f1b2d',fontSize:'15px',fontWeight:'800',cursor:'pointer',transition:'all 0.1s',boxShadow:orderFormData.selectedOption===opt?'0 2px 8px rgba(245,158,11,0.3)':'none'}}>{opt}</button>
                           ))}
                         </div>
                         {!orderFormData.selectedOption && <div style={{fontSize:'11px',color:'#0d9488',marginTop:'6px',fontWeight:'600'}}>⚠ Please select an option above</div>}
@@ -8689,19 +8707,19 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       };
                       const lbl = labels[ct] || labels.order;
                       return (
-                        <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer',letterSpacing:'0.2px'}}>
+                        <button onClick={()=>placeOrder(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:uploading?'not-allowed':'pointer',letterSpacing:'0.2px'}}>
                           {uploading ? lbl.loading : lbl.idle}
                         </button>
                       );
                     })()}
                   </div>
                 ) : (
-                  <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0',marginBottom:'12px'}}>
+                  <div style={{background:'var(--success-tint)',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0',marginBottom:'12px'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}}>
                       <span style={{fontSize:'20px'}}>✅</span>
-                      <span style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>{(()=>{const ct=viewingCollection.collectionType||"order";return ct==="event"?"Registered!":ct==="contribution"?"Added to collection!":ct==="freshers"?"Joined!":"Order Placed!";})()}</span>
+                      <span style={{fontSize:'15px',fontWeight:'700',color:'var(--success-text)'}}>{(()=>{const ct=viewingCollection.collectionType||"order";return ct==="event"?"Registered!":ct==="contribution"?"Added to collection!":ct==="freshers"?"Joined!":"Order Placed!";})()}</span>
                     </div>
-                    <div style={{fontSize:'13px',color:'#166534',marginBottom:'10px'}}>
+                    <div style={{fontSize:'13px',color:'var(--success-text)',marginBottom:'10px'}}>
                       {(()=>{
                         const methods = viewingCollection.paymentMethods || (viewingCollection.payNumber ? [{ network: viewingCollection.payNetwork || "Mobile Money", number: viewingCollection.payNumber }] : []);
                         return methods.length > 0 ? (
@@ -8709,7 +8727,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         ) : 'You\'ve been added. Confirm your payment below when ready.';
                       })()}
                     </div>
-                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:"",paymentRef:"",amountPaid:"",payerName:"",paymentProofFile:null,paymentProofPreview:null});}} style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
+                    <button onClick={()=>{setMyOrderId(null);setPaymentConfirmed(false);setOrderFormData({...orderFormData,selectedOption:"",studentName:userName,phone:"",paymentRef:"",amountPaid:"",payerName:"",paymentProofFile:null,paymentProofPreview:null});}} style={{padding:'8px 16px',background:'var(--surface-bg)',color:'var(--success-text)',border:'1.5px solid #bbf7d0',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
                       {(()=>{const ct=viewingCollection.collectionType||"order";return ct==="event"?"+ Register Another Person":ct==="contribution"?"+ Add Another Person":"+ Place Another Order";})()}
                     </button>
                   </div>
@@ -8717,7 +8735,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* STEP 2: Confirm Payment — only shows after order is placed */}
                 {myOrderId && !paymentConfirmed && !collectionOrders.find(o=>o.userId===user?.uid)?.paid && (
-                  <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'2px solid #10b981'}}>
+                  <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'2px solid #10b981'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}><span style={{fontSize:'16px'}}>💰</span><span style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>Confirm Payment</span></div>
                     <div style={{fontSize:'12px',color:'#8a9bb0',marginBottom:'12px'}}>Already sent the money? Fill in your payment details so the rep can verify</div>
                     
@@ -8731,29 +8749,29 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <input type="file" id="payment-proof" accept="image/*" style={{display:'none'}} onChange={handlePaymentProofSelect}/>
                     <label htmlFor="payment-proof" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
                       {orderFormData.paymentProofPreview ? (
-                        <div style={{border:'1.5px solid #bbf7d0',borderRadius:'10px',padding:'8px',background:'#f0fdf4'}}>
+                        <div style={{border:'1.5px solid #bbf7d0',borderRadius:'10px',padding:'8px',background:'var(--success-tint)'}}>
                           <img src={orderFormData.paymentProofPreview} alt="Payment proof preview" style={{width:'100%',maxHeight:'180px',objectFit:'cover',borderRadius:'8px'}}/>
-                          <div style={{fontSize:'12px',color:'#166534',fontWeight:'600',marginTop:'6px'}}>Proof screenshot attached. Tap to change.</div>
+                          <div style={{fontSize:'12px',color:'var(--success-text)',fontWeight:'600',marginTop:'6px'}}>Proof screenshot attached. Tap to change.</div>
                         </div>
                       ) : (
-                        <div style={{border:'1.5px dashed #10b981',borderRadius:'10px',padding:'14px',textAlign:'center',background:'#f0fdf4'}}>
+                        <div style={{border:'1.5px dashed #10b981',borderRadius:'10px',padding:'14px',textAlign:'center',background:'var(--success-tint)'}}>
                           <div style={{fontSize:'20px',marginBottom:'4px'}}>📷</div>
-                          <div style={{fontSize:'13px',fontWeight:'700',color:'#166534'}}>Attach payment screenshot</div>
+                          <div style={{fontSize:'13px',fontWeight:'700',color:'var(--success-text)'}}>Attach payment screenshot</div>
                           <div style={{fontSize:'11px',color:'#6b7280',marginTop:'3px'}}>Optional but recommended for informal payments</div>
                         </div>
                       )}
                     </label>
-                    <button onClick={()=>confirmPayment(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Confirming...":"✅ Confirm Payment"}</button>
+                    <button onClick={()=>confirmPayment(viewingCollection)} disabled={uploading} style={{width:'100%',padding:'14px',background:'var(--success)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Confirming...":"✅ Confirm Payment"}</button>
                   </div>
                 )}
 
                 {/* Payment confirmed success */}
                 {paymentConfirmed && (
-                  <div style={{background:'#f0fdf4',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0'}}>
+                  <div style={{background:'var(--success-tint)',borderRadius:'12px',padding:'16px',border:'1.5px solid #bbf7d0'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
                       <span style={{fontSize:'20px'}}>🎉</span>
                       <div>
-                        <div style={{fontSize:'15px',fontWeight:'700',color:'#166534'}}>Payment Confirmed!</div>
+                        <div style={{fontSize:'15px',fontWeight:'700',color:'var(--success-text)'}}>Payment Confirmed!</div>
                         <div style={{fontSize:'12px',color:'#15803d',marginTop:'2px'}}>The rep can now verify your transaction</div>
                       </div>
                     </div>
@@ -8763,7 +8781,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             )}
 
             {!user && viewingCollection.active && (
-              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:'pointer',marginBottom:'16px'}}>
+              <button onClick={()=>requireAuth("order",()=>{})} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'700',cursor:'pointer',marginBottom:'16px'}}>
                 {(()=>{
                   const ct = viewingCollection.collectionType || "order";
                   const signInLabels = { order:"Sign in to Order", event:"Sign in to Register", contribution:"Sign in to Contribute", freshers:"Sign in to Join" };
@@ -8777,7 +8795,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               <div style={{marginBottom:'16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
                   <h3 style={{fontSize:'16px',fontWeight:'700'}}>Orders ({collectionOrders.length})</h3>
-                  {viewingCollection.active && <button onClick={()=>closeCollection(viewingCollection.id)} style={{padding:'6px 14px',background:'#fee2e2',color:'#991b1b',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Close Collection</button>}
+                  {viewingCollection.active && <button onClick={()=>closeCollection(viewingCollection.id)} style={{padding:'6px 14px',background:'var(--danger-tint)',color:'var(--danger-dark)',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>Close Collection</button>}
                 </div>
 
                 {/* Search orders + Scan QR */}
@@ -8789,7 +8807,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         <span style={{fontSize:'14px'}}>🔍</span>
                       </div>
                     )}
-                    <button onClick={openScanner} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap',flexShrink:0}}>
+                    <button onClick={openScanner} style={{padding:'8px 14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'700',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px',whiteSpace:'nowrap',flexShrink:0}}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
                       Scan QR
                     </button>
@@ -8797,7 +8815,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 )}
                 
                 {collectionOrders.length === 0 ? (
-                  <div style={{textAlign:'center',padding:'32px',background:'#fff',borderRadius:'12px',color:'#8a9bb0'}}>No orders yet. Share this collection with your class!</div>
+                  <div style={{textAlign:'center',padding:'32px',background:'var(--surface-bg)',borderRadius:'12px',color:'#8a9bb0'}}>No orders yet. Share this collection with your class!</div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
                     {collectionOrders.filter(order => {
@@ -8809,7 +8827,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       const statusBg = order.paid ? '#d1fae5' : (order.amountPaid > 0 ? '#ccfbf1' : '#fff');
                       const statusText = order.paid ? 'PAID' : (order.amountPaid > 0 ? `${order.amountPaid.toLocaleString()}/${order.amount.toLocaleString()}` : 'UNPAID');
                       return (
-                      <div key={order.id} style={{background:'#fff',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea'}}>
+                      <div key={order.id} style={{background:'var(--surface-bg)',borderRadius:'10px',padding:'12px',border:'1px solid #e2e6ea'}}>
                         <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
                           {/* Paid toggle */}
                           <button onClick={()=>toggleOrderPaid(viewingCollection.id,order.id,order.paid,order.amount)} style={{width:'36px',height:'36px',borderRadius:'50%',border:`2px solid ${statusColor}`,background:statusBg,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'16px',flexShrink:0}}>
@@ -8819,10 +8837,10 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:'14px',fontWeight:'600',color:statusColor}}>{order.studentName}</div>
                             <div style={{fontSize:'12px',color:'#8a9bb0',lineHeight:1.6}}>
-                              {order.selectedOption && <span style={{background:'#ccfbf1',color:'#0f766e',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
+                              {order.selectedOption && <span style={{background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.selectedOption}</span>}
                               {order.payerName && <span style={{background:'#eff6ff',color:'#1e40af',padding:'1px 6px',borderRadius:'4px',marginRight:'4px',fontSize:'11px'}}>{order.payerName}</span>}
                               {order.phone && <span>{order.phone} • </span>}
-                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'#f0fdf4',color:'#22c55e',padding:'1px 6px',borderRadius:'4px',fontSize:'11px',fontWeight:'800'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
+                              {order.paymentRef ? <span style={{fontFamily:'monospace',background:'var(--success-tint)',color:'#22c55e',padding:'1px 6px',borderRadius:'4px',fontSize:'11px',fontWeight:'800'}}>{order.paymentRef}</span> : <span style={{color:'#ef4444',fontSize:'11px'}}>No ref</span>} {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:'11px',color:'#0d9488',fontWeight:'700',marginLeft:'6px'}}>View proof</a>}
                             </div>
                           </div>
                           
@@ -8834,7 +8852,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                         {order.amountPaid > 0 && !order.paid && (
                           <div style={{marginTop:'8px',marginLeft:'48px'}}>
                             <div style={{height:'4px',background:'#f4f6f8',borderRadius:'2px',overflow:'hidden'}}>
-                              <div style={{height:'100%',width:`${Math.min(100,Math.round((order.amountPaid/order.amount)*100))}%`,background:'#0d9488',borderRadius:'2px'}}/>
+                              <div style={{height:'100%',width:`${Math.min(100,Math.round((order.amountPaid/order.amount)*100))}%`,background:'var(--accent-teal)',borderRadius:'2px'}}/>
                             </div>
                             <div style={{fontSize:'10px',color:'#8a9bb0',marginTop:'2px'}}>{Math.round((order.amountPaid/order.amount)*100)}% paid — {(order.amount-order.amountPaid).toLocaleString()} TSh remaining</div>
                           </div>
@@ -8869,7 +8887,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       }
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     }
-                  }} style={{width:'100%',padding:'12px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                  }} style={{width:'100%',padding:'12px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginTop:'12px',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
                     📲 {collectionOrders.length === 0 ? 'Share on WhatsApp' : 'Share Payment Status on WhatsApp'}
                   </button>
               </div>
@@ -8890,8 +8908,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     {/* QR TICKET — only shown when admin has confirmed payment */}
                     {order.paid && (
                       <div style={{marginTop:'14px',paddingTop:'14px',borderTop:'1px solid #6ee7b7',textAlign:'center'}}>
-                        <div style={{fontSize:'12px',fontWeight:'700',color:'#065f46',marginBottom:'8px'}}>🎟 Your Entry QR — show the QR to the admin</div>
-                        <div style={{display:'inline-block',padding:'12px',background:'#fff',borderRadius:'12px',border:'2px solid #6ee7b7'}}>
+                        <div style={{fontSize:'12px',fontWeight:'700',color:'var(--success-dark)',marginBottom:'8px'}}>🎟 Your Entry QR — show the QR to the admin</div>
+                        <div style={{display:'inline-block',padding:'12px',background:'var(--surface-bg)',borderRadius:'12px',border:'2px solid #6ee7b7'}}>
                           <QRCodeSVG
                             value={`https://kampasika.org/verify/${viewingCollection.id}/${order.id}`}
                             size={160}
@@ -8920,13 +8938,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>🏠 Find a Room</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'#fff',color:'#06d6c7',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'var(--surface-bg)',color:'var(--accent-teal-bright)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
               <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
             </div>
           </div>
 
           {/* Search & Filters */}
-          <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'#fff',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+          <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
             <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
               onChange={e => {
                 setRoomSearchQ(e.target.value);
@@ -8982,7 +9000,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
                 {filtered.map(room => (
-                  <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                     {room.photoUrl ? (
                       <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
                     ) : (
@@ -9014,7 +9032,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {/* ============ CREATE ROOM LISTING ============ */}
       {ENABLE_ROOMS && page==="createRoom"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
-          <div style={{background:'#fff',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{showCreateRoomSuccess?"Room Listed!":"List a Room"}</h2>
             {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'16px'}}>List your room and students will contact you directly.</p>}
             {showCreateRoomSuccess ? (
@@ -9032,7 +9050,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <label htmlFor="room-photo" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
                   {createRoomData.photoPreviews.length > 0 ? (
                     <div><img src={createRoomData.photoPreviews[0]} alt="" style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'12px',marginBottom:'6px'}}/>
-                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #06d6c7',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'#06d6c7'}}>+</span></div>}</div>
+                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #06d6c7',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'var(--accent-teal-bright)'}}>+</span></div>}</div>
                     </div>
                   ) : (
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
@@ -9065,7 +9083,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     ) : (
                       <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'16px',textAlign:'center',background:'#f0fffe'}}>
                         <div style={{fontSize:'24px',marginBottom:'4px'}}>🏠</div>
-                        <span style={{fontSize:'13px',color:'#06d6c7',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
+                        <span style={{fontSize:'13px',color:'var(--accent-teal-bright)',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
                         <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'3px'}}>Helps students recognise the house from outside</div>
                       </div>
                     )}
@@ -9079,7 +9097,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Room Type *</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
-                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'#fff',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
+                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'var(--surface-bg)',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
                     ))}
                   </div>
                 </div>
@@ -9136,7 +9154,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_AMENITIES.map(a=>{const sel=(createRoomData.amenities||[]).includes(a.id);return(
-                      <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'#fff',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
+                      <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'var(--surface-bg)',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
                     );})}
                   </div>
                 </div>
@@ -9154,7 +9172,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
       {ENABLE_ROOMS && viewingRoom && (
         <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
           {/* Header */}
-          <div style={{background:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
+          <div style={{background:'var(--surface-bg)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
             <button onClick={handleRoomBack} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
             <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
           </div>
@@ -9176,7 +9194,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   }
                 />
                 {!roomUserCanAccessRooms && (
-                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'#0f1b2d',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
+                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'#0f1b2d',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
                     Reserve / verify to unlock exact map
                   </button>
                 )}
@@ -9195,7 +9213,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       '_blank'
                     );
                   }}
-                  style={{position:'absolute',top:'12px',right:'12px',background:'#fff',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
+                  style={{position:'absolute',top:'12px',right:'12px',background:'var(--surface-bg)',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                   {roomUserCanAccessRooms ? "Open in Maps" : "Reserve"}
@@ -9203,12 +9221,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
 
               {/* Room summary strip */}
-              <div style={{background:'#fff',padding:'14px 16px',borderBottom:'1px solid #e2e6ea',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{background:'var(--surface-bg)',padding:'14px 16px',borderBottom:'1px solid #e2e6ea',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
                   <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
                   <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#06d6c7'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/mo</span></div>
               </div>
 
               {/* Outdoor / Indoor cards */}
@@ -9216,7 +9234,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* OUTDOOR card */}
                 {viewingRoom.photos?.[0] && (
-                <div style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'1px solid #e2e6ea',cursor:'default'}}>
+                <div style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'1px solid #e2e6ea',cursor:'default'}}>
                     <img src={viewingRoom.photos[0]} alt="Outdoor" style={{width:'100%',height:'130px',objectFit:'cover'}} onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}}/>
                   <div style={{padding:'10px 12px'}}>
                     <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Outdoor</div>
@@ -9226,7 +9244,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 )}
 
                 {/* INDOOR card — tappable */}
-                <div onClick={openRoomIndoorView} style={{background:'#fff',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
+                <div onClick={openRoomIndoorView} style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
                   {viewingRoom.photos && viewingRoom.photos.length > 1 ? (
                     <img src={viewingRoom.photos[1]} alt="Indoor" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
                   ) : (
@@ -9289,13 +9307,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 )}
 
                 {viewingRoom.description && (
-                  <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                  <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
                     <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>Details</h4>
                     <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
                   </div>
                 )}
 
-                <div style={{background:'#fff',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
                   <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
                   {roomUserCanAccessRooms ? (
                     <>
@@ -9305,13 +9323,13 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   ) : (
                     <div>
                       <div style={{fontSize:'14px',color:'#6b7280',lineHeight:1.5,marginBottom:'12px'}}>Complete Room User Verification to view contact information and map details.</div>
-                      <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Reserve / verify to view contact</button>
+                      <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Reserve / verify to view contact</button>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div style={{position:'sticky',bottom:0,background:'#fff',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+              <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
                 <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':roomUserCanAccessRooms?'#25D366':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📱 WhatsApp" : "Reserve"}</button>
                 <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📞 Call" : "Verify"}</button>
               </div>
@@ -9328,7 +9346,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             
             {/* Post form */}
             {user && (
-              <div style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'1.5px solid #e2e6ea',marginBottom:'16px'}}>
+              <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1.5px solid #e2e6ea',marginBottom:'16px'}}>
                 <h3 style={{fontSize:'15px',fontWeight:'600',marginBottom:'12px'}}>Post that you're looking</h3>
                 <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
                   <div style={{flex:1}}><input type="number" placeholder="Budget (TSh/mo)" value={createRoommateData.budget} onChange={e=>setCreateRoommateData({...createRoommateData,budget:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
@@ -9345,11 +9363,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             {/* Roommate posts */}
             {roommatePosts.length === 0 ? (
-              <div style={{textAlign:'center',padding:'32px',background:'#fff',borderRadius:'12px',color:'#8a9bb0'}}>No roommate posts yet</div>
+              <div style={{textAlign:'center',padding:'32px',background:'var(--surface-bg)',borderRadius:'12px',color:'#8a9bb0'}}>No roommate posts yet</div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
                 {roommatePosts.map(post=>(
-                  <div key={post.id} style={{background:'#fff',borderRadius:'12px',padding:'16px',border:'1px solid #e2e6ea'}}>
+                  <div key={post.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1px solid #e2e6ea'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
                       <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:post.userAvatar?`url(${post.userAvatar})`:'none',backgroundColor:!post.userAvatar?'#06d6c7':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',color:'#fff'}}>{!post.userAvatar&&(post.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
                       <div><div style={{fontSize:'14px',fontWeight:'600'}}>{post.userName}</div><div style={{fontSize:'11px',color:'#8a9bb0'}}>{post.universityName}</div></div>
@@ -9358,7 +9376,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'3px 10px',borderRadius:'8px',fontWeight:'500'}}>Budget: {post.budget?.toLocaleString()} TSh</span>
                       <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>📍 {post.preferredArea}</span>
                       {post.gender && <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>{post.gender === 'male' ? '👨' : post.gender === 'female' ? '👩' : '👤'} {post.gender}</span>}
-                      {post.moveDate && <span style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
+                      {post.moveDate && <span style={{fontSize:'12px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
                     </div>
                     {post.description && <p style={{fontSize:'13px',color:'#4a5568',lineHeight:1.5}}>{post.description}</p>}
                   </div>
@@ -9378,7 +9396,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           ) : (
           <>
           {/* Seller Hero - Instagram style */}
-          <div style={{background:'#fff',padding:'20px 18px',borderBottom:'1px solid #f0f2f5'}}>
+          <div style={{background:'var(--surface-bg)',padding:'20px 18px',borderBottom:'1px solid #f0f2f5'}}>
             {/* Top row: avatar + stats */}
             <div style={{display:'flex',alignItems:'center',gap:'20px',marginBottom:'14px'}}>
               <div style={{position:'relative',flexShrink:0}}>
@@ -9401,7 +9419,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
                 {publicSellerStats && publicSellerStats.sold > 0 && (
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:'18px',fontWeight:'700',color:'#06d6c7',lineHeight:1.1}}>{publicSellerStats.sold}</div>
+                    <div style={{fontSize:'18px',fontWeight:'700',color:'var(--accent-teal-bright)',lineHeight:1.1}}>{publicSellerStats.sold}</div>
                     <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Sold</div>
                   </div>
                 )}
@@ -9437,7 +9455,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
                 const msg = `Check out ${publicSeller.name}'s listings on Kampasika!\n\n${profileUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-              }} style={{flex:1,padding:'9px',background:'#25D366',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
+              }} style={{flex:1,padding:'9px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
                 📲 Share
               </button>
               <button onClick={()=>{
@@ -9460,7 +9478,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             
             {publicSellerListings.length === 0 ? (
               publicSellerServices.length === 0 ? (
-                <div style={{textAlign:'center',padding:'40px 16px',background:'#fff',borderRadius:'12px'}}>
+                <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'40px',marginBottom:'12px'}}>📭</div>
                   <div style={{fontSize:'14px',color:'#8a9bb0'}}>Nothing active right now</div>
                 </div>
@@ -9486,7 +9504,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       style={{
                         flexShrink:0,
                         width:'160px',
-                        background:'#fff',
+                        background:'var(--surface-bg)',
                         borderRadius:'12px',
                         border:'1px solid #e2e6ea',
                         overflow:'hidden',
@@ -9513,7 +9531,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <div style={{display:'flex',flexDirection:'column'}}>
                 {publicSellerListings.map((item, idx) => (
-                  <div key={item.id} style={{background:'#fff',borderBottom:idx===publicSellerListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===publicSellerListings.length-1?'0 0 12px 12px':'0'}}>
+                  <div key={item.id} style={{background:'var(--surface-bg)',borderBottom:idx===publicSellerListings.length-1?'none':'1px solid #e2e6ea',padding:'16px',borderRadius:idx===0?'12px 12px 0 0':idx===publicSellerListings.length-1?'0 0 12px 12px':'0'}}>
                     {(item.photos && item.photos.length > 0) ? (
                       <img src={item.photos[0]} alt={item.title} onClick={()=>{setFullScreenImage(item.photos[0]);setFullScreenPhotos(item.photos);setFullScreenIndex(0);}} style={{width:'100%',height:'220px',objectFit:'cover',borderRadius:'10px',marginBottom:'10px',cursor:'pointer'}} />
                     ) : item.photoUrl ? (
@@ -9525,8 +9543,8 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price?.toLocaleString()} TSh</div>
                       <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
                         {item.condition && <span style={{fontSize:'11px',color:'#6b7280',background:'#f4f6f8',padding:'2px 8px',borderRadius:'8px'}}>{item.condition}</span>}
-                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'#06d6c7',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
-                        <button onClick={()=>shareOnWhatsApp(item)} style={{fontSize:'12px',color:'#25D366',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📲</button>
+                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'var(--accent-teal-bright)',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
+                        <button onClick={()=>shareOnWhatsApp(item)} style={{fontSize:'12px',color:'var(--whatsapp-green)',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📲</button>
                       </div>
                     </div>
                   </div>
@@ -9546,7 +9564,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   const cat = SERVICE_CATEGORIES.find(c=>c.id===svc.category);
                   const cover = (svc.photos && svc.photos[0]) || svc.photoUrl;
                   return (
-                    <div key={svc.id} onClick={()=>{closeSellerProfile();setTimeout(()=>setViewingService(svc),100);}} style={{background:'#fff',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                    <div key={svc.id} onClick={()=>{closeSellerProfile();setTimeout(()=>setViewingService(svc),100);}} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
                       {cover ? (
                         <img src={cover} alt={svc.title} style={{width:'100%',height:'110px',objectFit:'cover'}}/>
                       ) : (
@@ -9573,7 +9591,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           <div style={{padding:'16px',textAlign:'center',fontSize:'12px',color:'#8a9bb0',lineHeight:'1.6'}}>
             <p>{publicSeller.name} is a student seller on Kampasika, the campus marketplace. Browse their listings, message them directly, or share their profile with friends.</p>
             <p style={{marginTop:'8px'}}>
-              <span style={{fontFamily:'serif',fontWeight:'700',color:'#0f1b2d'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
+              <span style={{fontFamily:'serif',fontWeight:'700',color:'#0f1b2d'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
             </p>
           </div>
           </>
@@ -9590,14 +9608,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'40px',marginBottom:'12px'}}>🔒</div>
                 <div style={{fontSize:'16px',fontWeight:'600'}}>Admin access only</div>
                 <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Ukurasa huu ni kwa admin tu.</div>
-                <button onClick={()=>setPage("home")} style={{marginTop:'20px',padding:'10px 20px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>← Back to home</button>
+                <button onClick={()=>setPage("home")} style={{marginTop:'20px',padding:'10px 20px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>← Back to home</button>
               </div>
             ) : (
               <>
                 {/* Header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px',marginTop:'12px'}}>
                   <h1 style={{fontSize:'22px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>Admin Dashboard</h1>
-                  <button onClick={loadAdminData} disabled={adminLoading} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:adminLoading?'wait':'pointer'}}>
+                  <button onClick={loadAdminData} disabled={adminLoading} style={{padding:'8px 14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:adminLoading?'wait':'pointer'}}>
                     {adminLoading ? '...' : '↻ Refresh'}
                   </button>
                 </div>
@@ -9607,7 +9625,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'24px'}}>
                     {[
                       {label:'Users', data: adminStats.users, color:'#0d9488'},
-                      {label:'Search Alerts', data: adminStats.alerts, color:'#06d6c7'},
+                      {label:'Search Alerts', data: adminStats.alerts, color:'var(--accent-teal-bright)'},
                       {label:'Listings (Goods)', data: adminStats.listings, color:'#0d9488'},
                       {label:'Services', data: adminStats.services, color:'#0d9488'},
                       {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
@@ -9725,7 +9743,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <h2 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>
                       Verification Queue
                       {adminVerifications.filter(v => v.status === "pending").length > 0 && (
-                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'#ccfbf1',color:'#0f766e',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
+                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
                           {adminVerifications.filter(v => v.status === "pending").length} pending
                         </span>
                       )}
@@ -9792,7 +9810,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                 rejectingId === req.id ? (
                                   // Reject reason picker
                                   <div style={{background:'#fef2f2',borderRadius:'10px',padding:'10px',marginTop:'8px'}}>
-                                    <div style={{fontSize:'11px',fontWeight:'600',color:'#991b1b',marginBottom:'8px'}}>Sababu ya kukataa:</div>
+                                    <div style={{fontSize:'11px',fontWeight:'600',color:'var(--danger-dark)',marginBottom:'8px'}}>Sababu ya kukataa:</div>
                                     <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
                                       {[
                                         {id:'blurry',label:'Picha haijawa wazi'},
@@ -9801,7 +9819,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                         {id:'wrong_type',label:'Aina mbaya ya ID'},
                                         {id:'expired',label:'Imeisha muda'},
                                       ].map(r => (
-                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'#991b1b',cursor:'pointer',textAlign:'left'}}>
+                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'var(--danger-dark)',cursor:'pointer',textAlign:'left'}}>
                                           {r.label}
                                         </button>
                                       ))}
@@ -9810,16 +9828,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                                   </div>
                                 ) : (
                                   <div style={{display:'flex',gap:'6px'}}>
-                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
+                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
                                     <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'var(--surface-bg)',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
                                   </div>
                                 )
                               )}
                               {req.status === "approved" && (
-                                <div style={{padding:'6px 10px',background:'#dcfce7',color:'#166534',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✓ Approved {req.reviewedAt ? req.reviewedAt.toLocaleDateString() : ''}</div>
+                                <div style={{padding:'6px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✓ Approved {req.reviewedAt ? req.reviewedAt.toLocaleDateString() : ''}</div>
                               )}
                               {req.status === "rejected" && (
-                                <div style={{padding:'6px 10px',background:'#fee2e2',color:'#991b1b',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✗ Rejected ({req.rejectionReason || 'no reason'})</div>
+                                <div style={{padding:'6px 10px',background:'var(--danger-tint)',color:'var(--danger-dark)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✗ Rejected ({req.rejectionReason || 'no reason'})</div>
                               )}
                             </div>
                           );
@@ -9867,7 +9885,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                       {filtered.map(alert => {
                         const kindColors = {
-                          listing: {bg:'#ccfbf1',color:'#0f766e'},
+                          listing: {bg:'#ccfbf1',color:'var(--accent-teal-dark)'},
                           service: {bg:'#ede9fe',color:'#5b21b6'},
                           room: {bg:'#dbeafe',color:'#1e40af'},
                           collection: {bg:'#fce7f3',color:'#9f1239'},
@@ -9892,14 +9910,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                             {/* Status + actions */}
                             <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                               {alert.fulfilledAt ? (
-                                <span style={{padding:'5px 10px',background:'#dcfce7',color:'#166534',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
+                                <span style={{padding:'5px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
                               ) : alert.routedAt ? (
                                 <>
-                                  <span style={{padding:'5px 10px',background:'#ccfbf1',color:'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
-                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
+                                  <span style={{padding:'5px 10px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
+                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
                                 </>
                               ) : (
-                                <button onClick={()=>markAlertRouted(alert)} style={{padding:'5px 10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
+                                <button onClick={()=>markAlertRouted(alert)} style={{padding:'5px 10px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
                               )}
                             </div>
                           </div>
@@ -10017,14 +10035,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
                 <div>
                   <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>
-                    Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika
+                    Kam<em style={{color:'var(--accent-teal-bright)',fontStyle:'normal'}}>pa</em>sika
                   </div>
                   <p style={{fontSize:'12px',lineHeight:1.55,color:'var(--text-tertiary)',margin:'0 0 10px'}}>
                     Mtandao wa wanachuo kwa kuunda na kumanage vikundi, kukusanya michango na malipo, na kuunganisha jamii za chuo.
                   </p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
                     {['Groups', 'Collections', 'Payments', 'Verified'].map(tag => (
-                      <span key={tag} style={{fontSize:'10px',fontWeight:'800',color:'#0f766e',background:'#ecfeff',padding:'4px 8px',borderRadius:'8px'}}>{tag}</span>
+                      <span key={tag} style={{fontSize:'10px',fontWeight:'800',color:'var(--accent-teal-dark)',background:'#ecfeff',padding:'4px 8px',borderRadius:'8px'}}>{tag}</span>
                     ))}
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'12px'}}>
@@ -10063,7 +10081,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 </div>
                 <button type="button" aria-label="Close get verified" onClick={()=>setShowGetVerifiedBanner(false)} style={{width:'24px',height:'24px',borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.18)',color:'#fff',fontSize:'14px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>×</button>
               </div>
-              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',padding:'11px',background:'var(--surface-bg)',color:'#0f766e',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>
+              <button type="button" onClick={()=>{setShowGetVerifiedBanner(false);setShowVerifyModal(true);}} style={{width:'100%',padding:'11px',background:'var(--surface-bg)',color:'var(--accent-teal-dark)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>
                 Anza kuthibitisha
               </button>
             </div>
@@ -10151,7 +10169,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
     type="button"
     onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}}
     aria-label="Change profile picture"
-    style={{position:'absolute',bottom:'-3px',right:'-3px',width:'24px',height:'24px',borderRadius:'50%',background:'#0f1b2d',border:'2px solid #fff',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'800',cursor:'pointer',padding:0}}
+    style={{position:'absolute',bottom:'-3px',right:'-3px',width:'24px',height:'24px',borderRadius:'50%',background:'var(--accent-navy)',border:'2px solid #fff',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'800',cursor:'pointer',padding:0}}
   >
     +
   </button>
@@ -10177,12 +10195,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
            </div>
            {ENABLE_PHONE_VERIFICATION && <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px',fontSize:'12px',color:phoneVerified?'#065f46':'#0f766e',fontWeight:'700'}}>
              <span>{phoneVerified ? 'Phone verified' : 'Phone not verified'}</span>
-             {!phoneVerified && <button type="button" onClick={()=>setShowPhoneVerifyModal(true)} style={{border:'none',background:'#ccfbf1',color:'#0f766e',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Verify now</button>}
+             {!phoneVerified && <button type="button" onClick={()=>setShowPhoneVerifyModal(true)} style={{border:'none',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',fontWeight:'800',cursor:'pointer'}}>Verify now</button>}
            </div>}
            {/* Edit profile + QR buttons */}
            <div style={{display:'flex',gap:'8px'}}>
              <button onClick={()=>{setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true)}} style={{flex:1,padding:'8px',background:'var(--page-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>Edit Profile</button>
-             <button onClick={()=>setShowQRModal(true)} style={{padding:'8px 14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+             <button onClick={()=>setShowQRModal(true)} style={{padding:'8px 14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="19" y="14" width="2" height="2"/><rect x="14" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/></svg>
                My QR
              </button>
@@ -10192,7 +10210,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
              <button type="button" onClick={()=>{setShowAboutBanner(true);setShowVerifiedBanner(false);setShowGetVerifiedBanner(false);}} style={{flex:1,padding:'8px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>About</button>
            </div>
            {isAdmin && (
-             <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'10px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
+             <button onClick={()=>setPage("admin")} style={{width:'100%',padding:'10px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
                Admin Dashboard
              </button>
            )}
@@ -10211,10 +10229,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           )}
           
           <div style={{display:'flex',gap:'4px',background:'var(--surface-bg)',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
-            <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
-            {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
-            {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
-            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'#8a9bb0',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
+            <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
+            {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
+            {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
+            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
           </div>
 
           {profileTab==="collections"&&(
@@ -10368,8 +10386,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                         {openListingId!==item.id && <span style={{fontSize:'11px',color:'var(--text-secondary)'}}>Tap to manage</span>}
                       </div>
                      {openListingId===item.id && <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
-                        {!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'#10b981',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
-                        <button onClick={(e)=>{e.stopPropagation();deleteListing(item.id);}} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
+                        {!item.sold&&<button onClick={(e)=>{e.stopPropagation();markAsSold(item.id);}} style={{padding:'8px 16px',background:'var(--success)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>✓ Mark as Sold</button>}
+                        <button onClick={(e)=>{e.stopPropagation();deleteListing(item.id);}} style={{padding:'8px 16px',background:'var(--danger)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Delete</button>
                       </div>}
                     </div>
                   ))}
@@ -10387,7 +10405,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   <div style={{fontSize:'40px'}}>⚡</div>
                   <div style={{fontSize:'16px',fontWeight:'600',marginTop:'12px'}}>No services listed</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'4px'}}>Offer your skills to fellow students</div>
-                  <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
+                  <button onClick={()=>setPage("createService")} style={{marginTop:'16px',padding:'10px 20px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Offer a Service</button>
                 </div>
               ) : (
                 <>
@@ -10407,10 +10425,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                           <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{SERVICE_CATEGORIES.find(c=>c.id===svc.category)?.name}</div>
                         </div>
                       </div>
-                      <button onClick={()=>deleteService(svc.id)} style={{padding:'8px 16px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
+                      <button onClick={()=>deleteService(svc.id)} style={{padding:'8px 16px',background:'var(--danger)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>🗑 Remove</button>
                     </div>
                   ))}
-                  <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
+                  <button onClick={()=>setPage("createService")} style={{padding:'12px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>+ Add Another Service</button>
                 </>
               )}
             </div>
@@ -10507,7 +10525,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       
       {/* ============ QR PAYMENT SCANNER MODAL ============ */}
       {showQRScanner && (
-        <div style={{position:'fixed',inset:0,background:'#0f1b2d',zIndex:4000,display:'flex',flexDirection:'column'}}>
+        <div style={{position:'fixed',inset:0,background:'var(--accent-navy)',zIndex:4000,display:'flex',flexDirection:'column'}}>
           {/* Header */}
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px',background:'rgba(0,0,0,0.4)'}}>
             <div style={{color:'#fff',fontSize:'16px',fontWeight:'700'}}>Scan Payment QR</div>
@@ -10559,11 +10577,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <div style={{fontSize:'20px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'4px'}}>{scanResult.order.studentName}</div>
                 <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'4px'}}>{scanResult.collectionTitle}</div>
                 {scanResult.groupTitle && <div style={{fontSize:'12px',color:'#0d9488',fontWeight:'800',marginBottom:'8px'}}>{scanResult.groupTitle}</div>}
-                {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'#ccfbf1',color:'#0f766e',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
-                {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'#166534',background:'#f0fdf4',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
+                {scanResult.order.selectedOption && <div style={{fontSize:'12px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 10px',borderRadius:'8px',display:'inline-block',marginBottom:'8px'}}>{scanResult.order.selectedOption}</div>}
+                {scanResult.order.paymentRef && <div style={{fontSize:'12px',fontFamily:'monospace',color:'var(--success-text)',background:'var(--success-tint)',padding:'4px 10px',borderRadius:'6px',marginBottom:'16px'}}>Ref: {scanResult.order.paymentRef}</div>}
                 <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
                   {!(scanResult.order.approved || scanResult.order.paid) && (
-                    <button onClick={confirmScanPayment} disabled={scanLoading} style={{flex:1,padding:'12px',background:'#10b981',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>
+                    <button onClick={confirmScanPayment} disabled={scanLoading} style={{flex:1,padding:'12px',background:'var(--success)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>
                       {scanLoading ? 'Confirming...' : '✓ Mark as Paid'}
                     </button>
                   )}
@@ -10624,7 +10642,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
             <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
               {userName}
-              {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'#06d6c7'}}>✓</span>}
+              {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'var(--accent-teal-bright)'}}>✓</span>}
             </div>
             <div style={{
               display:'inline-block',
@@ -10674,7 +10692,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   const msg = `Check out my Kampasika profile!\nhttps://kampasika.org/u/${user.uid}`;
                   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                 }}
-                style={{flex:1,padding:'11px',background:'#25D366',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}
+                style={{flex:1,padding:'11px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                 WhatsApp
@@ -10770,7 +10788,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       } else if (current.length < 3) {
                         setEditProfileData({...editProfileData, services: [...current, tag.id]});
                       }
-                    }} style={{padding:'6px 12px',borderRadius:'20px',border: selected ? '2px solid #06d6c7' : '1.5px solid #e2e6ea',background: selected ? '#f0fffe' : '#fff',color: selected ? '#0f1b2d' : '#6b7280',fontSize:'12px',fontWeight:'500',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',opacity: !selected && (editProfileData.services||[]).length >= 3 ? 0.4 : 1}}>
+                    }} style={{padding:'6px 12px',borderRadius:'20px',border: selected ? '2px solid #06d6c7' : '1.5px solid var(--border-color)',background: selected ? '#f0fffe' : 'var(--surface-bg)',color: selected ? '#0f1b2d' : 'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',opacity: !selected && (editProfileData.services||[]).length >= 3 ? 0.4 : 1}}>
                       {tag.icon} {tag.label}
                     </button>
                   );
@@ -10798,7 +10816,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </div>
               <button type="button" onClick={()=>setShowSetPasswordModal(false)} disabled={setPasswordReason === "logout" && !userHasPassword} style={{background:'none',border:'none',fontSize:'24px',cursor:(setPasswordReason === "logout" && !userHasPassword)?'not-allowed':'pointer',color:'var(--text-secondary)',lineHeight:1,opacity:(setPasswordReason === "logout" && !userHasPassword)?0.35:1}}>×</button>
             </div>
-            {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
+            {error && <div style={{background:'var(--danger-tint)',color:'var(--danger-dark)',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
             <div style={{marginBottom:'12px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'700',marginBottom:'6px'}}>Password</label>
               <input type={showPassword?"text":"password"} placeholder="At least 6 characters" value={setPasswordData.password} onChange={e=>setSetPasswordData({...setPasswordData,password:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}} />
@@ -10812,7 +10830,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <input type="checkbox" checked={showPassword} onChange={e=>setShowPassword(e.target.checked)} />
               Show password
             </label>
-            <button type="button" onClick={handleSetAccountPassword} disabled={settingPassword} style={{width:'100%',padding:'13px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',cursor:settingPassword?'wait':'pointer'}}>
+            <button type="button" onClick={handleSetAccountPassword} disabled={settingPassword} style={{width:'100%',padding:'13px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',cursor:settingPassword?'wait':'pointer'}}>
               {settingPassword ? "Saving..." : setPasswordReason === "logout" ? "Set password and log out" : "Save password"}
             </button>
             {setPasswordReason !== "logout" && (
@@ -10827,16 +10845,16 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',boxSizing:'border-box'}} onClick={(e)=>e.stopPropagation()}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',marginBottom:'14px'}}>
               <div>
-                <h3 style={{fontSize:'20px',fontWeight:'900',color:'#991b1b',margin:'0 0 6px'}}>Delete account</h3>
+                <h3 style={{fontSize:'20px',fontWeight:'900',color:'var(--danger-dark)',margin:'0 0 6px'}}>Delete account</h3>
                 <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:0}}>
                   This deletes your Kampasika profile and account data connected to this login where possible.
                 </p>
               </div>
               <button type="button" onClick={()=>setShowDeleteAccountModal(false)} disabled={deletingAccount} style={{background:'none',border:'none',fontSize:'24px',cursor:deletingAccount?'wait':'pointer',color:'var(--text-secondary)',lineHeight:1}}>×</button>
             </div>
-            {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
+            {error && <div style={{background:'var(--danger-tint)',color:'var(--danger-dark)',padding:'12px',borderRadius:'8px',marginBottom:'14px',fontSize:'13px'}}>{error}</div>}
             <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'12px',padding:'12px',marginBottom:'14px'}}>
-              <div style={{fontSize:'13px',fontWeight:'900',color:'#991b1b',marginBottom:'6px'}}>What will happen</div>
+              <div style={{fontSize:'13px',fontWeight:'900',color:'var(--danger-dark)',marginBottom:'6px'}}>What will happen</div>
               <ul style={{margin:'0 0 0 18px',padding:0,color:'#7f1d1d',fontSize:'12px',lineHeight:1.5}}>
                 <li>Your profile and sign-in account will be deleted.</li>
                 <li>Your listings, services, rooms, alerts, verification requests, and notifications will be removed where possible.</li>
@@ -11049,7 +11067,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           fontFamily:'serif',
           fontSize:'32px',
           fontWeight:'700',
-          color:'#06d6c7',
+          color:'var(--accent-teal-bright)',
           marginBottom:'16px'
         }}>
           {viewingListing.price.toLocaleString()} TSh
@@ -11231,7 +11249,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               >
                 <WhatsAppIcon size={22} color="#25D366" />
                 <div>
-                  <div style={{fontSize:'13px',fontWeight:'600',color:'#166534'}}>WhatsApp Available</div>
+                  <div style={{fontSize:'13px',fontWeight:'600',color:'var(--success-text)'}}>WhatsApp Available</div>
                   <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Tap to chat directly with seller</div>
                 </div>
               </div>
@@ -11357,8 +11375,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             }}
             style={{
               padding:'16px 16px',
-              background:'#fee2e2',
-              color:'#991b1b',
+              background:'var(--danger-tint)',
+              color:'var(--danger-dark)',
               border:'none',
               borderRadius:'10px',
               fontSize:'15px',
@@ -11399,12 +11417,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <div style={{background:'#fffbeb',color:'#92400e',border:'1px solid #fde68a',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Your Room User Verification is waiting for admin review.</div>
             )}
             {roomUserVerificationStatus === "approved" && (
-              <div style={{background:'#d1fae5',color:'#065f46',border:'1px solid #a7f3d0',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Room User Verification approved.</div>
+              <div style={{background:'#d1fae5',color:'var(--success-dark)',border:'1px solid #a7f3d0',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Room User Verification approved.</div>
             )}
             {!userAvatar && (
-              <div style={{background:'#fef2f2',color:'#991b1b',border:'1px solid #fecaca',borderRadius:'10px',padding:'12px',fontSize:'13px',marginBottom:'14px'}}>
+              <div style={{background:'#fef2f2',color:'var(--danger-dark)',border:'1px solid #fecaca',borderRadius:'10px',padding:'12px',fontSize:'13px',marginBottom:'14px'}}>
                 <strong style={{display:'block',marginBottom:'6px'}}>Profile picture required</strong>
-                <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true);}} style={{padding:'9px 12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Add profile picture</button>
+                <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true);}} style={{padding:'9px 12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Add profile picture</button>
               </div>
             )}
             <div style={{marginBottom:'12px'}}>
@@ -11602,7 +11620,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       : (studentIdFile && !uploading ? '#0d9488' : '#e2e6ea'),
     color: verificationStatus === "pending"
       ? '#6b7280'
-      : (studentIdFile && !uploading ? '#fff' : '#8a9bb0'),
+      : (studentIdFile && !uploading ? '#fff' : 'var(--text-secondary)'),
     border:'none',
     borderRadius:'10px',
     fontSize:'14px',
@@ -11658,7 +11676,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               ))}
             </div>
             
-            <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'#ef4444',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
+            <button onClick={submitReport} disabled={!reportReason} style={{width:'100%',padding:'12px',background:'var(--danger)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:reportReason?'pointer':'not-allowed',opacity:reportReason?1:0.5}}>Submit Report</button>
             <button onClick={()=>{setShowReportModal(false);setReportTarget(null);setReportReason("");}} style={{width:'100%',padding:'12px',background:'transparent',color:'var(--text-secondary)',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginTop:'8px'}}>Cancel</button>
           </div>
         </div>
@@ -11891,7 +11909,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               onKeyDown={e=>{ if (e.key==='Enter') submitPhoneAndSaveAlert(); }}
               style={{width:'100%',padding:'14px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'12px'}}
             />
-            <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
+            <button onClick={submitPhoneAndSaveAlert} style={{width:'100%',padding:'14px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}}>
               Hifadhi na uniarifu
             </button>
             <button onClick={()=>{ setPhonePromptOpen(false); setPendingAlert(null); }} style={{width:'100%',padding:'10px',background:'transparent',color:'var(--text-secondary)',border:'none',fontSize:'13px',cursor:'pointer'}}>
@@ -11908,12 +11926,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         >
           <div
             onClick={e=>e.stopPropagation()}
-            style={{width:'100%',maxWidth:'390px',background:'#fff',borderRadius:'18px',padding:'18px',boxShadow:'0 18px 48px rgba(15,27,45,0.24)',border:'1px solid #dce3ea',boxSizing:'border-box'}}
+            style={{width:'100%',maxWidth:'390px',background:'var(--surface-bg)',borderRadius:'18px',padding:'18px',boxShadow:'0 18px 48px rgba(15,27,45,0.24)',border:'1px solid #dce3ea',boxSizing:'border-box'}}
           >
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'14px',marginBottom:'10px'}}>
               <div>
                 <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'900',color:'#0f1b2d',lineHeight:1.1}}>
-                  {showAboutBanner ? <>Kam<em style={{color:'#06d6c7',fontStyle:'normal'}}>pa</em>sika</> : showVerifiedBanner ? 'Verification status' : 'Get verified'}
+                  {showAboutBanner ? <>Kam<em style={{color:'var(--accent-teal-bright)',fontStyle:'normal'}}>pa</em>sika</> : showVerifiedBanner ? 'Verification status' : 'Get verified'}
                 </div>
                 <p style={{fontSize:'13px',lineHeight:1.55,color:'#536173',margin:'8px 0 0'}}>
                   {showAboutBanner
@@ -11948,10 +11966,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <div style={{position:'fixed',inset:0,background:'#f6f8fb',zIndex:500,display:'flex',alignItems:'stretch',justifyContent:'center',overflowY:'auto'}}>
           <div style={{width:'100%',maxWidth:'440px',minHeight:'100dvh',padding:'42px 24px 28px',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'center'}}>
             <div style={{position:'relative',marginBottom:'28px',textAlign:'center'}}>
-              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'#0f1b2d',margin:0,textAlign:'center'}}>Kam<em style={{color:'#06d6c7'}}>pa</em>sika</h2>
-              <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'#fff',border:'1px solid #e2e6ea',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'#667085',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'#0f1b2d',margin:0,textAlign:'center'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</h2>
+              <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'#667085',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             </div>
-            {error && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
+            {error && <div style={{background:'var(--danger-tint)',color:'var(--danger-dark)',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
             {authMode==="signup"?(
               <>
                 {signupAwaitingOtp ? (
@@ -11961,7 +11979,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
                       <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
                     </div>
-                    <button onClick={handleConfirmSignupOtp} disabled={signupOtpBusy || signupOtpCode.length !== 6} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:signupOtpBusy?'wait':'pointer',opacity:signupOtpCode.length===6?1:0.6}}>{signupOtpBusy?"Verifying...":"Verify and Create Account"}</button>
+                    <button onClick={handleConfirmSignupOtp} disabled={signupOtpBusy || signupOtpCode.length !== 6} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:signupOtpBusy?'wait':'pointer',opacity:signupOtpCode.length===6?1:0.6}}>{signupOtpBusy?"Verifying...":"Verify and Create Account"}</button>
                   </>
                 ) : (
                   <>
@@ -11975,7 +11993,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       flex:1,
                       padding:'12px',
                       background: isStudent ? '#0f1b2d' : '#fff',
-                      color: isStudent ? '#fff' : '#0f1b2d',
+                      color: isStudent ? '#fff' : 'var(--text-primary)',
                       border: isStudent ? '1.5px solid #0f1b2d' : '1.5px solid #e2e6ea',
                       borderRadius:'10px',
                       fontSize:'14px',
@@ -11987,7 +12005,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       flex:1,
                       padding:'12px',
                       background: !isStudent ? '#0f1b2d' : '#fff',
-                      color: !isStudent ? '#fff' : '#0f1b2d',
+                      color: !isStudent ? '#fff' : 'var(--text-primary)',
                       border: !isStudent ? '1.5px solid #0f1b2d' : '1.5px solid #e2e6ea',
                       borderRadius:'10px',
                       fontSize:'14px',
@@ -12012,10 +12030,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                     </div>
                   </div>
                 )}
-                <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
+                <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
               </>
             ):(
               <>
@@ -12026,7 +12044,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
                       <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={loginOtpCode} onChange={e=>setLoginOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
                     </div>
-                    <button onClick={handleConfirmLoginOtp} disabled={loading || loginOtpCode.length !== 6} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer',opacity:loginOtpCode.length===6?1:0.6}}>{loading?"Verifying...":"Verify and Log In"}</button>
+                    <button onClick={handleConfirmLoginOtp} disabled={loading || loginOtpCode.length !== 6} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer',opacity:loginOtpCode.length===6?1:0.6}}>{loading?"Verifying...":"Verify and Log In"}</button>
                     <button type="button" onClick={()=>{setLoginAwaitingOtp(false);setLoginOtpCode("");setAuthOtpRequestId("");setError("");}} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Use another number</button>
                   </>
                 ) : loginUsePassword ? (
@@ -12034,18 +12052,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
-                <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
-                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
+                <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
+                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
                   </>
                 ) : (
                   <>
                     <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
                     <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                    <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Sending code...":"Send OTP"}</button>
-                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
+                    <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Sending code...":"Send OTP"}</button>
+                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'#06d6c7',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
               </>
             )}
           </div>
@@ -12054,7 +12072,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {ENABLE_PHONE_VERIFICATION && showPhoneVerifyModal && user && !phoneVerified && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowPhoneVerifyModal(false)}>
-          <div style={{background:'#fff',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'390px',boxShadow:'0 18px 50px rgba(15,27,45,0.22)'}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'390px',boxShadow:'0 18px 50px rgba(15,27,45,0.22)'}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:'20px',fontWeight:'900',color:'#0f1b2d',marginBottom:'6px'}}>Verify your phone</div>
             <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.5,marginBottom:'16px'}}>
               This helps protect groups, orders, payments, and event registrations.
@@ -12083,11 +12101,11 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               </>
             )}
             <div style={{display:'flex',gap:'8px',marginTop:'6px'}}>
-              <button type="button" onClick={requestPhoneOtp} disabled={phoneOtpBusy} style={{flex:1,padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer'}}>
+              <button type="button" onClick={requestPhoneOtp} disabled={phoneOtpBusy} style={{flex:1,padding:'12px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer'}}>
                 {phoneOtpBusy ? 'Please wait...' : phoneOtpSent ? 'Resend code' : 'Send code'}
               </button>
               {phoneOtpSent && (
-                <button type="button" onClick={verifyPhoneOtp} disabled={phoneOtpBusy || phoneOtpCode.length!==6} style={{flex:1,padding:'12px',background:'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer',opacity:phoneOtpCode.length===6?1:0.55}}>
+                <button type="button" onClick={verifyPhoneOtp} disabled={phoneOtpBusy || phoneOtpCode.length!==6} style={{flex:1,padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'900',cursor:phoneOtpBusy?'wait':'pointer',opacity:phoneOtpCode.length===6?1:0.55}}>
                   Verify
                 </button>
               )}
@@ -12174,7 +12192,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showQuickActions && (
         <div onClick={() => setShowQuickActions(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.42)',zIndex:2200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'#fff',borderRadius:'18px 18px 0 0',padding:'14px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.22)'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'var(--surface-bg)',borderRadius:'18px 18px 0 0',padding:'14px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.22)'}}>
             <div style={{width:'42px',height:'4px',borderRadius:'999px',background:'#d7e1e6',margin:'0 auto 12px'}} />
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
               <div>
@@ -12185,18 +12203,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'9px'}}>
               {ENABLE_GROUP_FILES && <button type="button" onClick={() => { if (!user) { requireAuth("upload files", () => setShowQuickActions(true)); return; } setShowQuickUpload(true); if (!quickUploadGroupId) { const firstGroup = groupsForSelectedUni.find(group => myGroupMemberships[group.id] === "active" || group.ownerUid === user.uid || group.adminUid === user.uid); if (firstGroup) setQuickUploadGroupId(firstGroup.id); } }} style={{border:'1px solid #ccebea',background:'#effefe',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
-                <strong style={{display:'block',fontSize:'14px',color:'#0f766e'}}>Upload files</strong>
+                <strong style={{display:'block',fontSize:'14px',color:'var(--accent-teal-dark)'}}>Upload files</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#486171',marginTop:'3px'}}>PDF, PPTX, DOCX, images</span>
               </button>}
-              <button type="button" onClick={() => { setShowQuickActions(false); user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+              <button type="button" onClick={() => { setShowQuickActions(false); user ? setShowCreateGroup(true) : requireAuth("createGroup", () => setShowCreateGroup(true)); }} style={{border:'1px solid #dbe8e7',background:'var(--surface-bg)',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create group</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Class, course, club</span>
               </button>
-              <button type="button" onClick={() => { setShowQuickActions(false); setCreateCollectionData(prev => ({...prev, collectionType:'event', price:''})); user ? setPage('createCollection') : requireAuth("create event", () => setPage('createCollection')); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+              <button type="button" onClick={() => { setShowQuickActions(false); setCreateCollectionData(prev => ({...prev, collectionType:'event', price:''})); user ? setPage('createCollection') : requireAuth("create event", () => setPage('createCollection')); }} style={{border:'1px solid #dbe8e7',background:'var(--surface-bg)',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Create collection/event</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Register, collect, track</span>
               </button>
-              {ENABLE_ROOMS && <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("createRoom") : requireAuth("list room", () => setPage("createRoom")); }} style={{border:'1px solid #dbe8e7',background:'#fff',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
+              {ENABLE_ROOMS && <button type="button" onClick={() => { setShowQuickActions(false); user ? setPage("createRoom") : requireAuth("list room", () => setPage("createRoom")); }} style={{border:'1px solid #dbe8e7',background:'var(--surface-bg)',borderRadius:'10px',padding:'12px',textAlign:'left',cursor:'pointer'}}>
                 <strong style={{display:'block',fontSize:'14px',color:'#0f1b2d'}}>Add room</strong>
                 <span style={{display:'block',fontSize:'11px',color:'#667085',marginTop:'3px'}}>Room listing</span>
               </button>}
@@ -12211,7 +12229,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showQuickUpload && (
         <div onClick={() => setShowQuickUpload(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.48)',zIndex:2300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'#fff',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'var(--surface-bg)',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
             <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d',marginBottom:'4px'}}>Upload files to group</div>
             <div style={{fontSize:'12px',color:'#667085',marginBottom:'14px'}}>Choose destination, then pick files from your phone.</div>
             <label style={{display:'block',fontSize:'12px',fontWeight:800,color:'#0f1b2d',marginBottom:'6px'}}>Group</label>
@@ -12224,7 +12242,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             <label style={{display:'block',fontSize:'12px',fontWeight:800,color:'#0f1b2d',marginBottom:'6px'}}>Folder</label>
             <input value={quickUploadFolder} onChange={event => setQuickUploadFolder(event.target.value)} placeholder="e.g. Topographical Surveying" style={{width:'100%',padding:'12px',border:'1.5px solid #dbe8e7',borderRadius:'10px',fontSize:'15px',marginBottom:'12px',boxSizing:'border-box'}} />
             <input ref={quickUploadInputRef} type="file" accept={QUICK_FILE_ACCEPT} multiple style={{display:'none'}} onChange={event => setQuickUploadFiles(Array.from(event.target.files || []))} />
-            <button type="button" onClick={() => quickUploadInputRef.current?.click()} style={{width:'100%',padding:'13px',border:'1.5px dashed #0d9488',borderRadius:'10px',background:'#effefe',color:'#0f766e',fontSize:'15px',fontWeight:900,cursor:'pointer',marginBottom:'10px'}}>
+            <button type="button" onClick={() => quickUploadInputRef.current?.click()} style={{width:'100%',padding:'13px',border:'1.5px dashed #0d9488',borderRadius:'10px',background:'#effefe',color:'var(--accent-teal-dark)',fontSize:'15px',fontWeight:900,cursor:'pointer',marginBottom:'10px'}}>
               {quickUploadFiles.length ? `${quickUploadFiles.length} selected` : "Choose files from phone"}
             </button>
             {quickUploadFiles.length > 0 && (
@@ -12234,7 +12252,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 ))}
               </div>
             )}
-            {quickUploadStatus && <div style={{padding:'9px 10px',borderRadius:'8px',background:'#effefe',color:'#0f766e',fontSize:'12px',fontWeight:900,marginBottom:'10px'}}>{quickUploadStatus}</div>}
+            {quickUploadStatus && <div style={{padding:'9px 10px',borderRadius:'8px',background:'#effefe',color:'var(--accent-teal-dark)',fontSize:'12px',fontWeight:900,marginBottom:'10px'}}>{quickUploadStatus}</div>}
             <div style={{display:'flex',gap:'8px'}}>
               <button type="button" disabled={uploading} onClick={handleQuickUploadFiles} style={{flex:1,padding:'13px',border:0,borderRadius:'10px',background:'#06d6c7',color:'#0f1b2d',fontSize:'15px',fontWeight:900,cursor:uploading?'wait':'pointer'}}>{uploading ? "Uploading..." : "Upload"}</button>
               <button type="button" disabled={uploading} onClick={() => { setShowQuickUpload(false); resetQuickUpload(); }} style={{padding:'13px 16px',border:0,borderRadius:'10px',background:'#f1f5f7',color:'#486171',fontSize:'15px',fontWeight:900,cursor:'pointer'}}>Cancel</button>
@@ -12245,7 +12263,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {showQuickSavedFiles && (
         <div onClick={() => setShowQuickSavedFiles(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.48)',zIndex:2300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',maxHeight:'78vh',overflowY:'auto',background:'#fff',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
+          <div onClick={event => event.stopPropagation()} style={{width:'100%',maxWidth:'520px',maxHeight:'78vh',overflowY:'auto',background:'var(--surface-bg)',borderRadius:'18px 18px 0 0',padding:'16px 14px max(16px, env(safe-area-inset-bottom))',boxShadow:'0 -16px 40px rgba(15,27,45,0.24)'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',marginBottom:'12px'}}>
               <div>
                 <div style={{fontSize:'17px',fontWeight:900,color:'#0f1b2d'}}>Saved files</div>
@@ -12257,14 +12275,14 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               <div style={{border:'1px solid #dbe8e7',borderRadius:'10px',padding:'18px',textAlign:'center',color:'#667085',fontSize:'13px',fontWeight:700}}>No saved files yet. Open a group resource and tap Save offline first.</div>
             ) : Object.entries(quickSavedFileGroups).map(([section, items]) => (
               <div key={section} style={{border:'1px solid #eef3f4',borderRadius:'10px',overflow:'hidden',marginBottom:'10px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'9px 10px',background:'#f8fbfc',fontSize:'12px',fontWeight:900,color:'#0f766e'}}><span>{section}</span><span>{items.length}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between',gap:'10px',padding:'9px 10px',background:'#f8fbfc',fontSize:'12px',fontWeight:900,color:'var(--accent-teal-dark)'}}><span>{section}</span><span>{items.length}</span></div>
                 {items.map(item => (
                   <div key={`${item.groupId}-${item.id}`} style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) auto',borderTop:'1px solid #eef3f4'}}>
-                    <button type="button" onClick={() => openQuickSavedFile(item)} style={{minWidth:0,border:0,background:'#fff',padding:'10px',textAlign:'left',cursor:'pointer'}}>
+                    <button type="button" onClick={() => openQuickSavedFile(item)} style={{minWidth:0,border:0,background:'var(--surface-bg)',padding:'10px',textAlign:'left',cursor:'pointer'}}>
                       <strong style={{display:'block',fontSize:'13px',fontWeight:900,color:'#0f1b2d',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.title || item.fileName || "Saved file"}</strong>
                       <span style={{display:'block',fontSize:'11px',fontWeight:700,color:'#667085',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.groupName}{item.savedAt ? ` - ${new Date(item.savedAt).toLocaleDateString()}` : ""}</span>
                     </button>
-                    <button type="button" onClick={() => removeQuickSavedFile(item)} style={{border:0,background:'#fff',padding:'0 10px',color:'#991b1b',fontSize:'11px',fontWeight:900,cursor:'pointer'}}>Remove</button>
+                    <button type="button" onClick={() => removeQuickSavedFile(item)} style={{border:0,background:'var(--surface-bg)',padding:'0 10px',color:'var(--danger-dark)',fontSize:'11px',fontWeight:900,cursor:'pointer'}}>Remove</button>
                   </div>
                 ))}
               </div>
