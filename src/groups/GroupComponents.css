@@ -2029,12 +2029,12 @@
 
 .chat-input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   min-height: 72px;
-  padding: 10px 11px;
+  padding: 12px 11px;
   border: 1px solid rgba(208, 213, 221, 0.9);
-  border-radius: 28px;
+  border-radius: 24px;
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 14px 34px rgba(15, 27, 45, 0.2);
   backdrop-filter: blur(10px);
@@ -2048,16 +2048,18 @@
 
 .chat-input-row textarea {
   flex: 1;
-  min-height: 38px;
-  max-height: 104px;
+  min-height: 48px;
+  max-height: 160px;
   border: none;
   outline: none;
   resize: none;
-  padding: 9px 2px;
+  padding: 12px 4px;
   background: transparent;
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.4;
   color: var(--text-primary);
+  overflow-y: auto;
 }
 
 .chat-input-row textarea::placeholder {
@@ -2187,9 +2189,18 @@
   color: var(--text-primary);
 }
 
+.dark-mode .chat-plus-btn {
+  background: #2a3942;
+}
+
 .chat-close-btn {
   background: #f3f6f8;
   color: #475467;
+}
+
+.dark-mode .chat-close-btn {
+  background: #2a3942;
+  color: var(--text-secondary);
 }
 
 .chat-send-btn {
@@ -2312,6 +2323,38 @@
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.chat-manual-pay-number-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-manual-pay-copy-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.chat-manual-pay-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-manual-pay-number-row span {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
 }
 
 .chat-manual-pay-providers {

@@ -522,6 +522,7 @@ function App() {
   const [myCollections, setMyCollections] = useState([]);
   const [viewingCommunity, setViewingCommunity] = useState(null);
   const feedsHydratedRef = useRef(false);
+  const authResolvedRef = useRef(false);
   const [discoverCacheLoaded, setDiscoverCacheLoaded] = useState(false);
   const [cachedDiscoverFeed, setCachedDiscoverFeed] = useState({
     listings: [],
@@ -1893,7 +1894,12 @@ useEffect(() => {
   const markFeedsHydrated = useCallback(() => {
     if (feedsHydratedRef.current) return;
     feedsHydratedRef.current = true;
-    setLoading(false);
+    // Don't clear the splash until Firebase Auth has also resolved whether
+    // there's a signed-in user — otherwise, if the (public, cache-readable)
+    // feeds happen to load before auth restoration finishes, the loading
+    // screen clears while `user` is still null, briefly showing the
+    // signed-out welcome page to someone who's actually already logged in.
+    if (authResolvedRef.current) setLoading(false);
   }, []);
 
   const loadListings = useCallback(() => {
@@ -3167,6 +3173,8 @@ await updateDoc(convRef, {
     window.addEventListener('popstate', handlePopState);
     
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      authResolvedRef.current = true;
+      if (feedsHydratedRef.current) setLoading(false);
       if (currentUser) {
         setUser(currentUser);
         // Keep splash until first listings snapshot (or timeout) — avoids empty home flash
@@ -3997,6 +4005,13 @@ useEffect(() => {
   return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [activeConversation, page, user]);
+
+useEffect(() => {
+  if (page !== "chat" || !activeConversation) return;
+  const el = document.getElementById("messages-container");
+  if (!el) return;
+  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+}, [page, activeConversation, messages.length]);
 
 useEffect(() => {
   const container = document.getElementById('messages-container');

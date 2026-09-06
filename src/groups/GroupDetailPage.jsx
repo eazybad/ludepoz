@@ -295,6 +295,7 @@ function MenuIcon({ name }) {
     share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 10.7l6.8-4.4" /><path d="M8.6 13.3l6.8 4.4" /></>,
     more: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
     pin: <><path d="M12 17v5" /><path d="M9 10.5 5 12l1.5-4L5 4l7 3 7-3-1.5 4L19 12l-4 1.5" /><path d="M9 10.5 14.5 16" /></>,
+    copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -556,6 +557,7 @@ export function GroupDetailPage({
   const [paymentData, setPaymentData] = useState(emptyPayment);
   const [manualPayMode, setManualPayMode] = useState(false);
   const [manualPayDeclared, setManualPayDeclared] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(48);
   const [sectionReadAt, setSectionReadAt] = useState(() => {
     try { return JSON.parse(localStorage.getItem("groupSectionReadAt") || "{}"); } catch (_) { return {}; }
   });
@@ -595,6 +597,7 @@ export function GroupDetailPage({
   const groupNavDepth = useRef(0);
   const chatBottomRef = useRef(null);
   const messageListRef = useRef(null);
+  const chatTextareaRef = useRef(null);
   const chatPhotoInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   const chatToolsMenuRef = useRef(null);
@@ -636,6 +639,28 @@ export function GroupDetailPage({
     if (roundNumber > 1) return item.title || `${baseTitle} ${roundNumber}`;
     if (item.status === "archived" && roundNumber === 1) return `${baseTitle || item.title} 1`;
     return item.title || baseTitle;
+  };
+
+  // "Payment numbers" is free text the organizer typed (e.g. "M-Pesa 0712345678,
+  // Airtel Money 0787654321"). Best-effort split into {label, number} pairs so
+  // each number can be shown with its own copy button, instead of one blob of text.
+  const parsePaymentMethods = (text) => {
+    if (!text) return [];
+    return text.split(/,|\n/).map(segment => segment.trim()).filter(Boolean).map(segment => {
+      const numberMatch = segment.match(/(?:\+?255|0)\d{8,9}/);
+      const number = numberMatch ? numberMatch[0] : "";
+      const label = number ? segment.replace(number, "").replace(/[-:]/g, "").trim() : segment;
+      return { label: label || "Number", number };
+    }).filter(entry => entry.number);
+  };
+
+  const handleCopyPaymentNumber = async (number) => {
+    try {
+      await navigator.clipboard.writeText(number);
+      onSuccess("Number copied.");
+    } catch (err) {
+      onError(new Error("Couldn't copy — long-press the number to copy it manually."));
+    }
   };
   const visibleCollections = collections.filter(canSeeCollection);
   const selectedCollection = visibleCollections.find(item => item.id === selectedCollectionId) || null;
@@ -1195,7 +1220,14 @@ export function GroupDetailPage({
       el.scrollTop = el.scrollHeight;
       setShowJumpToLatest(false);
     });
-  }, [activeTab, chatMessages.length, showChatComposer, replyToMessage, showChatTools]);
+  }, [activeTab, chatMessages.length, showChatComposer, replyToMessage, showChatTools, composerHeight]);
+
+  useEffect(() => {
+    if (!messageText) {
+      setComposerHeight(48);
+      if (chatTextareaRef.current) chatTextareaRef.current.style.height = "48px";
+    }
+  }, [messageText]);
 
   useEffect(() => {
     if (activeTab !== "chats" || unreadChatMessages.length === 0) return;
@@ -3771,7 +3803,21 @@ export function GroupDetailPage({
                         )}
                         {manualPayMode && !manualPayDeclared && (
                           <div className="chat-manual-pay-panel">
-                            <small>Send {Number(selectedChatPaymentTarget.amount || 0).toLocaleString()} TSh to: {selectedChatPaymentTarget.paymentMethods || "the number the organizer shared"}</small>
+                            <small>Send {Number(selectedChatPaymentTarget.amount || 0).toLocaleString()} TSh to:</small>
+                            {(() => {
+                              const parsedNumbers = parsePaymentMethods(selectedChatPaymentTarget.paymentMethods);
+                              if (parsedNumbers.length === 0) {
+                                return <small>{selectedChatPaymentTarget.paymentMethods || "the number the organizer shared"}</small>;
+                              }
+                              return parsedNumbers.map((entry, idx) => (
+                                <div key={idx} className="chat-manual-pay-number-row">
+                                  <button type="button" className="chat-manual-pay-copy-btn" aria-label="Copy number" onClick={() => handleCopyPaymentNumber(entry.number)}>
+                                    <MenuIcon name="copy" />
+                                  </button>
+                                  <span>{entry.number}{entry.label ? ` - ${entry.label}` : ""}</span>
+                                </div>
+                              ));
+                            })()}
                             <div className="chat-manual-pay-providers">
                               {MANUAL_PAY_PROVIDERS.map(p => (
                                 <button key={p.id} type="button" onClick={() => handleManualPayDial(p.code)}>{p.label}</button>
@@ -3808,7 +3854,20 @@ export function GroupDetailPage({
                       <button type="button" className="chat-emoji-btn" aria-label="Emoji picker" onClick={() => { setShowChatComposer(true); setShowEmojiPicker(value => !value); }}>
                         🙂
                       </button>
-                      <textarea value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="use @username to tag" rows={1} autoFocus />
+                      <textarea
+                        ref={chatTextareaRef}
+                        value={messageText}
+                        onChange={event => {
+                          setMessageText(event.target.value);
+                          event.target.style.height = "auto";
+                          const nextHeight = Math.min(event.target.scrollHeight, 160);
+                          event.target.style.height = `${nextHeight}px`;
+                          setComposerHeight(prev => (prev !== nextHeight ? nextHeight : prev));
+                        }}
+                        placeholder="use @username to tag"
+                        rows={1}
+                        autoFocus
+                      />
                       <button
                         type="button"
                         className="chat-close-btn"
