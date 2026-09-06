@@ -513,7 +513,6 @@ export function GroupDetailPage({
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuActivitySeen, setMenuActivitySeen] = useState(false);
-  const [pinDotSeen, setPinDotSeen] = useState(false);
   const [members, setMembers] = useState([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -557,6 +556,9 @@ export function GroupDetailPage({
   const [paymentData, setPaymentData] = useState(emptyPayment);
   const [manualPayMode, setManualPayMode] = useState(false);
   const [manualPayDeclared, setManualPayDeclared] = useState(false);
+  const [sectionReadAt, setSectionReadAt] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("groupSectionReadAt") || "{}"); } catch (_) { return {}; }
+  });
   const [manualPaymentData, setManualPaymentData] = useState(emptyManualPayment);
   const [showManualPaymentForm, setShowManualPaymentForm] = useState(false);
   const [paymentSearch, setPaymentSearch] = useState("");
@@ -805,6 +807,20 @@ export function GroupDetailPage({
     || null;
   const upcomingActivity = eventCollections[0] || null;
   const latestResource = visibleSortedResources[0] || null;
+
+  const markSectionRead = (section) => {
+    setSectionReadAt(prev => {
+      const next = { ...prev, [group.id]: { ...(prev[group.id] || {}), [section]: Date.now() } };
+      try { localStorage.setItem("groupSectionReadAt", JSON.stringify(next)); } catch (_) {}
+      return next;
+    });
+  };
+  const sectionReadTimes = sectionReadAt[group.id] || {};
+  const itemTime = (item) => (item?.updatedAt?.toMillis ? item.updatedAt.toMillis() : item?.createdAt?.toMillis ? item.createdAt.toMillis() : Number(item?.createdAt || 0));
+  const chatUnreadCount = chatMessages.filter(m => m.authorUid !== user?.uid && (m.createdAt?.toMillis ? m.createdAt.toMillis() : Number(m.createdAt || 0)) > (sectionReadTimes.chat || 0)).length;
+  const paymentUnreadCount = paymentCollections.filter(item => itemTime(item) > (sectionReadTimes.payment || 0)).length;
+  const activityUnreadCount = eventCollections.filter(item => itemTime(item) > (sectionReadTimes.activity || 0)).length;
+  const fileUnreadCount = visibleSortedResources.filter(item => itemTime(item) > (sectionReadTimes.resources || 0)).length;
   const groupScreenSavedAt = screenCacheRef.current?.savedAt || 0;
   const showSubGroups = group.type === "class" && ENABLE_SUBGROUPS;
   const groupMenuItems = [
@@ -884,10 +900,6 @@ export function GroupDetailPage({
   useEffect(() => {
     setMenuActivitySeen(false);
   }, [group.id, groupHasUnread]);
-
-  useEffect(() => {
-    setPinDotSeen(false);
-  }, [group.id, currentAction?.targetId]);
 
   useEffect(() => {
     if (!showSubGroups && activeTab === "workgroups") setActiveTab("overview");
@@ -3326,25 +3338,12 @@ export function GroupDetailPage({
               className="group-overview-card"
               style={{ position: "relative" }}
               onClick={() => {
-                setPinDotSeen(true);
+                markSectionRead("chat");
                 switchGroupTab("chats");
               }}
             >
-              {currentAction?.description && !pinDotSeen && (
-                <span
-                  aria-hidden="true"
-                  title={currentAction.title || "Pinned update"}
-                  style={{
-                    position: "absolute",
-                    bottom: "10px",
-                    right: "10px",
-                    width: "10px",
-                    height: "10px",
-                    borderRadius: "50%",
-                    background: "#2ecc71",
-                    boxShadow: "0 0 0 6px rgba(46, 204, 113, 0.25)",
-                  }}
-                />
+              {chatUnreadCount > 0 && (
+                <span className="group-overview-unread-badge">{chatUnreadCount > 99 ? "99+" : chatUnreadCount}</span>
               )}
               <small>Latest chat</small>
               <strong>{latestMessage?.authorName || "Chat"}</strong>
@@ -3353,11 +3352,16 @@ export function GroupDetailPage({
             <button
               type="button"
               className="group-overview-card"
+              style={{ position: "relative" }}
               onClick={() => {
+                markSectionRead("payment");
                 switchGroupTab("payments");
                 if (activePaymentItem) openTracker(activePaymentItem.id);
               }}
             >
+              {paymentUnreadCount > 0 && (
+                <span className="group-overview-unread-badge">{paymentUnreadCount > 99 ? "99+" : paymentUnreadCount}</span>
+              )}
               <small>Latest payment</small>
               <strong>{activePaymentItem?.title || "No active payment"}</strong>
               <span>{activePaymentItem?.amount ? `${Number(activePaymentItem.amount).toLocaleString()} TSh` : activePaymentItem ? "Registration / tracking" : "Create one when members need to pay."}</span>
@@ -3365,12 +3369,16 @@ export function GroupDetailPage({
             <button
               type="button"
               className="group-overview-card"
-              style={!ENABLE_GROUP_FILES ? { gridColumn: "1 / -1" } : undefined}
+              style={{ position: "relative", ...(!ENABLE_GROUP_FILES ? { gridColumn: "1 / -1" } : {}) }}
               onClick={() => {
+                markSectionRead("activity");
                 switchGroupTab("events");
                 if (upcomingActivity) openTracker(upcomingActivity.id);
               }}
             >
+              {activityUnreadCount > 0 && (
+                <span className="group-overview-unread-badge">{activityUnreadCount > 99 ? "99+" : activityUnreadCount}</span>
+              )}
               <small>Latest activity</small>
               <strong>{upcomingActivity?.title || "No activity yet"}</strong>
               <span>{upcomingActivity?.deadline ? `Deadline: ${upcomingActivity.deadline}` : upcomingActivity?.collectionType === "order" ? "Group order" : "Events and orders live here."}</span>
@@ -3379,11 +3387,16 @@ export function GroupDetailPage({
               <button
                 type="button"
                 className="group-overview-card"
+                style={{ position: "relative" }}
                 onClick={() => {
+                  markSectionRead("resources");
                   switchGroupTab("resources");
                   if (latestResource?.subject) openResourceSubject((latestResource.subject || "General").trim() || "General");
                 }}
               >
+                {fileUnreadCount > 0 && (
+                  <span className="group-overview-unread-badge">{fileUnreadCount > 99 ? "99+" : fileUnreadCount}</span>
+                )}
                 <small>Latest file</small>
                 <strong>{latestResource?.title || latestResource?.text || "No files yet"}</strong>
                 <span>{latestResource?.subject || "Files and resources for this group."}</span>
