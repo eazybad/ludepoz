@@ -5504,7 +5504,7 @@ if (loading) {
     <div style={{
       minHeight:'100vh',
       height:'100dvh',
-      background:'var(--accent-navy)',
+      background:'#0f1b2d',
       fontFamily:'system-ui',
       overflow:'hidden',
       display:'flex',

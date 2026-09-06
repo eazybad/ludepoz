@@ -24,6 +24,8 @@ import {
   addGroupResource,
   archiveGroupCollectionRound,
   approveGroupMember,
+  declareGroupPaymentSent,
+  schedulePaymentReminder,
   pinGroupMessage,
   reactToGroupMessage,
   rejectGroupMember,
@@ -553,6 +555,8 @@ export function GroupDetailPage({
   const [workGroupData, setWorkGroupData] = useState(emptyWorkGroup);
   const [workSubmissionData, setWorkSubmissionData] = useState(emptyWorkSubmission);
   const [paymentData, setPaymentData] = useState(emptyPayment);
+  const [manualPayMode, setManualPayMode] = useState(false);
+  const [manualPayDeclared, setManualPayDeclared] = useState(false);
   const [manualPaymentData, setManualPaymentData] = useState(emptyManualPayment);
   const [showManualPaymentForm, setShowManualPaymentForm] = useState(false);
   const [paymentSearch, setPaymentSearch] = useState("");
@@ -1601,6 +1605,62 @@ export function GroupDetailPage({
       setReplyToMessage(null);
       markCurrentGroupRead();
       onSuccess(result.data?.message || "Payment request sent. Wait for confirmation.");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  // Base USSD dial codes only — verified per-provider, June 2026. A tel: link
+  // can only pre-fill what's dialed first; the recipient number, amount, and
+  // PIN still have to be entered by hand on the following menu screens, since
+  // those are separate live round-trips with the network, not part of the
+  // dial string itself.
+  const MANUAL_PAY_PROVIDERS = [
+    { id: "mpesa", label: "M-Pesa", code: "*150*00%23" },
+    { id: "mixx", label: "Mixx by Yas", code: "*150*01%23" },
+    { id: "airtel", label: "Airtel Money", code: "*150*60%23" },
+    { id: "halopesa", label: "HaloPesa", code: "*150*88%23" },
+  ];
+
+  const handleManualPayDial = async (providerCode) => {
+    if (guardOfflineAction("Starting manual payment")) return;
+    if (!selectedChatPaymentTarget || !user) {
+      onError(new Error("Choose what you want to pay for first."));
+      return;
+    }
+    window.location.href = `tel:${providerCode}`;
+    setManualPayDeclared(true);
+    try {
+      await schedulePaymentReminder(db, {
+        groupId: group.id,
+        collectionId: selectedChatPaymentTarget.id,
+        uid: user.uid,
+      });
+    } catch (err) {
+      console.error("Error scheduling payment reminder:", err);
+    }
+  };
+
+  const handleDeclarePaymentSent = async () => {
+    if (guardOfflineAction("Marking payment as sent")) return;
+    if (!selectedChatPaymentTarget || !user) return;
+    setPosting(true);
+    try {
+      await declareGroupPaymentSent(db, {
+        groupId: group.id,
+        collectionItem: selectedChatPaymentTarget,
+        user,
+        profile: { name: userName },
+      });
+      setMessageText("");
+      setChatPaymentTargetId("");
+      setShowChatComposer(false);
+      setShowChatTools(false);
+      setManualPayMode(false);
+      setManualPayDeclared(false);
+      onSuccess("Marked as sent — waiting for the organizer to confirm.");
     } catch (err) {
       onError(err);
     } finally {
@@ -3670,7 +3730,7 @@ export function GroupDetailPage({
                     )}
                     {selectedChatPaymentTarget && (
                       <div className="chat-payment-compose-card">
-                        <button type="button" className="chat-payment-clear" aria-label="Clear payment" onClick={() => setChatPaymentTargetId("")}>
+                        <button type="button" className="chat-payment-clear" aria-label="Clear payment" onClick={() => { setChatPaymentTargetId(""); setManualPayMode(false); setManualPayDeclared(false); }}>
                           <MenuIcon name="close" />
                         </button>
                         <div>
@@ -3684,12 +3744,34 @@ export function GroupDetailPage({
                             {(selectedChatPaymentTarget.options || "").split(",").map(item => item.trim()).filter(Boolean).map(option => <option key={option} value={option}>{option}</option>)}
                           </select>
                         )}
-                        <div className="chat-payment-fields">
-                          <select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>
-                            {PAWAPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
-                          </select>
-                          <input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="0712345678" inputMode="tel" />
+                        <div className="chat-payment-mode-toggle">
+                          <button type="button" className={!manualPayMode ? "active" : ""} onClick={() => setManualPayMode(false)}>Pay in-app</button>
+                          <button type="button" className={manualPayMode ? "active" : ""} onClick={() => setManualPayMode(true)}>Pay directly</button>
                         </div>
+                        {!manualPayMode && (
+                          <div className="chat-payment-fields">
+                            <select value={paymentData.provider} onChange={event => setPaymentData({ ...paymentData, provider: event.target.value })}>
+                              {PAWAPAY_PROVIDERS.map(provider => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
+                            </select>
+                            <input value={paymentData.phone} onChange={event => setPaymentData({ ...paymentData, phone: event.target.value })} placeholder="0712345678" inputMode="tel" />
+                          </div>
+                        )}
+                        {manualPayMode && !manualPayDeclared && (
+                          <div className="chat-manual-pay-panel">
+                            <small>Send {Number(selectedChatPaymentTarget.amount || 0).toLocaleString()} TSh to: {selectedChatPaymentTarget.paymentMethods || "the number the organizer shared"}</small>
+                            <div className="chat-manual-pay-providers">
+                              {MANUAL_PAY_PROVIDERS.map(p => (
+                                <button key={p.id} type="button" onClick={() => handleManualPayDial(p.code)}>{p.label}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {manualPayMode && manualPayDeclared && (
+                          <div className="chat-manual-pay-panel">
+                            <small>Sent your payment? We'll also remind you shortly if you don't confirm.</small>
+                            <button type="button" className="chat-manual-pay-confirm" disabled={posting} onClick={handleDeclarePaymentSent}>I've sent it</button>
+                          </div>
+                        )}
                       </div>
                     )}
                     {showEmojiPicker && (

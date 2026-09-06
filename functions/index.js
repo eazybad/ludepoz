@@ -7,6 +7,7 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
@@ -202,6 +203,56 @@ exports.sendInAppNotificationPush = onDocumentCreated(
 );
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
+
+// Fires ~60-90s after a member taps "Pay" from chat. Runs every minute,
+// picks up any paymentReminders doc whose dueAt has passed, and writes a
+// notification doc for it — reusing the existing sendInAppNotificationPush
+// trigger above to actually deliver the push, so there's no duplicate
+// FCM-sending logic to maintain.
+exports.sendDuePaymentReminders = onSchedule("every 1 minutes", async () => {
+  const db = getFirestore();
+  const now = admin.firestore.Timestamp.now();
+  const dueSnap = await db.collection("paymentReminders")
+    .where("sent", "==", false)
+    .where("dueAt", "<=", now)
+    .limit(200)
+    .get();
+
+  if (dueSnap.empty) return null;
+
+  await Promise.all(dueSnap.docs.map(async (reminderDoc) => {
+    const reminder = reminderDoc.data();
+    try {
+      let collectionTitle = "your payment";
+      try {
+        const collectionSnap = await db
+          .collection("groups").doc(reminder.groupId)
+          .collection("collections").doc(reminder.collectionId)
+          .get();
+        if (collectionSnap.exists) {
+          collectionTitle = collectionSnap.data().title || collectionTitle;
+        }
+      } catch (_) { /* fall back to generic title */ }
+
+      await db.collection("notifications").add({
+        userId: reminder.uid,
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        type: "group_payment_reminder",
+        title: "Have you paid?",
+        message: `Did you complete your payment for ${collectionTitle}? Tap to confirm.`,
+        groupId: reminder.groupId,
+        collectionId: reminder.collectionId,
+      });
+
+      await reminderDoc.ref.update({ sent: true, sentAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (err) {
+      console.error("Error sending payment reminder:", reminderDoc.id, err);
+    }
+  }));
+
+  return null;
+});
 const admin = require("firebase-admin");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");

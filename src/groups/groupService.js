@@ -12,6 +12,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
@@ -1359,6 +1360,46 @@ export async function uploadPaymentProof(storage, { groupId, collectionId, uid, 
   const proofRef = ref(storage, `groups/${groupId}/collections/${collectionId}/payments/${uid}_${Date.now()}.jpg`);
   const snap = await uploadBytes(proofRef, file);
   return getDownloadURL(snap.ref);
+}
+
+export async function schedulePaymentReminder(db, { groupId, collectionId, uid, delaySeconds = 75 }) {
+  await addDoc(collection(db, "paymentReminders"), {
+    groupId,
+    collectionId,
+    uid,
+    sent: false,
+    dueAt: Timestamp.fromMillis(Date.now() + delaySeconds * 1000),
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function declareGroupPaymentSent(db, { groupId, collectionItem, user, profile }) {
+  const paymentRef = doc(db, "groups", groupId, "collections", collectionItem.id, "payments", user.uid);
+  await setDoc(paymentRef, {
+    uid: user.uid,
+    studentName: profile.name || "Member",
+    amountDue: Number(collectionItem.amount || 0),
+    amountPaid: Number(collectionItem.amount || 0),
+    proofRequested: false,
+    proofRequestMessage: "",
+    status: "sent",
+    submittedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  const { groupName, reviewers } = await getGroupReviewers(db, groupId);
+  await notifyMembers(db, reviewers, {
+    excludeUid: user.uid,
+    type: "group_payment_sent",
+    title: `${groupName}: payment marked as sent`,
+    message: `${profile.name || "Member"} says they've sent payment for ${collectionItem.title}. Please confirm once you see it.`,
+    groupId,
+    collectionId: collectionItem.id,
+    paymentId: paymentRef.id,
+    category: "adminAlerts",
+    dedupeKey: collectionDedupeKey("group_payment_sent", groupId, collectionItem.id, paymentRef.id),
+  });
 }
 
 export async function submitGroupPayment(db, storage, { groupId, collectionItem, user, profile, data }) {
