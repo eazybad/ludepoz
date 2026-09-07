@@ -645,7 +645,7 @@ export function GroupDetailPage({
   // Airtel Money 0787654321"). Best-effort split into {label, number} pairs so
   // each number can be shown with its own copy button, instead of one blob of text.
   const parsePaymentMethods = (text) => {
-    if (!text) return [];
+    if (!text || typeof text !== "string") return [];
     return text.split(/,|\n/).map(segment => segment.trim()).filter(Boolean).map(segment => {
       const numberMatch = segment.match(/(?:\+?255|0)\d{8,9}/);
       const number = numberMatch ? numberMatch[0] : "";
