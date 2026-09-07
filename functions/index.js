@@ -8,6 +8,21 @@
  */
 
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {
+  LANGUAGE_PROMPT,
+  LANGUAGE_MATCHERS,
+  WELCOME_MESSAGES_EN,
+  WELCOME_MESSAGES_EN_ROOMS,
+  WELCOME_MESSAGES_SW,
+  WELCOME_MESSAGES_SW_ROOMS,
+  UNRECOGNIZED_LANGUAGE_REPLY,
+} = require("./welcomeMessages");
+
+// Reserved UID for the official "Kampasika" account that sends the welcome
+// chat and (later) any platform announcements. Create this user's profile
+// doc once by hand in Firestore — users/kampasika_official — with a name
+// ("Kampasika") and avatar, so it renders properly in the chat list.
+const KAMPASIKA_OFFICIAL_UID = "kampasika_official";
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
@@ -253,6 +268,123 @@ exports.sendDuePaymentReminders = onSchedule("every 1 minutes", async () => {
 
   return null;
 });
+
+// Fires once per new signup. Creates a real 1-on-1 conversation from the
+// official "Kampasika" account and sends the language-choice opener. The
+// rest of the welcome content is sent by onKampasikaWelcomeReply below,
+// once the person actually replies with their choice.
+exports.sendKampasikaWelcome = onDocumentCreated("users/{uid}", async (event) => {
+  const uid = event.params.uid;
+  if (uid === KAMPASIKA_OFFICIAL_UID) return null; // never message the bot account itself
+
+  const db = getFirestore();
+  const userData = event.data?.data() || {};
+  const conversationId = `kampasika_welcome_${uid}`;
+  const convRef = db.collection("conversations").doc(conversationId);
+  const msgRef = convRef.collection("messages").doc();
+
+  const batch = db.batch();
+  batch.set(convRef, {
+    source: "system",
+    listingId: null,
+    buyerId: uid,
+    buyerName: userData.name || userData.displayName || "Member",
+    buyerAvatar: userData.avatar || userData.photoURL || null,
+    sellerId: KAMPASIKA_OFFICIAL_UID,
+    sellerName: "Kampasika",
+    sellerAvatar: null,
+    welcomeStage: "awaiting_language",
+    lastMessage: LANGUAGE_PROMPT,
+    lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+    buyerUnread: 1,
+    sellerUnread: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  batch.set(msgRef, {
+    senderId: KAMPASIKA_OFFICIAL_UID,
+    senderName: "Kampasika",
+    text: LANGUAGE_PROMPT,
+    status: "sent",
+    readBy: [KAMPASIKA_OFFICIAL_UID],
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+  return null;
+});
+
+// Fires on every new message in every conversation across the app — the
+// early `startsWith` check below is what keeps this cheap, since it skips
+// straight past ordinary DMs without doing any extra reads for them.
+exports.onKampasikaWelcomeReply = onDocumentCreated(
+  "conversations/{conversationId}/messages/{messageId}",
+  async (event) => {
+    const { conversationId } = event.params;
+    if (!conversationId.startsWith("kampasika_welcome_")) return null;
+
+    const message = event.data?.data() || {};
+    if (message.senderId === KAMPASIKA_OFFICIAL_UID) return null; // our own message, ignore
+
+    const db = getFirestore();
+    const convRef = db.collection("conversations").doc(conversationId);
+    const convSnap = await convRef.get();
+    if (!convSnap.exists || convSnap.data().welcomeStage !== "awaiting_language") return null;
+
+    const replyText = (message.text || "").trim();
+    const isEnglish = LANGUAGE_MATCHERS.en.test(replyText);
+    const isSwahili = LANGUAGE_MATCHERS.sw.test(replyText);
+
+    if (!isEnglish && !isSwahili) {
+      await convRef.collection("messages").add({
+        senderId: KAMPASIKA_OFFICIAL_UID,
+        senderName: "Kampasika",
+        text: UNRECOGNIZED_LANGUAGE_REPLY,
+        status: "sent",
+        readBy: [KAMPASIKA_OFFICIAL_UID],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await convRef.update({
+        lastMessage: UNRECOGNIZED_LANGUAGE_REPLY,
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        buyerUnread: admin.firestore.FieldValue.increment(1),
+      });
+      return null;
+    }
+
+    let roomsEnabled = false;
+    try {
+      const featuresSnap = await db.collection("system").doc("features").get();
+      roomsEnabled = featuresSnap.exists && featuresSnap.data().rooms === true;
+    } catch (_) { /* default to false if unreadable */ }
+
+    const texts = isEnglish
+      ? [...WELCOME_MESSAGES_EN.slice(0, -1), ...(roomsEnabled ? [WELCOME_MESSAGES_EN_ROOMS] : []), WELCOME_MESSAGES_EN[WELCOME_MESSAGES_EN.length - 1]]
+      : [...WELCOME_MESSAGES_SW.slice(0, -1), ...(roomsEnabled ? [WELCOME_MESSAGES_SW_ROOMS] : []), WELCOME_MESSAGES_SW[WELCOME_MESSAGES_SW.length - 1]];
+
+    const batch = db.batch();
+    const baseMillis = Date.now();
+    texts.forEach((text, index) => {
+      const msgRef = convRef.collection("messages").doc();
+      batch.set(msgRef, {
+        senderId: KAMPASIKA_OFFICIAL_UID,
+        senderName: "Kampasika",
+        text,
+        status: "sent",
+        readBy: [KAMPASIKA_OFFICIAL_UID],
+        createdAt: admin.firestore.Timestamp.fromMillis(baseMillis + index * 800),
+      });
+    });
+    batch.update(convRef, {
+      welcomeStage: "done",
+      lastMessage: texts[texts.length - 1],
+      lastMessageAt: admin.firestore.Timestamp.fromMillis(baseMillis + (texts.length - 1) * 800),
+      buyerUnread: admin.firestore.FieldValue.increment(texts.length),
+    });
+
+    await batch.commit();
+    return null;
+  }
+);
 const admin = require("firebase-admin");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
