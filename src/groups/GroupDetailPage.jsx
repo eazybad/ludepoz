@@ -1674,7 +1674,19 @@ export function GroupDetailPage({
       onError(new Error("Choose what you want to pay for first."));
       return;
     }
-    window.location.href = `tel:${providerCode}`;
+    // Use a real, invisible anchor click rather than window.location.href —
+    // assigning location.href for a non-http(s) scheme like tel: is treated
+    // by the WebView as an actual (doomed) page navigation, which briefly
+    // tears down the current view before the OS intercepts it and hands off
+    // to the dialer. That teardown is the flash of blank white you'd see.
+    // A clicked <a href="tel:..."> is handled through the browser's native
+    // external-scheme link path instead, without that flicker.
+    const link = document.createElement("a");
+    link.href = `tel:${providerCode}`;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     setManualPayDeclared(true);
     try {
       await schedulePaymentReminder(db, {
