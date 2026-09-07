@@ -8960,7 +8960,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           </div>
 
           {/* Search & Filters */}
-          <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid #e2e6ea'}}>
+          <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',background:'var(--surface-bg)',borderRadius:'10px',padding:'8px 12px',border:'1.5px solid var(--border-color)'}}>
             <input type="text" placeholder="Tafuta kwa eneo, bei, amenity..." value={roomSearchQ}
               onChange={e => {
                 setRoomSearchQ(e.target.value);
@@ -8971,16 +8971,16 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               }}
               onKeyDown={e => { if (e.key === 'Enter') commitRoomsSearch(roomSearchQ); }}
               style={{flex:1,border:'none',background:'none',outline:'none',fontSize:'14px'}}/>
-            <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'#6b7280'}}>🔍</button>
+            <button type="button" onClick={() => commitRoomsSearch(roomSearchQ)} aria-label="Search" style={{background:'none',border:'none',cursor:'pointer',fontSize:'14px',padding:'4px 6px',color:'var(--text-secondary)'}}>🔍</button>
           </div>
           <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
           {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
-          {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'#f4f6f8',border:'none',borderRadius:'8px',fontSize:'12px',color:'#6b7280',cursor:'pointer'}}>💰 Set max price filter</button>}
+          {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'var(--surface-bg-alt)',border:'none',borderRadius:'8px',fontSize:'12px',color:'var(--text-secondary)',cursor:'pointer'}}>💰 Set max price filter</button>}
           {roomFilterMaxPrice !== "" && (
             <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
-              <span style={{fontSize:'12px',color:'#6b7280'}}>Max:</span>
-              <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
-              <span style={{fontSize:'12px',color:'#6b7280'}}>TSh</span>
+              <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>Max:</span>
+              <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'13px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+              <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>TSh</span>
               <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
             </div>
           )}
@@ -9016,7 +9016,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
                 {filtered.map(room => (
-                  <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid #e2e6ea'}}>
+                  <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid var(--border-color)'}}>
                     {room.photoUrl ? (
                       <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
                     ) : (
@@ -9028,12 +9028,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                           <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                           <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
                         </div>
-                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'#8a9bb0'}}>/mo</span></div>
+                        <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'var(--text-secondary)'}}>/mo</span></div>
                       </div>
-                      <div style={{fontSize:'12px',color:'#6b7280'}}>{room.landlordName} • {room.nearUni}</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{room.landlordName} • {room.nearUni}</div>
                       {room.amenities && room.amenities.length > 0 && (
                         <div style={{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}}>
-                          {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'#f4f6f8',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
+                          {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'var(--surface-bg-alt)',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
                         </div>
                       )}
                     </div>
@@ -9050,14 +9050,14 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{showCreateRoomSuccess?"Room Listed!":"List a Room"}</h2>
-            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'16px'}}>List your room and students will contact you directly.</p>}
+            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>List your room and students will contact you directly.</p>}
             {showCreateRoomSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
-                <div style={{fontSize:'13px',color:'#8a9bb0',marginBottom:'28px'}}>Students can now find and contact you</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'28px'}}>Students can now find and contact you</div>
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
-                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'#f4f6f8',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
+                <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
             ) : (
               <>
@@ -9072,7 +9072,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
                       <div style={{fontSize:'40px',marginBottom:'8px'}}>📸</div>
                       <div style={{fontSize:'14px',fontWeight:'600'}}>Add Room Photos</div>
-                      <div style={{fontSize:'12px',color:'#8a9bb0'}}>Up to 5 photos — show the room, bathroom, entrance</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Up to 5 photos — show the room, bathroom, entrance</div>
                     </div>
                   )}
                 </label>
@@ -9100,15 +9100,15 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'16px',textAlign:'center',background:'#f0fffe'}}>
                         <div style={{fontSize:'24px',marginBottom:'4px'}}>🏠</div>
                         <span style={{fontSize:'13px',color:'var(--accent-teal-bright)',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
-                        <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'3px'}}>Helps students recognise the house from outside</div>
+                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'3px'}}>Helps students recognise the house from outside</div>
                       </div>
                     )}
                   </label>
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Phone / WhatsApp *</label><input type="tel" placeholder="e.g. 0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Phone / WhatsApp *</label><input type="tel" placeholder="e.g. 0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Room Type *</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -9126,7 +9126,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     placeholder="e.g. 80,000 or 80k"
                     value={createRoomData.price}
                     onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})}
-                    style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}
                   />
                   {createRoomData.price && (
                     <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
@@ -9137,7 +9137,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 <div style={{marginBottom:'14px'}}>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label>
-                  <input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'8px'}}/>
+                  <input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'8px'}}/>
                   <button type="button" onClick={()=>{
                     if (!navigator.geolocation) { setError("GPS not supported on this device"); return; }
                     setSuccess("Getting your location...");
@@ -9154,18 +9154,18 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       },
                       { enableHighAccuracy: true, timeout: 10000 }
                     );
-                  }} style={{width:'100%',padding:'10px',background: createRoomData.lat ? '#d1fae5' : '#f4f6f8',color: createRoomData.lat ? '#065f46' : '#0f1b2d',border: createRoomData.lat ? '1.5px solid #6ee7b7' : '1px solid #e2e6ea',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                  }} style={{width:'100%',padding:'10px',background: createRoomData.lat ? 'var(--success-tint)' : 'var(--surface-bg-alt)',color: createRoomData.lat ? 'var(--success-dark)' : 'var(--text-primary)',border: createRoomData.lat ? '1.5px solid #6ee7b7' : '1px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
                     {createRoomData.lat ? (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> GPS pinned — exact location saved</>
                     ) : (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Pin exact location with GPS (optional)</>
                     )}
                   </button>
-                  {createRoomData.lat && <div style={{fontSize:'11px',color:'#6b7280',marginTop:'4px',fontFamily:'monospace'}}>Lat: {createRoomData.lat.toFixed(5)}, Lng: {createRoomData.lng.toFixed(5)}</div>}
-                  {!createRoomData.lat && <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
+                  {createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',fontFamily:'monospace'}}>Lat: {createRoomData.lat.toFixed(5)}, Lng: {createRoomData.lng.toFixed(5)}</div>}
+                  {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -9175,7 +9175,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label><textarea placeholder="Any extra details — available date, rules, what's nearby..." value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label><textarea placeholder="Any extra details — available date, rules, what's nearby..." value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
 
                 <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"🏠 List Room"}</button>
               </>
@@ -9186,17 +9186,17 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
       {/* ============ ROOM DETAIL ============ */}
       {ENABLE_ROOMS && viewingRoom && (
-        <div style={{position:'fixed',inset:0,background:'#f4f6f8',zIndex:300,overflowY:'auto'}}>
+        <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
           {/* Header */}
-          <div style={{background:'var(--surface-bg)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid #e2e6ea',position:'sticky',top:0,zIndex:50}}>
-            <button onClick={handleRoomBack} style={{width:'36px',height:'36px',borderRadius:'50%',background:'#f4f6f8',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
-            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'#0f1b2d'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
+          <div style={{background:'var(--surface-bg)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid var(--border-color)',position:'sticky',top:0,zIndex:50}}>
+            <button onClick={handleRoomBack} style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
+            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
           </div>
 
           {!showRoomIndoor ? (
             <>
               {/* MAP — Google Maps embed via location text */}
-              <div style={{position:'relative',width:'100%',height:'340px',background:'#e2e6ea',overflow:'hidden'}}>
+              <div style={{position:'relative',width:'100%',height:'340px',background:'var(--surface-bg-alt)',overflow:'hidden'}}>
                 <iframe
                   title="Room location map"
                   width="100%"
@@ -9210,7 +9210,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   }
                 />
                 {!roomUserCanAccessRooms && (
-                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'#0f1b2d',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
+                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'var(--text-primary)',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
                     Reserve / verify to unlock exact map
                   </button>
                 )}
@@ -9229,7 +9229,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                       '_blank'
                     );
                   }}
-                  style={{position:'absolute',top:'12px',right:'12px',background:'var(--surface-bg)',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
+                  style={{position:'absolute',top:'12px',right:'12px',background:'var(--surface-bg)',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                   {roomUserCanAccessRooms ? "Open in Maps" : "Reserve"}
@@ -9237,12 +9237,12 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
               </div>
 
               {/* Room summary strip */}
-              <div style={{background:'var(--surface-bg)',padding:'14px 16px',borderBottom:'1px solid #e2e6ea',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{background:'var(--surface-bg)',padding:'14px 16px',borderBottom:'1px solid var(--border-color)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
-                  <div style={{fontSize:'15px',fontWeight:'700',color:'#0f1b2d'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
-                  <div style={{fontSize:'13px',color:'#8a9bb0',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
+                  <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/mo</span></div>
               </div>
 
               {/* Outdoor / Indoor cards */}
@@ -9250,11 +9250,11 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
                 {/* OUTDOOR card */}
                 {viewingRoom.photos?.[0] && (
-                <div style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'1px solid #e2e6ea',cursor:'default'}}>
+                <div style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'1px solid var(--border-color)',cursor:'default'}}>
                     <img src={viewingRoom.photos[0]} alt="Outdoor" style={{width:'100%',height:'130px',objectFit:'cover'}} onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}}/>
                   <div style={{padding:'10px 12px'}}>
-                    <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Outdoor</div>
-                    <div style={{fontSize:'11px',color:'#8a9bb0'}}>Exterior view</div>
+                    <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>Outdoor</div>
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>Exterior view</div>
                   </div>
                 </div>
                 )}
@@ -9268,7 +9268,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   )}
                   <div style={{padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div>
-                      <div style={{fontSize:'13px',fontWeight:'700',color:'#0f1b2d',marginBottom:'2px'}}>Indoor</div>
+                      <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>Indoor</div>
                       <div style={{fontSize:'11px',color:'#0d9488',fontWeight:'600'}}>Tap to view details →</div>
                     </div>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06d6c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
@@ -9311,41 +9311,41 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
               <div style={{padding:'20px'}}>
                 <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
-                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#f59e0b',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'#8a9bb0',fontFamily:'system-ui'}}>TSh/month</span></div>
+                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#f59e0b',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/month</span></div>
                 {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, discoverRooms, "room")} />}
                 <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
-                <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
 
                 {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
-                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'#f4f6f8',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
+                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'var(--surface-bg-alt)',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
                   </div>
                 )}
 
                 {viewingRoom.description && (
                   <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-                    <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'#6b7280'}}>Details</h4>
-                    <p style={{fontSize:'15px',lineHeight:1.7,color:'#4a5568',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
+                    <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'var(--text-secondary)'}}>Details</h4>
+                    <p style={{fontSize:'15px',lineHeight:1.7,color:'var(--text-secondary)',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
                   </div>
                 )}
 
                 <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-                  <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'#6b7280'}}>Contact Landlord</h4>
+                  <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'12px',color:'var(--text-secondary)'}}>Contact Landlord</h4>
                   {roomUserCanAccessRooms ? (
                     <>
-                      <div style={{fontSize:'16px',fontWeight:'600',color:'#0f1b2d',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
-                      <div style={{fontSize:'14px',color:'#6b7280'}}>{viewingRoom.landlordPhone}</div>
+                      <div style={{fontSize:'16px',fontWeight:'600',color:'var(--text-primary)',marginBottom:'4px'}}>{viewingRoom.landlordName}</div>
+                      <div style={{fontSize:'14px',color:'var(--text-secondary)'}}>{viewingRoom.landlordPhone}</div>
                     </>
                   ) : (
                     <div>
-                      <div style={{fontSize:'14px',color:'#6b7280',lineHeight:1.5,marginBottom:'12px'}}>Complete Room User Verification to view contact information and map details.</div>
+                      <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'12px'}}>Complete Room User Verification to view contact information and map details.</div>
                       <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Reserve / verify to view contact</button>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid #e2e6ea',padding:'16px',display:'flex',gap:'8px'}}>
+              <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'16px',display:'flex',gap:'8px'}}>
                 <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("WhatsApp"))return;const num=viewingRoom.landlordPhone.replace(/^0/,'255').replace(/[^0-9]/g,'');const msg=`Habari! Nimeona chumba chako kupitia Kampasika — ${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name} pale ${viewingRoom.location}, ${viewingRoom.price?.toLocaleString()} TSh/month. Je bado kinapatikana?`;window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':roomUserCanAccessRooms?'#25D366':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📱 WhatsApp" : "Reserve"}</button>
                 <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📞 Call" : "Verify"}</button>
               </div>
@@ -9362,39 +9362,39 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             
             {/* Post form */}
             {user && (
-              <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1.5px solid #e2e6ea',marginBottom:'16px'}}>
+              <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1.5px solid var(--border-color)',marginBottom:'16px'}}>
                 <h3 style={{fontSize:'15px',fontWeight:'600',marginBottom:'12px'}}>Post that you're looking</h3>
                 <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
-                  <div style={{flex:1}}><input type="number" placeholder="Budget (TSh/mo)" value={createRoommateData.budget} onChange={e=>setCreateRoommateData({...createRoommateData,budget:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
-                  <div style={{flex:1}}><input type="text" placeholder="Area e.g. Sinza" value={createRoommateData.preferredArea} onChange={e=>setCreateRoommateData({...createRoommateData,preferredArea:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box'}}/></div>
+                  <div style={{flex:1}}><input type="number" placeholder="Budget (TSh/mo)" value={createRoommateData.budget} onChange={e=>setCreateRoommateData({...createRoommateData,budget:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                  <div style={{flex:1}}><input type="text" placeholder="Area e.g. Sinza" value={createRoommateData.preferredArea} onChange={e=>setCreateRoommateData({...createRoommateData,preferredArea:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'14px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
                 </div>
                 <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
-                  <select value={createRoommateData.gender} onChange={e=>setCreateRoommateData({...createRoommateData,gender:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none'}}><option value="">Gender pref...</option><option value="male">Male</option><option value="female">Female</option><option value="any">Any</option></select>
-                  <input type="date" placeholder="Move date" value={createRoommateData.moveDate} onChange={e=>setCreateRoommateData({...createRoommateData,moveDate:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none'}}/>
+                  <select value={createRoommateData.gender} onChange={e=>setCreateRoommateData({...createRoommateData,gender:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'14px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}><option value="">Gender pref...</option><option value="male">Male</option><option value="female">Female</option><option value="any">Any</option></select>
+                  <input type="date" placeholder="Move date" value={createRoommateData.moveDate} onChange={e=>setCreateRoommateData({...createRoommateData,moveDate:e.target.value})} style={{flex:1,padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'14px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
                 </div>
-                <textarea placeholder="Anything else — habits, preferences, course..." value={createRoommateData.desc} onChange={e=>setCreateRoommateData({...createRoommateData,desc:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid #e2e6ea',borderRadius:'8px',fontSize:'14px',outline:'none',minHeight:'60px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'10px'}}/>
+                <textarea placeholder="Anything else — habits, preferences, course..." value={createRoommateData.desc} onChange={e=>setCreateRoommateData({...createRoommateData,desc:e.target.value})} style={{width:'100%',padding:'10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'14px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'60px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',marginBottom:'10px'}}/>
                 <button onClick={handleCreateRoommatePost} disabled={uploading} style={{width:'100%',padding:'12px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Posting...":"Post"}</button>
               </div>
             )}
 
             {/* Roommate posts */}
             {roommatePosts.length === 0 ? (
-              <div style={{textAlign:'center',padding:'32px',background:'var(--surface-bg)',borderRadius:'12px',color:'#8a9bb0'}}>No roommate posts yet</div>
+              <div style={{textAlign:'center',padding:'32px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)'}}>No roommate posts yet</div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
                 {roommatePosts.map(post=>(
-                  <div key={post.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1px solid #e2e6ea'}}>
+                  <div key={post.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1px solid var(--border-color)'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
                       <div style={{width:'36px',height:'36px',borderRadius:'50%',backgroundImage:post.userAvatar?`url(${post.userAvatar})`:'none',backgroundColor:!post.userAvatar?'#06d6c7':'transparent',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',color:'#fff'}}>{!post.userAvatar&&(post.userName||"?").split(" ").map(n=>n[0]).join("")}</div>
-                      <div><div style={{fontSize:'14px',fontWeight:'600'}}>{post.userName}</div><div style={{fontSize:'11px',color:'#8a9bb0'}}>{post.universityName}</div></div>
+                      <div><div style={{fontSize:'14px',fontWeight:'600'}}>{post.userName}</div><div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{post.universityName}</div></div>
                     </div>
                     <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
                       <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'3px 10px',borderRadius:'8px',fontWeight:'500'}}>Budget: {post.budget?.toLocaleString()} TSh</span>
-                      <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>📍 {post.preferredArea}</span>
-                      {post.gender && <span style={{fontSize:'12px',background:'#f4f6f8',padding:'3px 10px',borderRadius:'8px'}}>{post.gender === 'male' ? '👨' : post.gender === 'female' ? '👩' : '👤'} {post.gender}</span>}
+                      <span style={{fontSize:'12px',background:'var(--surface-bg-alt)',padding:'3px 10px',borderRadius:'8px'}}>📍 {post.preferredArea}</span>
+                      {post.gender && <span style={{fontSize:'12px',background:'var(--surface-bg-alt)',padding:'3px 10px',borderRadius:'8px'}}>{post.gender === 'male' ? '👨' : post.gender === 'female' ? '👩' : '👤'} {post.gender}</span>}
                       {post.moveDate && <span style={{fontSize:'12px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 10px',borderRadius:'8px'}}>📅 {new Date(post.moveDate).toLocaleDateString('en',{month:'short',day:'numeric'})}</span>}
                     </div>
-                    {post.description && <p style={{fontSize:'13px',color:'#4a5568',lineHeight:1.5}}>{post.description}</p>}
+                    {post.description && <p style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5}}>{post.description}</p>}
                   </div>
                 ))}
               </div>
@@ -11979,29 +11979,29 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
       {/* Auth Page */}
       {showAuthModal && (
-        <div style={{position:'fixed',inset:0,background:'#f6f8fb',zIndex:500,display:'flex',alignItems:'stretch',justifyContent:'center',overflowY:'auto'}}>
+        <div style={{position:'fixed',inset:0,background:'var(--page-bg-outer)',zIndex:500,display:'flex',alignItems:'stretch',justifyContent:'center',overflowY:'auto'}}>
           <div style={{width:'100%',maxWidth:'440px',minHeight:'100dvh',padding:'42px 24px 28px',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'center'}}>
             <div style={{position:'relative',marginBottom:'28px',textAlign:'center'}}>
-              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'#0f1b2d',margin:0,textAlign:'center'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</h2>
-              <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'var(--surface-bg)',border:'1px solid #e2e6ea',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'#667085',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'var(--text-primary)',margin:0,textAlign:'center'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</h2>
+              <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'var(--text-secondary)',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             </div>
             {error && <div style={{background:'var(--danger-tint)',color:'var(--danger-dark)',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
             {authMode==="signup"?(
               <>
                 {signupAwaitingOtp ? (
                   <>
-                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || signupPhone} to finish creating your account.</p>
+                    <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || signupPhone} to finish creating your account.</p>
                     <div style={{marginBottom:'12px'}}>
-                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
-                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'var(--text-primary)'}}>OTP code</label>
+                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={signupOtpCode} onChange={e=>setSignupOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
                     </div>
                     <button onClick={handleConfirmSignupOtp} disabled={signupOtpBusy || signupOtpCode.length !== 6} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:signupOtpBusy?'wait':'pointer',opacity:signupOtpCode.length===6?1:0.6}}>{signupOtpBusy?"Verifying...":"Verify and Create Account"}</button>
                   </>
                 ) : (
                   <>
-                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Create an account with a username and phone number</p>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. amina_juma" value={signupUsername} onChange={e=>{setSignupUsername(e.target.value);setSignupName(e.target.value);}} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Phone number</label><input type="tel" placeholder="0712345678" value={signupPhone} onChange={e=>setSignupPhone(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Create an account with a username and phone number</p>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username</label><input type="text" placeholder="e.g. amina_juma" value={signupUsername} onChange={e=>{setSignupUsername(e.target.value);setSignupName(e.target.value);}} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Phone number</label><input type="tel" placeholder="0712345678" value={signupPhone} onChange={e=>setSignupPhone(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
                 {false && <>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Are you a student?</label>
                   <div style={{display:'flex',gap:'8px'}}>
@@ -12030,7 +12030,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       transition:'all 0.15s ease'
                     }}>💼 No, provider</button>
                   </div>
-                  <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'6px',lineHeight:1.4}}>
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'6px',lineHeight:1.4}}>
                     {isStudent
                       ? 'Students at ARU can sell goods, offer services, find rooms.'
                       : 'Providers (barbers, tailors, landlords, vendors) can list services near campus.'}
@@ -12040,8 +12040,8 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 {false && (
                   <div style={{marginBottom:'12px'}}>
                     <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Your location / area *</label>
-                    <input type="text" placeholder="e.g. Kijitonyama, Mlimani, Ubungo" value={signupLocation} onChange={e=>setSignupLocation(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/>
-                    <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'4px'}}>
+                    <input type="text" placeholder="e.g. Kijitonyama, Mlimani, Ubungo" value={signupLocation} onChange={e=>setSignupLocation(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>
                       So students can find you. Use the area name your customers know you by.
                     </div>
                   </div>
@@ -12049,37 +12049,37 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Already have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Already have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
               </>
             ):(
               <>
                 {loginAwaitingOtp ? (
                   <>
-                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || "your phone"}.</p>
+                    <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Enter the OTP sent to {authOtpPhone || "your phone"}.</p>
                     <div style={{marginBottom:'12px'}}>
-                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>OTP code</label>
-                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={loginOtpCode} onChange={e=>setLoginOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0'}}/>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'var(--text-primary)'}}>OTP code</label>
+                      <input type="text" inputMode="numeric" maxLength={6} placeholder="6 digit code" value={loginOtpCode} onChange={e=>setLoginOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'18px',outline:'none',boxSizing:'border-box',letterSpacing:'0',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
                     </div>
                     <button onClick={handleConfirmLoginOtp} disabled={loading || loginOtpCode.length !== 6} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer',opacity:loginOtpCode.length===6?1:0.6}}>{loading?"Verifying...":"Verify and Log In"}</button>
-                    <button type="button" onClick={()=>{setLoginAwaitingOtp(false);setLoginOtpCode("");setAuthOtpRequestId("");setError("");}} style={{width:'100%',padding:'12px',background:'#f4f6f8',color:'#344054',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Use another number</button>
+                    <button type="button" onClick={()=>{setLoginAwaitingOtp(false);setLoginOtpCode("");setAuthOtpRequestId("");setError("");}} style={{width:'100%',padding:'12px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}}>Use another number</button>
                   </>
                 ) : loginUsePassword ? (
                   <>
-                <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
-                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
-                <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
+                <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Welcome back to Kampasika</p>
+                <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
-                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
+                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
                   </>
                 ) : (
                   <>
-                    <p style={{fontSize:'14px',color:'#6b7280',marginBottom:'16px'}}>Welcome back to Kampasika</p>
-                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box'}}/></div>
+                    <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Welcome back to Kampasika</p>
+                    <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
                     <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Sending code...":"Send OTP"}</button>
-                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'#8a9bb0'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
+                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'#8a9bb0'}}>Don't have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Don't have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
               </>
             )}
           </div>
@@ -12089,22 +12089,22 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
       {ENABLE_PHONE_VERIFICATION && showPhoneVerifyModal && user && !phoneVerified && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1200,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowPhoneVerifyModal(false)}>
           <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'390px',boxShadow:'0 18px 50px rgba(15,27,45,0.22)'}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:'20px',fontWeight:'900',color:'#0f1b2d',marginBottom:'6px'}}>Verify your phone</div>
-            <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.5,marginBottom:'16px'}}>
+            <div style={{fontSize:'20px',fontWeight:'900',color:'var(--text-primary)',marginBottom:'6px'}}>Verify your phone</div>
+            <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'16px'}}>
               This helps protect groups, orders, payments, and event registrations.
             </div>
-            <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>Phone number</label>
+            <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>Phone number</label>
             <input
               type="tel"
               value={userPhone}
               disabled={phoneOtpBusy}
               onChange={e=>{setUserPhone(e.target.value);setPhoneOtpSent(false);setPhoneOtpCode("");}}
               placeholder="0712345678"
-              style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'10px'}}
+              style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'10px'}}
             />
             {phoneOtpSent && (
               <>
-                <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'#0f1b2d',marginBottom:'6px'}}>SMS code</label>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>SMS code</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -12112,7 +12112,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                   value={phoneOtpCode}
                   onChange={e=>setPhoneOtpCode(e.target.value.replace(/\D/g,'').slice(0,6))}
                   placeholder="Enter 6 digit code"
-                  style={{width:'100%',padding:'12px',border:'1.5px solid #e2e6ea',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',marginBottom:'10px'}}
+                  style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'10px'}}
                 />
               </>
             )}
@@ -12126,7 +12126,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 </button>
               )}
             </div>
-            <button type="button" onClick={()=>setShowPhoneVerifyModal(false)} style={{width:'100%',padding:'11px',background:'transparent',color:'#8a9bb0',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
+            <button type="button" onClick={()=>setShowPhoneVerifyModal(false)} style={{width:'100%',padding:'11px',background:'transparent',color:'var(--text-secondary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'8px'}}>
               Skip for now
             </button>
           </div>
