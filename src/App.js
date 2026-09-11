@@ -236,6 +236,94 @@ const ROOM_AMENITIES = [
   { id: "security", label: "Ulinzi (Security)", icon: "🔒" },
 ];
 
+// Minimal RFC4180-ish CSV line splitter: handles quoted fields containing
+// commas (e.g. a description with a comma in it) and "" escaped quotes,
+// which a plain .split(",") would mangle. No external CSV library is used
+// anywhere else in this app, so this stays hand-rolled rather than adding
+// a new dependency for one feature.
+function parseCsvLine(line) {
+  const result = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      result.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+// Parses a room-import CSV into rows Kampasika can actually write, plus a
+// list of rejected rows with the reason, so the person sees exactly what
+// will and won't be imported before anything touches the database.
+// Required columns: roomNumber, roomType, price. Optional: description,
+// amenities (semicolon-separated ids or labels).
+function parseRoomImportCSV(text) {
+  const lines = String(text || "").split(/\r\n|\n|\r/).filter(l => l.trim().length > 0);
+  if (lines.length < 2) {
+    return { valid: [], invalid: [], headerError: "No data rows found in that file." };
+  }
+  const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase().replace(/[\s_]/g, ""));
+  const idx = {
+    roomNumber: header.indexOf("roomnumber"),
+    roomType: header.indexOf("roomtype"),
+    price: header.indexOf("price"),
+    description: header.indexOf("description"),
+    amenities: header.indexOf("amenities"),
+  };
+  if (idx.roomNumber === -1 || idx.roomType === -1 || idx.price === -1) {
+    return { valid: [], invalid: [], headerError: "The file needs roomNumber, roomType, and price columns — download the template below to see the exact format." };
+  }
+
+  const valid = [];
+  const invalid = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    const roomNumber = (cols[idx.roomNumber] || "").trim();
+    const roomTypeRaw = (cols[idx.roomType] || "").trim().toLowerCase();
+    const priceRaw = (cols[idx.price] || "").trim();
+    const description = idx.description > -1 ? (cols[idx.description] || "").trim() : "";
+    const amenitiesRaw = idx.amenities > -1 ? (cols[idx.amenities] || "").trim() : "";
+
+    const reasons = [];
+    if (!roomNumber) reasons.push("missing room number");
+    const price = Number(priceRaw.replace(/[^\d.]/g, ""));
+    if (!priceRaw || !Number.isFinite(price) || price <= 0) reasons.push("missing or invalid price");
+    const matchedType = ROOM_TYPES.find(t => t.id !== "all" && (
+      t.id === roomTypeRaw || t.name.toLowerCase() === roomTypeRaw || (t.sw || "").toLowerCase() === roomTypeRaw
+    ));
+    if (!matchedType) reasons.push(`unrecognized room type "${cols[idx.roomType] || ""}"`);
+
+    if (reasons.length > 0) {
+      invalid.push({ line: i + 1, roomNumber: roomNumber || `(row ${i + 1})`, reasons });
+      continue;
+    }
+
+    const amenities = amenitiesRaw
+      ? amenitiesRaw.split(";").map(a => a.trim().toLowerCase()).filter(Boolean)
+          .map(a => ROOM_AMENITIES.find(am => am.id === a || am.label.toLowerCase().includes(a))?.id)
+          .filter(Boolean)
+      : [];
+
+    valid.push({ roomNumber, roomType: matchedType.id, price, description, amenities });
+  }
+  return { valid, invalid, headerError: null };
+}
+
 // ─── Feature flags ───
 // Toggle for the price-signal badges — disabled while inventory is sparse.
 // Re-enable when each category has 30+ listings (otherwise medians are noise).
@@ -376,7 +464,12 @@ function App() {
     if (persist) localStorage.setItem('kp-theme', value ? 'dark' : 'light');
   };
   const [page, setPageRaw] = useState("communities");
-  const [ENABLE_ROOMS, setEnableRooms] = useState(false);
+  // Hardcoded ON while active development is focused on Rooms — the
+  // system/features-backed toggle below is intentionally ignored so a
+  // slow sync or a stray admin click can't hide the feature mid-work.
+  // Flip this back to being driven by loadFeatureFlags() once Rooms is
+  // stable and you actually want remote on/off control again.
+  const [ENABLE_ROOMS, setEnableRooms] = useState(true);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
   const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
   // Mirrors ENABLE_GROUP_FILES in GroupDetailPage.jsx — Files is hidden group-side, so hide this entry point too.
@@ -724,6 +817,8 @@ useEffect(() => {
   const [inviteTeamRole, setInviteTeamRole] = useState("caretaker");
   const [propertyInboxThreads, setPropertyInboxThreads] = useState([]);
   const [propertyInboxFilter, setPropertyInboxFilter] = useState("all");
+  const [importRoomsParsed, setImportRoomsParsed] = useState(null);
+  const [importRoomsResult, setImportRoomsResult] = useState(null);
   const [createRoommateData, setCreateRoommateData] = useState({
     budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: ""
   });
@@ -2141,14 +2236,14 @@ useEffect(() => {
   unsubFeatureFlags.current = onSnapshot(refDoc, (snap) => {
     if (snap.exists()) {
       const data = snap.data();
-      setEnableRooms(data.rooms === true);
+      // ENABLE_ROOMS is intentionally NOT synced from here right now —
+      // see the useState above for why.
       setEnableDiscoverGoods(data.discoverGoods === true);
       setEnableDiscoverServices(data.discoverServices === true);
       // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
       setRequireRoomUserVerification(data.requireRoomUserVerification === true);
     } else {
-      setEnableRooms(false);
       setEnableDiscoverGoods(false);
       setEnableDiscoverServices(false);
       setRequireIdentityVerification(false);
@@ -2157,7 +2252,6 @@ useEffect(() => {
     setFeatureFlagsLoaded(true);
   }, (err) => {
     console.error("Error loading feature flags:", err);
-    setEnableRooms(false);
     setEnableDiscoverGoods(false);
     setEnableDiscoverServices(false);
     setRequireIdentityVerification(false);
@@ -2766,6 +2860,96 @@ const requestNotificationPermission = async (currentUser) => {
     } catch (err) {
       console.error("Error updating inquiry status:", err);
       setError("Failed to update: " + err.message);
+    }
+  };
+
+  const downloadRoomImportTemplate = () => {
+    const csv = [
+      "roomNumber,roomType,price,description,amenities",
+      'A12,single,45000,"Single room, quiet corner",electricity;water;wifi',
+      'B3,master,120000,"Master ensuite with private bathroom",electricity;water;wifi;toilet_inside;furnished',
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kampasika-room-import-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRoomImportFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+      setError("Please choose a .csv file (export it from Excel/Sheets as CSV first).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const parsed = parseRoomImportCSV(String(evt.target.result || ""));
+      setImportRoomsParsed(parsed);
+      setImportRoomsResult(null);
+    };
+    reader.onerror = () => setError("Couldn't read that file — try re-saving it as CSV and uploading again.");
+    reader.readAsText(file);
+  };
+
+  // Writes every valid parsed row as its own room doc, chunked at 400
+  // writes per batch to stay comfortably under Firestore's 500-per-batch
+  // limit. Contact/address/university are pulled from the property, the
+  // same as the manual "+ Add room" flow — CSV import deliberately doesn't
+  // carry photos; those still get added per room afterward.
+  const handleConfirmRoomImport = async (propertyId) => {
+    const property = myProperties.find(p => p.id === propertyId);
+    const rows = importRoomsParsed?.valid || [];
+    if (!property || rows.length === 0) return;
+    setUploading(true);
+    try {
+      const chunks = [];
+      for (let i = 0; i < rows.length; i += 400) chunks.push(rows.slice(i, i + 400));
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach(row => {
+          const roomRef = doc(collection(db, "rooms"));
+          batch.set(roomRef, {
+            landlordName: property.landlordName,
+            landlordPhone: property.landlordPhone,
+            roomType: row.roomType,
+            price: row.price,
+            location: property.address,
+            lat: null,
+            lng: null,
+            nearUni: property.nearUni || "ARU",
+            description: row.description,
+            amenities: row.amenities,
+            photoUrl: null,
+            photos: [],
+            available: true,
+            views: 0,
+            userId: user.uid,
+            listedBy: user.uid,
+            listedByName: userName || property.landlordName,
+            listedByAvatar: userAvatar || null,
+            propertyId: property.id,
+            roomNumber: row.roomNumber,
+            createdAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
+      setImportRoomsResult({ imported: rows.length });
+      setImportRoomsParsed(null);
+      await loadMyAllRooms();
+      setSuccess(`Imported ${rows.length} rooms!`);
+    } catch (err) {
+      console.error("Error importing rooms:", err);
+      setError("Import failed partway through: " + err.message + " — check My Rooms to see what made it in before retrying the rest.");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -6260,7 +6444,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="roommates"||page==="admin"||page==="groupDetail") && (
+    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -9772,6 +9956,84 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         );
       })()}
 
+      {/* ============ IMPORT ROOMS (CSV) ============ */}
+      {ENABLE_ROOMS && page==="importRooms" && (() => {
+        const importProperty = myProperties.find(p => p.id === viewingPropertyId);
+        return (
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Import rooms into {importProperty?.name || "property"}</h2>
+            <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>Bring in many rooms at once from a spreadsheet. Contact info, address, and university come from the property automatically — just list room number, type, and price per row. Photos aren't part of this; add those per room afterward.</p>
+
+            <button onClick={downloadRoomImportTemplate} style={{width:'100%',padding:'12px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginBottom:'16px'}}>⬇ Download CSV template</button>
+
+            {!importRoomsResult && (
+              <div style={{marginBottom:'16px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Upload filled-in CSV</label>
+                <input type="file" accept=".csv,text/csv" onChange={handleRoomImportFileChange} style={{width:'100%',padding:'10px',border:'1.5px dashed var(--border-color)',borderRadius:'10px',fontSize:'13px',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+              </div>
+            )}
+
+            {importRoomsParsed?.headerError && (
+              <div style={{padding:'12px',background:'#fef2f2',color:'#991b1b',borderRadius:'10px',fontSize:'13px',fontWeight:'600',marginBottom:'16px'}}>{importRoomsParsed.headerError}</div>
+            )}
+
+            {importRoomsParsed && !importRoomsParsed.headerError && (
+              <>
+                <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
+                  <div style={{flex:1,padding:'10px',borderRadius:'10px',background:'#f0fffe',textAlign:'center'}}>
+                    <div style={{fontSize:'18px',fontWeight:'700',color:'#0d9488'}}>{importRoomsParsed.valid.length}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>ready to import</div>
+                  </div>
+                  {importRoomsParsed.invalid.length > 0 && (
+                    <div style={{flex:1,padding:'10px',borderRadius:'10px',background:'#fef2f2',textAlign:'center'}}>
+                      <div style={{fontSize:'18px',fontWeight:'700',color:'#ef4444'}}>{importRoomsParsed.invalid.length}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>skipped — see below</div>
+                    </div>
+                  )}
+                </div>
+
+                {importRoomsParsed.valid.length > 0 && (
+                  <div style={{maxHeight:'240px',overflowY:'auto',border:'1px solid var(--border-color)',borderRadius:'10px',marginBottom:'12px'}}>
+                    {importRoomsParsed.valid.map((row, i) => (
+                      <div key={i} style={{padding:'8px 12px',borderBottom:i<importRoomsParsed.valid.length-1?'1px solid var(--border-color)':'none',fontSize:'12px',display:'flex',justifyContent:'space-between'}}>
+                        <span style={{fontWeight:'600'}}>{row.roomNumber}</span>
+                        <span style={{color:'var(--text-secondary)'}}>{ROOM_TYPES.find(t=>t.id===row.roomType)?.name} · {row.price.toLocaleString()} TSh</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {importRoomsParsed.invalid.length > 0 && (
+                  <div style={{maxHeight:'180px',overflowY:'auto',border:'1px solid #fecaca',borderRadius:'10px',marginBottom:'16px'}}>
+                    {importRoomsParsed.invalid.map((row, i) => (
+                      <div key={i} style={{padding:'8px 12px',borderBottom:i<importRoomsParsed.invalid.length-1?'1px solid #fecaca':'none',fontSize:'12px'}}>
+                        <span style={{fontWeight:'600'}}>Line {row.line} ({row.roomNumber}):</span> <span style={{color:'#991b1b'}}>{row.reasons.join(", ")}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {importRoomsParsed.valid.length > 0 && (
+                  <button onClick={()=>handleConfirmRoomImport(viewingPropertyId)} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Importing...":`Import ${importRoomsParsed.valid.length} rooms`}</button>
+                )}
+              </>
+            )}
+
+            {importRoomsResult && (
+              <div style={{textAlign:'center',padding:'24px 16px'}}>
+                <div style={{fontSize:'40px',marginBottom:'10px'}}>✅</div>
+                <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Imported {importRoomsResult.imported} rooms</div>
+                <div style={{fontSize:'12px',color:'var(--text-secondary)',marginBottom:'20px'}}>Add photos per room from My Rooms whenever you're ready.</div>
+                <button onClick={()=>{setViewingPropertyId(viewingPropertyId);setProfileTab("myRooms");setPage("profile");}} style={{width:'100%',padding:'12px',background:'#0d9488',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer',marginBottom:'10px'}}>View rooms</button>
+                <button onClick={()=>{setImportRoomsResult(null);setImportRoomsParsed(null);}} style={{width:'100%',padding:'12px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}}>Import another file</button>
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
       {/* ============ ROOM DETAIL ============ */}
       {ENABLE_ROOMS && viewingRoom && (
         <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
@@ -10274,25 +10536,26 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         fontSize:'13px',
         color:'var(--text-secondary)'
       }}>
-        Enable or disable room listings platform-wide
+        Fixed ON while Rooms is under active development — this switch is disabled for now
       </div>
     </div>
 
     <button
       onClick={toggleRoomsFeature}
+      disabled
+      title="Disabled while Rooms is under active development"
       style={{
         padding:'10px 16px',
         border:'none',
         borderRadius:'10px',
-        cursor:'pointer',
+        cursor:'not-allowed',
         fontWeight:'700',
-        background: ENABLE_ROOMS
-          ? '#10b981'
-          : '#ef4444',
+        opacity:0.5,
+        background:'#10b981',
         color:'#fff'
       }}
     >
-      {ENABLE_ROOMS ? 'ON' : 'OFF'}
+      ON
     </button>
 </div>
 </div>
@@ -11214,6 +11477,9 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                         <button onClick={()=>{setViewingPropertyId(property.id);loadPropertyInboxThreads(property.id);loadPropertyTeam(property.id);setPage("propertyInbox");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>📥 Inbox</button>
                         {canManage && (
                           <button onClick={()=>startRoomForProperty(property.id)} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>+ Add room</button>
+                        )}
+                        {canManage && (
+                          <button onClick={()=>{setViewingPropertyId(property.id);setImportRoomsParsed(null);setImportRoomsResult(null);setPage("importRooms");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>📄 Import</button>
                         )}
                         {canManage && (
                           <button onClick={()=>{setViewingPropertyId(property.id);loadPropertyTeam(property.id);setPage("propertyTeam");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>👥 Team</button>
@@ -13007,7 +13273,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   height:'128px',
   background:'linear-gradient(to top, var(--page-bg) 0%, var(--page-bg) 18%, transparent 100%)',
   pointerEvents:'none',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="groupDetail"?'none':'block',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'block',
   zIndex:999
 }} />
 
@@ -13026,7 +13292,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
   boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="groupDetail"?'none':'flex',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
