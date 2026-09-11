@@ -722,6 +722,8 @@ useEffect(() => {
   const [propertyTeam, setPropertyTeam] = useState([]);
   const [inviteTeamPhone, setInviteTeamPhone] = useState("");
   const [inviteTeamRole, setInviteTeamRole] = useState("caretaker");
+  const [propertyInboxThreads, setPropertyInboxThreads] = useState([]);
+  const [propertyInboxFilter, setPropertyInboxFilter] = useState("all");
   const [createRoommateData, setCreateRoommateData] = useState({
     budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: ""
   });
@@ -2715,6 +2717,58 @@ const requestNotificationPermission = async (currentUser) => {
     }
   };
 
+  // The Property Inbox pools every inquiry about any of a property's rooms
+  // into one list, regardless of which teammate's account the student
+  // actually messaged (sellerId on the conversation is still whoever
+  // posted that specific room — propertyId is what lets the whole team
+  // find it here too).
+  const loadPropertyInboxThreads = useCallback(async (propertyId) => {
+    if (!propertyId) { setPropertyInboxThreads([]); return; }
+    try {
+      const snap = await getDocs(query(
+        collection(db, "conversations"),
+        where("propertyId", "==", propertyId),
+        orderBy("lastMessageAt", "desc")
+      ));
+      setPropertyInboxThreads(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("Error loading property inbox (missing conversations propertyId+lastMessageAt index?):", err);
+    }
+  }, []);
+
+  const handleClaimThread = async (thread) => {
+    try {
+      await updateDoc(doc(db, "conversations", thread.id), { assignedTo: user.uid, assignedToName: userName || "Team member" });
+      setPropertyInboxThreads(prev => prev.map(t => t.id === thread.id ? { ...t, assignedTo: user.uid, assignedToName: userName || "Team member" } : t));
+    } catch (err) {
+      console.error("Error claiming thread:", err);
+      setError("Failed to claim: " + err.message);
+    }
+  };
+
+  const handleReassignThread = async (thread, member) => {
+    const myRole = myProperties.find(p => p.id === thread.propertyId)?.myRole;
+    if (!canManageProperty(myRole)) { setError("Only managers can reassign inquiries."); return; }
+    try {
+      await updateDoc(doc(db, "conversations", thread.id), { assignedTo: member.uid, assignedToName: member.name || "Team member" });
+      setPropertyInboxThreads(prev => prev.map(t => t.id === thread.id ? { ...t, assignedTo: member.uid, assignedToName: member.name || "Team member" } : t));
+    } catch (err) {
+      console.error("Error reassigning thread:", err);
+      setError("Failed to reassign: " + err.message);
+    }
+  };
+
+  const handleToggleThreadResolved = async (thread) => {
+    const nextStatus = thread.inquiryStatus === "closed" ? "new" : "closed";
+    try {
+      await updateDoc(doc(db, "conversations", thread.id), { inquiryStatus: nextStatus });
+      setPropertyInboxThreads(prev => prev.map(t => t.id === thread.id ? { ...t, inquiryStatus: nextStatus } : t));
+    } catch (err) {
+      console.error("Error updating inquiry status:", err);
+      setError("Failed to update: " + err.message);
+    }
+  };
+
   // Prefills the room form from an existing room (or a property's own
   // details for a brand-new room), so a landlord doesn't retype the same
   // contact/location info 80 times. The member still reviews and submits
@@ -3061,6 +3115,7 @@ const startConversation = async (listing) => {
       listingTitle: listing.title,
       listingPrice: listing.price,
       listingPhoto: listing.photoUrl || null,
+      propertyId: listing.propertyId || null,
       buyerId: user.uid,
       buyerName: userName,
       buyerAvatar: userAvatar,
@@ -3172,6 +3227,9 @@ _pending: true
     sourceGroupId: activeConversation.sourceGroupId || "",
     sourceGroupName: activeConversation.sourceGroupName || "",
     contextKey: activeConversation.contextKey || "",
+    propertyId: activeConversation.propertyId || null,
+    assignedTo: null,
+    inquiryStatus: "new",
     buyerId: activeConversation.buyerId,
     buyerName: activeConversation.buyerName,
     buyerAvatar: activeConversation.buyerAvatar || null,
@@ -3260,6 +3318,9 @@ createdAt: serverTimestamp()
           sourceGroupId: activeConversation.sourceGroupId || "",
           sourceGroupName: activeConversation.sourceGroupName || "",
           contextKey: activeConversation.contextKey || "",
+          propertyId: activeConversation.propertyId || null,
+          assignedTo: null,
+          inquiryStatus: "new",
           buyerId: activeConversation.buyerId,
           buyerName: activeConversation.buyerName,
           buyerAvatar: activeConversation.buyerAvatar || null,
@@ -6199,7 +6260,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="roommates"||page==="admin"||page==="groupDetail") && (
+    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -7587,6 +7648,29 @@ return (
         );
       })()}
     </div>
+
+    {/* Room status banner — this toggle is the action a landlord/caretaker
+        actually repeats over a room's life (list once, then flip vacant/
+        occupied as tenants come and go), so it needs to be reachable
+        right from the conversation about that room, not just from My Rooms. */}
+    {activeConversation.propertyId && (() => {
+      const room = myAllRooms.find(r => r.id === activeConversation.listingId);
+      if (!room) return null;
+      const isAvailable = room.available !== false;
+      const canToggle = canEditRoomStatus(room);
+      return (
+        <div style={{background:isAvailable?'#f0fffe':'#f9fafb',borderBottom:'1px solid var(--border-color)',padding:'8px 16px',display:'flex',alignItems:'center',gap:'8px',flexShrink:0}}>
+          <div style={{flex:1,minWidth:0,fontSize:'12px',fontWeight:'600',color:isAvailable?'#0d9488':'#9ca3af',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            🏠 {room.roomNumber ? `${room.roomNumber} · ` : ''}{isAvailable ? '● Kipo Wazi' : '● Kimepangishwa'}
+          </div>
+          {canToggle && (
+            <button onClick={()=>toggleRoomAvailability(room)} style={{flexShrink:0,padding:'6px 12px',fontSize:'11px',fontWeight:'700',borderRadius:'8px',border:'none',cursor:'pointer',background:isAvailable?'#06d6c7':'#10b981',color:'#fff'}}>
+              {isAvailable ? 'Weka Kimepangishwa' : 'Rudisha Kipo Wazi'}
+            </button>
+          )}
+        </div>
+      );
+    })()}
 
     {/* Messages Container - scrollable middle area */}
     <div
@@ -9610,6 +9694,84 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         );
       })()}
 
+      {/* ============ PROPERTY INBOX ============ */}
+      {ENABLE_ROOMS && page==="propertyInbox" && (() => {
+        const inboxProperty = myProperties.find(p => p.id === viewingPropertyId);
+        const myRole = inboxProperty?.myRole;
+        const filteredThreads = propertyInboxThreads.filter(thread => {
+          if (propertyInboxFilter === "unassigned") return !thread.assignedTo;
+          if (propertyInboxFilter === "mine") return thread.assignedTo === user?.uid;
+          if (propertyInboxFilter === "unreplied") return thread.inquiryStatus !== "closed" && (thread.sellerUnread || 0) > 0;
+          return true;
+        });
+        return (
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{padding:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginTop:'16px',marginBottom:'4px'}}>{inboxProperty?.name || "Property"} Inbox</h2>
+            <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'14px'}}>Every inquiry about any room here, in one place — whoever on the team posted that room.</p>
+
+            <div style={{display:'flex',gap:'6px',marginBottom:'14px',overflowX:'auto'}}>
+              {[
+                { id: "all", label: "All" },
+                { id: "unassigned", label: "Unassigned" },
+                { id: "mine", label: "Mine" },
+                { id: "unreplied", label: "Unreplied" },
+              ].map(chip => (
+                <button key={chip.id} onClick={()=>setPropertyInboxFilter(chip.id)} style={{flexShrink:0,padding:'7px 14px',fontSize:'12px',fontWeight:'600',borderRadius:'999px',border:propertyInboxFilter===chip.id?'none':'1px solid var(--border-color)',cursor:'pointer',background:propertyInboxFilter===chip.id?'#0d9488':'var(--surface-bg)',color:propertyInboxFilter===chip.id?'#fff':'var(--text-primary)'}}>{chip.label}</button>
+              ))}
+            </div>
+
+            {filteredThreads.length === 0 ? (
+              <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
+                <div style={{fontSize:'40px',marginBottom:'10px'}}>📥</div>
+                <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>No inquiries here yet</div>
+                <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Student messages about any room in this property will show up here.</div>
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {filteredThreads.map(thread => {
+                  const room = myAllRooms.find(r => r.id === thread.listingId);
+                  const isClosed = thread.inquiryStatus === "closed";
+                  return (
+                    <div key={thread.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)',opacity:isClosed?0.6:1}}>
+                      <div onClick={()=>{setActiveConversation(thread);markAsRead(thread.id);setPage("chat");}} style={{cursor:'pointer'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'8px'}}>
+                          <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)'}}>{thread.buyerName || "Student"}</div>
+                          {(thread.sellerUnread || 0) > 0 && !isClosed && (
+                            <div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#ef4444',flexShrink:0,marginTop:'4px'}}/>
+                          )}
+                        </div>
+                        <div style={{fontSize:'11px',color:'#7c3aed',fontWeight:'600',marginTop:'2px'}}>
+                          🏠 {room?.roomNumber ? `${room.roomNumber} · ` : ''}{room?.location || thread.listingTitle}
+                        </div>
+                        <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{thread.lastMessage}</div>
+                      </div>
+                      <div style={{display:'flex',gap:'6px',marginTop:'10px',alignItems:'center'}}>
+                        {thread.assignedTo ? (
+                          <div style={{fontSize:'10px',fontWeight:'700',padding:'4px 9px',borderRadius:'10px',background:'#f5f0ff',color:'#7c3aed'}}>
+                            {thread.assignedTo === user?.uid ? "Assigned to you" : `→ ${thread.assignedToName || "Team member"}`}
+                          </div>
+                        ) : (
+                          <button onClick={()=>handleClaimThread(thread)} style={{padding:'6px 10px',fontSize:'11px',fontWeight:'700',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>Claim</button>
+                        )}
+                        {canManageProperty(myRole) && propertyTeam.length > 0 && thread.assignedTo !== undefined && (
+                          <select value="" onChange={e=>{ const member = propertyTeam.find(m=>m.uid===e.target.value); if (member) handleReassignThread(thread, member); }} style={{fontSize:'11px',padding:'6px 8px',borderRadius:'8px',border:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'var(--text-secondary)'}}>
+                            <option value="">Reassign to...</option>
+                            {propertyTeam.map(m => <option key={m.uid} value={m.uid}>{m.name}</option>)}
+                          </select>
+                        )}
+                        <button onClick={()=>handleToggleThreadResolved(thread)} style={{marginLeft:'auto',padding:'6px 10px',fontSize:'11px',fontWeight:'700',borderRadius:'8px',border:'none',cursor:'pointer',background:isClosed?'var(--surface-bg-alt)':'#0d9488',color:isClosed?'var(--text-secondary)':'#fff'}}>{isClosed ? "Reopen" : "Mark resolved"}</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
       {/* ============ ROOM DETAIL ============ */}
       {ENABLE_ROOMS && viewingRoom && (
         <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
@@ -9772,6 +9934,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     title: `${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name || 'Room'} — ${viewingRoom.location}`,
                     price: viewingRoom.price,
                     photoUrl: viewingRoom.photoUrl || viewingRoom.photos?.[0] || null,
+                    propertyId: viewingRoom.propertyId || null,
                     userId: viewingRoom.userId || viewingRoom.listedBy,
                     userName: viewingRoom.listedByName || viewingRoom.landlordName,
                     userAvatar: viewingRoom.listedByAvatar || null,
@@ -11048,6 +11211,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       </div>
                       <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                         <button onClick={()=>{setViewingPropertyId(property.id);setProfileTab("myRooms");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'none',cursor:'pointer',background:'#0d9488',color:'#fff'}}>View rooms</button>
+                        <button onClick={()=>{setViewingPropertyId(property.id);loadPropertyInboxThreads(property.id);loadPropertyTeam(property.id);setPage("propertyInbox");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>📥 Inbox</button>
                         {canManage && (
                           <button onClick={()=>startRoomForProperty(property.id)} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>+ Add room</button>
                         )}
@@ -12843,7 +13007,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   height:'128px',
   background:'linear-gradient(to top, var(--page-bg) 0%, var(--page-bg) 18%, transparent 100%)',
   pointerEvents:'none',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="groupDetail"?'none':'block',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="groupDetail"?'none':'block',
   zIndex:999
 }} />
 
@@ -12862,7 +13026,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
   boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="groupDetail"?'none':'flex',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
