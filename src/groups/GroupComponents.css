@@ -1699,6 +1699,11 @@
   background: #f0fdf4;
 }
 
+.message-bubble.tapin {
+  border-left-color: #7c3aed !important;
+  background: #faf7ff;
+}
+
 .message-bubble.pending {
   opacity: 0.78;
   border: 1px dashed #99f0ee;
@@ -1716,6 +1721,10 @@
 
 .dark-mode .message-bubble.payment {
   background: #13251d;
+}
+
+.dark-mode .message-bubble.tapin {
+  background: rgba(124, 58, 237, 0.1);
 }
 
 .message-author {
@@ -1766,6 +1775,67 @@
 .message-payment-card.rejected {
   background: rgba(239, 68, 68, 0.12);
   color: #991b1b;
+}
+
+.message-tapin-card {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f5f0ff;
+  border: 1px solid #e4d9ff;
+}
+
+.dark-mode .message-tapin-card {
+  background: rgba(124, 58, 237, 0.12);
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
+.message-tapin-card strong {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: #0f1b2d;
+}
+
+.dark-mode .message-tapin-card strong {
+  color: var(--text-primary);
+}
+
+.message-tapin-card span {
+  font-size: 11px;
+  font-weight: 800;
+  color: #7c3aed;
+}
+
+.message-tapin-btn {
+  justify-self: start;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 900;
+  cursor: pointer;
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+.message-tapin-btn.registered {
+  background: #0d9488;
+}
+
+.message-tapin-btn.pending {
+  background: #eab308;
+  color: #3f2d00;
+}
+
+.message-tapin-btn.paid {
+  background: #16a34a;
+}
+
+.message-tapin-btn:disabled {
+  cursor: default;
+  opacity: 0.9;
 }
 
 .dark-mode .message-payment-card strong {
@@ -2226,7 +2296,8 @@
 .chat-replying,
 .chat-tools-menu,
 .chat-attachment-preview,
-.chat-payment-compose-card {
+.chat-payment-compose-card,
+.chat-tapin-compose-card {
   margin: 0 10px 6px;
   padding: 8px 10px;
   border: 1px solid #ccfbf1;
@@ -2238,10 +2309,33 @@
 .dark-mode .chat-replying,
 .dark-mode .chat-tools-menu,
 .dark-mode .chat-attachment-preview,
-.dark-mode .chat-payment-compose-card {
+.dark-mode .chat-payment-compose-card,
+.dark-mode .chat-tapin-compose-card {
   background: var(--surface-bg);
   border-color: rgba(134, 150, 160, 0.2);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
+.chat-tapin-compose-card {
+  display: grid;
+  gap: 8px;
+  padding-right: 42px;
+}
+
+.chat-tapin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.chat-tapin-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #0d9488;
 }
 
 .chat-payment-compose-card {

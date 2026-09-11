@@ -558,6 +558,10 @@ export function GroupDetailPage({
   const [manualPayMode, setManualPayMode] = useState(false);
   const [manualPayDeclared, setManualPayDeclared] = useState(false);
   const [composerHeight, setComposerHeight] = useState(48);
+  const [showTapInForm, setShowTapInForm] = useState(false);
+  const [tapInData, setTapInData] = useState({ question: "", requiresPayment: false, amount: "", paymentMethods: "" });
+  const [chatEventPayments, setChatEventPayments] = useState({});
+  const chatEventPaymentUnsubsRef = useRef({});
   const [sectionReadAt, setSectionReadAt] = useState(() => {
     try { return JSON.parse(localStorage.getItem("groupSectionReadAt") || "{}"); } catch (_) { return {}; }
   });
@@ -1183,6 +1187,42 @@ export function GroupDetailPage({
     };
   }, [canViewGroupContent, db, group?.id, group.visibility, group.joinPolicy, initialCollection, initialCollectionId, noteSnapshotMeta, onError, rememberGroupScreen]);
 
+  // Keep a live "my registration/payment status" doc for every tap-in card
+  // (kind === "collection_share") currently visible in the chat, so the
+  // card can show "Tap in" / "You're in" / "Pay" / "Paid" without needing
+  // the member to open the Collections tab.
+  useEffect(() => {
+    if (!group?.id || !user?.uid) return undefined;
+    const neededIds = Array.from(new Set(
+      messages.filter(message => message.kind === "collection_share" && message.collectionId).map(message => message.collectionId)
+    ));
+    const unsubs = chatEventPaymentUnsubsRef.current;
+    neededIds.forEach(collectionId => {
+      if (unsubs[collectionId]) return;
+      unsubs[collectionId] = subscribeMyCollectionPayment(db, group.id, collectionId, user.uid, (items) => {
+        setChatEventPayments(prev => ({ ...prev, [collectionId]: items[0] || null }));
+      }, () => {});
+    });
+    Object.keys(unsubs).forEach(collectionId => {
+      if (!neededIds.includes(collectionId)) {
+        unsubs[collectionId]?.();
+        delete unsubs[collectionId];
+        setChatEventPayments(prev => {
+          if (!(collectionId in prev)) return prev;
+          const next = { ...prev };
+          delete next[collectionId];
+          return next;
+        });
+      }
+    });
+    return undefined;
+  }, [db, group?.id, user?.uid, messages]);
+
+  useEffect(() => () => {
+    Object.values(chatEventPaymentUnsubsRef.current).forEach(unsub => unsub?.());
+    chatEventPaymentUnsubsRef.current = {};
+  }, []);
+
   useEffect(() => {
     if (!group?.id || !selectedCollection?.id) {
       setPayments([]);
@@ -1721,6 +1761,102 @@ export function GroupDetailPage({
       onError(err);
     } finally {
       setPosting(false);
+    }
+  };
+
+  // "Trip / tap-in" cards are just a chat-native shortcut for creating a
+  // free-or-paid event Collection and immediately sharing it as a message,
+  // so tapping in and paying can reuse all of the existing Collections
+  // registration + PawaPay/manual-pay plumbing instead of a parallel system.
+  const handleCreateTapIn = async () => {
+    if (guardOfflineAction("Posting a tap-in card")) return;
+    const question = tapInData.question.trim();
+    if (!question) {
+      onError(new Error("Ask a question first, e.g. \"Who's going to the trip?\""));
+      return;
+    }
+    if (tapInData.requiresPayment && Number(tapInData.amount || 0) <= 0) {
+      onError(new Error("Enter an amount per person, or turn payment off."));
+      return;
+    }
+    setPosting(true);
+    try {
+      const collectionRef = await createGroupCollection(db, {
+        groupId: group.id,
+        user,
+        profile,
+        data: {
+          title: question,
+          description: "",
+          collectionType: "event",
+          amount: tapInData.requiresPayment ? Number(tapInData.amount || 0) : 0,
+          options: "",
+          expectedPeople: 0,
+          paymentMethods: tapInData.paymentMethods.trim(),
+          deadline: "",
+          visibility: "groupOnly",
+        },
+      });
+      await sendGroupMessage(db, {
+        groupId: group.id,
+        channelId: "chats",
+        text: question,
+        user,
+        profile,
+        kind: "collection_share",
+        pinned: false,
+        group,
+        members,
+        attachments: [],
+        collectionId: collectionRef.id,
+      });
+      setTapInData({ question: "", requiresPayment: false, amount: "", paymentMethods: "" });
+      setShowTapInForm(false);
+      setShowChatComposer(false);
+      setShowChatTools(false);
+      markCurrentGroupRead();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  // Tapping the button on a tap-in card: register the first tap, hand off
+  // to the existing chat payment composer if this card needs money, and
+  // do nothing once the member is already fully in (paid or free-registered).
+  const handleTapInAction = async (message) => {
+    if (guardOfflineAction("Tapping in")) return;
+    if (!user) return;
+    const linkedCollection = collections.find(item => item.id === message.collectionId);
+    if (!linkedCollection) {
+      onError(new Error("This trip card is no longer available."));
+      return;
+    }
+    const myStatus = chatEventPayments[message.collectionId];
+    const needsPayment = Number(linkedCollection.amount || 0) > 0;
+    if (myStatus?.status === "paid") return;
+    if (myStatus && needsPayment) {
+      setShowChatComposer(true);
+      setShowChatTools(false);
+      setChatPaymentTargetId(linkedCollection.id);
+      return;
+    }
+    if (myStatus) return;
+    setBusy(true);
+    try {
+      await registerGroupEvent(db, {
+        groupId: group.id,
+        collectionItem: linkedCollection,
+        user,
+        profile,
+        data: {},
+      });
+      onSuccess(needsPayment ? "You're in — tap again to pay." : "You're in!");
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -3506,7 +3642,7 @@ export function GroupDetailPage({
                     <div
                     role="button"
                     tabIndex={0}
-                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.kind === "payment_intent" ? "payment" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
+                    className={`message-bubble ${message.kind === "announcement" ? "announcement" : ""} ${message.kind === "payment_intent" ? "payment" : ""} ${message.kind === "collection_share" ? "tapin" : ""} ${(message.offlinePending || message.sending) ? "pending" : ""}`}
                     style={{ borderLeftColor: isOwnMessage ? "#0d9488" : getUserColor(message.authorUid) }}
                     onMouseDown={() => !message.offlinePending && startMessageHold(message)}
                     onMouseUp={clearMessageHold}
@@ -3543,7 +3679,38 @@ export function GroupDetailPage({
                         <span>{Number(message.paymentIntent.amount || 0).toLocaleString()} TSh</span>
                       </div>
                     )}
-                    {message.text && <div className="message-text">{message.text}</div>}
+                    {message.kind === "collection_share" && (() => {
+                      const linkedCollection = collections.find(item => item.id === message.collectionId);
+                      const needsPayment = Number(linkedCollection?.amount || 0) > 0;
+                      const myStatus = chatEventPayments[message.collectionId];
+                      const cardStatusClass = myStatus?.status === "paid" ? "paid" : myStatus ? (needsPayment ? "pending" : "registered") : "not-registered";
+                      const buttonLabel = !linkedCollection
+                        ? "Unavailable"
+                        : myStatus?.status === "paid"
+                          ? "Paid \u2713"
+                          : myStatus && needsPayment
+                            ? `Pay ${Number(linkedCollection.amount || 0).toLocaleString()} TSh`
+                            : myStatus
+                              ? "You're in \u2713"
+                              : "I'm in";
+                      return (
+                        <div className={`message-tapin-card ${cardStatusClass}`} onClick={event => event.stopPropagation()}>
+                          <strong>{message.text || "Who's going?"}</strong>
+                          {linkedCollection && needsPayment && (
+                            <span>{Number(linkedCollection.amount || 0).toLocaleString()} TSh per person</span>
+                          )}
+                          <button
+                            type="button"
+                            className={`message-tapin-btn ${cardStatusClass}`}
+                            disabled={!linkedCollection || busy || myStatus?.status === "paid"}
+                            onClick={() => handleTapInAction(message)}
+                          >
+                            {buttonLabel}
+                          </button>
+                        </div>
+                      );
+                    })()}
+                    {message.text && message.kind !== "collection_share" && <div className="message-text">{message.text}</div>}
                     {message.attachments?.length > 0 && (() => {
                       const openAttachment = (attachment) => handleOpenResourceInApp({
                         title: attachment.name,
@@ -3701,7 +3868,62 @@ export function GroupDetailPage({
                           <MenuIcon name="image" />
                           <span>Photo</span>
                         </button>
+                        {memberCanManage && (
+                          <button type="button" className="chat-tool-action" onClick={() => { setShowTapInForm(true); setShowChatTools(false); }} disabled={posting || busy}>
+                            <MenuIcon name="events" />
+                            <span>Trip / tap-in</span>
+                          </button>
+                        )}
                         <small>Files up to {MAX_UPLOAD_FILE_MB}MB each.</small>
+                      </div>
+                    )}
+                    {showTapInForm && (
+                      <div className="chat-tapin-compose-card">
+                        <button type="button" className="chat-payment-clear" aria-label="Cancel tap-in card" onClick={() => setShowTapInForm(false)}>
+                          <MenuIcon name="close" />
+                        </button>
+                        <div className="group-field">
+                          <label>Question</label>
+                          <input
+                            value={tapInData.question}
+                            onChange={event => setTapInData(prev => ({ ...prev, question: event.target.value }))}
+                            placeholder="Who's going to the trip?"
+                            maxLength={140}
+                            autoFocus
+                          />
+                        </div>
+                        <label className="chat-tapin-toggle">
+                          <input
+                            type="checkbox"
+                            checked={tapInData.requiresPayment}
+                            onChange={event => setTapInData(prev => ({ ...prev, requiresPayment: event.target.checked }))}
+                          />
+                          <span>Requires payment</span>
+                        </label>
+                        {tapInData.requiresPayment && (
+                          <>
+                            <div className="group-field">
+                              <label>Amount per person (TSh)</label>
+                              <input
+                                type="number"
+                                value={tapInData.amount}
+                                onChange={event => setTapInData(prev => ({ ...prev, amount: event.target.value }))}
+                                placeholder="15000"
+                              />
+                            </div>
+                            <div className="group-field">
+                              <label>Payment number(s)</label>
+                              <input
+                                value={tapInData.paymentMethods}
+                                onChange={event => setTapInData(prev => ({ ...prev, paymentMethods: event.target.value }))}
+                                placeholder="0712345678 - M-Pesa, 0787654321 - Airtel"
+                              />
+                            </div>
+                          </>
+                        )}
+                        <button type="button" className="group-btn primary" disabled={posting || busy} onClick={handleCreateTapIn}>
+                          {posting ? "Posting..." : "Post tap-in card"}
+                        </button>
                       </div>
                     )}
                     {chatAttachments.length > 0 && (

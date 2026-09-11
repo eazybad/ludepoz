@@ -82,6 +82,33 @@ function normalizeTanzaniaPhoneInput(value) {
   return "";
 }
 
+// Historically saved phone numbers on user profiles aren't in one consistent
+// format (some flows saved "0712...", others may have saved "+255712..."),
+// so property-team invites by phone need to try every plausible stored
+// shape rather than assuming one.
+function tanzaniaPhoneVariants(value) {
+  const compact = String(value || "").replace(/[\s-]/g, "");
+  let local = "";
+  if (/^0[67]\d{8}$/.test(compact)) local = compact;
+  else if (/^255[67]\d{8}$/.test(compact)) local = `0${compact.slice(3)}`;
+  else if (/^\+255[67]\d{8}$/.test(compact)) local = `0${compact.slice(4)}`;
+  if (!local) return [];
+  return [local, `255${local.slice(1)}`, `+255${local.slice(1)}`];
+}
+
+// A "property team" mirrors the owner/admin/treasurer/member rank pattern
+// already used for group roles, scaled down to what a landlord's team
+// actually needs: someone who can do everything (owner), someone who can
+// manage rooms and invite/remove caretakers (manager), and someone who can
+// just reply to inquiries and update room status (caretaker).
+const PROPERTY_ROLE_RANK = { owner: 3, manager: 2, caretaker: 1 };
+function canManageProperty(role) {
+  return (PROPERTY_ROLE_RANK[role] || 0) >= PROPERTY_ROLE_RANK.manager;
+}
+function canManagePropertyTeam(role) {
+  return role === "owner";
+}
+
 function serializeDiscoverItem(item = {}) {
   const createdAt = item.createdAt?.toDate ? item.createdAt.toDate() : item.createdAt;
   return {
@@ -675,8 +702,26 @@ useEffect(() => {
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
   const [createRoomData, setCreateRoomData] = useState({
-    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null
+    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null, propertyId: "", roomNumber: "", existingPhotoUrls: []
   });
+  // A "property" is a building/hostel that owns many individual rooms, so a
+  // landlord with 80+ rooms can manage them as one unit instead of 80
+  // disconnected listings. See myProperties / loadMyProperties below.
+  const [myProperties, setMyProperties] = useState([]);
+  // Mirrors myProperties without being a useCallback/useEffect dependency —
+  // loadMyAllRooms reads this for its no-argument fallback instead of
+  // closing over myProperties directly, which would change identity every
+  // time properties load and cause the load effect to re-fire forever.
+  const myPropertiesRef = useRef([]);
+  const [viewingPropertyId, setViewingPropertyId] = useState(null);
+  const [createPropertyData, setCreatePropertyData] = useState({
+    name: "", address: "", landlordName: "", landlordPhone: "", nearUni: "ARU"
+  });
+  // Team members (owner/manager/caretaker) for whichever property is
+  // currently open on the Team tab.
+  const [propertyTeam, setPropertyTeam] = useState([]);
+  const [inviteTeamPhone, setInviteTeamPhone] = useState("");
+  const [inviteTeamRole, setInviteTeamRole] = useState("caretaker");
   const [createRoommateData, setCreateRoommateData] = useState({
     budget: "", preferredArea: "", roomType: "", gender: "", desc: "", moveDate: ""
   });
@@ -2161,7 +2206,7 @@ useEffect(() => {
     try {
       setUploading(true);
       const uploadTs = Date.now();
-      const photoUrls = createRoomData.photoFiles.length > 0
+      const uploadedUrls = createRoomData.photoFiles.length > 0
         ? await Promise.all(createRoomData.photoFiles.map(async (original, i) => {
             const { file } = await safeCompress(original, COMPRESSION_PRESETS.room);
             const storageRef = ref(storage, `rooms/${uploadTs}_${i}.jpg`);
@@ -2169,6 +2214,7 @@ useEffect(() => {
             return getDownloadURL(snapshot.ref);
           }))
         : [];
+      const photoUrls = [...(createRoomData.existingPhotoUrls || []), ...uploadedUrls];
       // eslint-disable-next-line no-unused-vars
       let videoUrl = null;
       await addDoc(collection(db, "rooms"), {
@@ -2190,11 +2236,21 @@ useEffect(() => {
         listedBy: user.uid,
         listedByName: userName || createRoomData.landlordName.trim(),
         listedByAvatar: userAvatar || null,
+        propertyId: createRoomData.propertyId || null,
+        roomNumber: createRoomData.roomNumber.trim(),
         createdAt: serverTimestamp()
       });
       setShowCreateRoomSuccess(true);
       setSuccess("Room listed successfully!");
-      setCreateRoomData({ landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [] });
+      // Keep property + contact/location details sticky so a landlord adding
+      // many rooms under the same property doesn't have to re-enter them
+      // for every single room — only the room-specific fields reset.
+      setCreateRoomData(prev => ({
+        ...prev,
+        roomType: "", price: "", desc: "", amenities: [],
+        photoFiles: [], photoPreviews: [], existingPhotoUrls: [],
+        roomNumber: "",
+      }));
       await loadRooms();
       loadMyAllRooms();
     } catch (err) {
@@ -2486,12 +2542,237 @@ const requestNotificationPermission = async (currentUser) => {
   // Loads ALL rooms owned by the current user, regardless of availability.
   // The public feed (loadRooms) filters by available==true, but the owner
   // needs to see rented rooms too in order to toggle them back on later.
-  const loadMyAllRooms = useCallback(async () => {
+  const loadMyProperties = useCallback(async () => {
+    if (!user) { setMyProperties([]); return; }
+    try {
+      const ownedSnap = await getDocs(query(collection(db, "properties"), where("ownerId", "==", user.uid)));
+      const ownedList = ownedSnap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate(), myRole: "owner" }));
+
+      // Properties this member was invited onto as staff (manager/caretaker),
+      // found via a collection-group query across every property's team
+      // subcollection. Requires a Firestore index on team.uid — if that
+      // index hasn't been created yet this fails quietly and the member
+      // still sees the properties they own.
+      let staffList = [];
+      try {
+        const teamSnap = await getDocs(query(collectionGroup(db, "team"), where("uid", "==", user.uid)));
+        const staffEntries = teamSnap.docs
+          .map(d => d.data())
+          .filter(entry => entry.role !== "owner" && entry.propertyId);
+        const propertyDocs = await Promise.all(staffEntries.map(entry => getDoc(doc(db, "properties", entry.propertyId))));
+        staffList = propertyDocs
+          .map((snap, i) => snap.exists() ? { id: snap.id, ...snap.data(), createdAt: snap.data().createdAt?.toDate(), myRole: staffEntries[i].role } : null)
+          .filter(Boolean);
+      } catch (teamErr) {
+        console.error("Error loading staff properties (missing collection-group index?):", teamErr);
+      }
+
+      const merged = [...ownedList];
+      staffList.forEach(property => {
+        if (!merged.some(p => p.id === property.id)) merged.push(property);
+      });
+      merged.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+      setMyProperties(merged);
+      myPropertiesRef.current = merged;
+      return merged;
+    } catch (err) {
+      console.error("Error loading my properties:", err);
+      return [];
+    }
+  }, [user]);
+
+  const loadPropertyTeam = useCallback(async (propertyId) => {
+    if (!propertyId) { setPropertyTeam([]); return; }
+    try {
+      const snap = await getDocs(collection(db, "properties", propertyId, "team"));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (PROPERTY_ROLE_RANK[b.role] || 0) - (PROPERTY_ROLE_RANK[a.role] || 0));
+      setPropertyTeam(list);
+    } catch (err) {
+      console.error("Error loading property team:", err);
+    }
+  }, []);
+
+  const handleCreateProperty = async () => {
+    if (!user) { requireAuth("list a room", () => setPage("createProperty")); return; }
+    if (!roomUserCanAccessRooms) { openRoomUserVerification("postRoom"); return; }
+    if (!createPropertyData.name.trim() || !createPropertyData.address.trim() || !createPropertyData.landlordName.trim() || !createPropertyData.landlordPhone.trim()) {
+      setError("Please fill in the property name, address, contact name, and phone");
+      return;
+    }
+    try {
+      setUploading(true);
+      const propertyRef = await addDoc(collection(db, "properties"), {
+        name: createPropertyData.name.trim(),
+        address: createPropertyData.address.trim(),
+        landlordName: createPropertyData.landlordName.trim(),
+        landlordPhone: createPropertyData.landlordPhone.trim(),
+        nearUni: createPropertyData.nearUni || "ARU",
+        verified: false,
+        ownerId: user.uid,
+        createdAt: serverTimestamp(),
+      });
+      // Every property gets a team doc for its own owner too, so team
+      // membership (including "who owns this") can be read from one
+      // subcollection instead of needing a separate ownerId check everywhere.
+      await setDoc(doc(db, "properties", propertyRef.id, "team", user.uid), {
+        uid: user.uid,
+        propertyId: propertyRef.id,
+        name: userName || createPropertyData.landlordName.trim(),
+        phone: userPhone || createPropertyData.landlordPhone.trim(),
+        role: "owner",
+        status: "active",
+        invitedBy: user.uid,
+        joinedAt: serverTimestamp(),
+      });
+      setSuccess("Property created! Now add its rooms.");
+      setCreatePropertyData({ name: "", address: "", landlordName: "", landlordPhone: "", nearUni: "ARU" });
+      await loadMyProperties();
+      setViewingPropertyId(propertyRef.id);
+      setPage("profile");
+      setProfileTab("myProperties");
+    } catch (err) {
+      console.error("Error creating property:", err);
+      setError("Failed to create property: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  // Invites an existing Kampasika account onto a property's team by phone
+  // number. There's no user search/directory in this app, so this can only
+  // add someone who already has an account — it can't send an SMS invite
+  // to a brand-new number.
+  const handleInviteToPropertyTeam = async (propertyId) => {
+    const myRole = myProperties.find(p => p.id === propertyId)?.myRole;
+    if (!canManagePropertyTeam(myRole)) { setError("Only the property owner can invite team members."); return; }
+    const variants = tanzaniaPhoneVariants(inviteTeamPhone);
+    if (variants.length === 0) {
+      setError("Enter a valid phone number, e.g. 0712345678");
+      return;
+    }
+    try {
+      setUploading(true);
+      let matchedUser = null;
+      for (const variant of variants) {
+        const snap = await getDocs(query(collection(db, "users"), where("phone", "==", variant)));
+        if (!snap.empty) { matchedUser = { id: snap.docs[0].id, ...snap.docs[0].data() }; break; }
+      }
+      if (!matchedUser) {
+        setError("No Kampasika account found with that phone number. Ask them to sign up first, then invite them.");
+        return;
+      }
+      if (matchedUser.id === user.uid) {
+        setError("That's your own number.");
+        return;
+      }
+      await setDoc(doc(db, "properties", propertyId, "team", matchedUser.id), {
+        uid: matchedUser.id,
+        propertyId,
+        name: matchedUser.name || matchedUser.username || "Team member",
+        phone: matchedUser.phone || "",
+        role: inviteTeamRole === "manager" ? "manager" : "caretaker",
+        status: "active",
+        invitedBy: user.uid,
+        joinedAt: serverTimestamp(),
+      });
+      setSuccess(`Added ${matchedUser.name || "team member"} to the team!`);
+      setInviteTeamPhone("");
+      await loadPropertyTeam(propertyId);
+    } catch (err) {
+      console.error("Error inviting team member:", err);
+      setError("Failed to add team member: " + err.message);
+    } finally { setUploading(false); }
+  };
+
+  const handleUpdateTeamMemberRole = async (propertyId, member, newRole) => {
+    const myRole = myProperties.find(p => p.id === propertyId)?.myRole;
+    if (!canManagePropertyTeam(myRole)) { setError("Only the property owner can change roles."); return; }
+    if (member.role === "owner") { setError("The owner's role can't be changed."); return; }
+    try {
+      await updateDoc(doc(db, "properties", propertyId, "team", member.uid), { role: newRole });
+      setPropertyTeam(prev => prev.map(m => m.uid === member.uid ? { ...m, role: newRole } : m));
+    } catch (err) {
+      console.error("Error updating team role:", err);
+      setError("Failed to update role: " + err.message);
+    }
+  };
+
+  const handleRemoveTeamMember = async (propertyId, member) => {
+    const myRole = myProperties.find(p => p.id === propertyId)?.myRole;
+    if (member.role === "owner") { setError("The owner can't be removed from their own property."); return; }
+    if (!canManagePropertyTeam(myRole) && !(canManageProperty(myRole) && member.role === "caretaker")) {
+      setError("You don't have permission to remove this team member.");
+      return;
+    }
+    const confirmed = window.confirm(`Remove ${member.name || "this team member"} from the property team?`);
+    if (!confirmed) return;
+    try {
+      await deleteDoc(doc(db, "properties", propertyId, "team", member.uid));
+      setPropertyTeam(prev => prev.filter(m => m.uid !== member.uid));
+      setSuccess("Team member removed.");
+    } catch (err) {
+      console.error("Error removing team member:", err);
+      setError("Failed to remove team member: " + err.message);
+    }
+  };
+
+  // Prefills the room form from an existing room (or a property's own
+  // details for a brand-new room), so a landlord doesn't retype the same
+  // contact/location info 80 times. The member still reviews and submits
+  // it themselves — nothing is written to the database here.
+  const handleDuplicateRoom = (room) => {
+    setCreateRoomData({
+      landlordName: room.landlordName || "",
+      landlordPhone: room.landlordPhone || "",
+      roomType: room.roomType || "",
+      price: room.price ? String(room.price) : "",
+      location: room.location || "",
+      lat: room.lat || null,
+      lng: room.lng || null,
+      nearUni: room.nearUni || "ARU",
+      desc: room.description || "",
+      amenities: room.amenities || [],
+      photoFiles: [],
+      photoPreviews: room.photos || [],
+      videoFile: null,
+      videoPreview: null,
+      propertyId: room.propertyId || "",
+      roomNumber: "",
+      existingPhotoUrls: room.photos || [],
+    });
+    setPage("createRoom");
+  };
+
+  const startRoomForProperty = (propertyId) => {
+    const property = myProperties.find(p => p.id === propertyId);
+    setCreateRoomData({
+      landlordName: property?.landlordName || "",
+      landlordPhone: property?.landlordPhone || "",
+      roomType: "", price: "", location: property?.address || "",
+      lat: null, lng: null, nearUni: property?.nearUni || "ARU",
+      desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null,
+      propertyId: propertyId || "", roomNumber: "",
+    });
+    setPage("createRoom");
+  };
+
+  const loadMyAllRooms = useCallback(async (propertyIdsOverride) => {
     if (!user) { setMyAllRooms([]); return; }
     try {
-      const q = query(collection(db, "rooms"), where("userId", "==", user.uid));
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
+      const ownSnap = await getDocs(query(collection(db, "rooms"), where("userId", "==", user.uid)));
+      const docsById = new Map(ownSnap.docs.map(d => [d.id, d]));
+
+      // A team member should see every room on a property they're on the
+      // team of, not just the ones they personally posted — otherwise a
+      // caretaker who joins an existing property would see an empty list.
+      const propertyIds = (propertyIdsOverride || myPropertiesRef.current.map(p => p.id)).filter(Boolean);
+      if (propertyIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < propertyIds.length; i += 30) chunks.push(propertyIds.slice(i, i + 30));
+        const extraSnaps = await Promise.all(chunks.map(chunk => getDocs(query(collection(db, "rooms"), where("propertyId", "in", chunk)))));
+        extraSnaps.forEach(snap => snap.docs.forEach(d => { if (!docsById.has(d.id)) docsById.set(d.id, d); }));
+      }
+
+      const list = Array.from(docsById.values()).map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() }));
       // Sort newest first (in JS to avoid a composite index requirement)
       list.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
       setMyAllRooms(list);
@@ -2505,19 +2786,40 @@ const requestNotificationPermission = async (currentUser) => {
     setRooms([]);
     setRoommatePosts([]);
     setMyAllRooms([]);
+    setMyProperties([]);
     return;
   }
 
   loadRooms();
   loadRoommatePosts();
-  if (user) loadMyAllRooms();
-}, [ENABLE_ROOMS, user, loadRooms, loadRoommatePosts, loadMyAllRooms]);
+  if (user) {
+    loadMyProperties().then(properties => loadMyAllRooms((properties || []).map(p => p.id)));
+  }
+}, [ENABLE_ROOMS, user, loadRooms, loadRoommatePosts, loadMyAllRooms, loadMyProperties]);
 
   // Flip a room between KIPO WAZI (available) and KIMEPANGISHWA (rented).
   // Optimistic update: change UI immediately, then write to Firestore.
   // If Firestore fails, we re-load to get true state back.
+  // A room can be managed either by whoever originally posted it, or by
+  // anyone on that room's property team — caretakers can update status,
+  // but deleting a room needs manager-or-above so a caretaker can't
+  // accidentally wipe out a listing.
+  const myPropertyRoleFor = (propertyId) => myProperties.find(p => p.id === propertyId)?.myRole;
+  const canEditRoomStatus = (room) => {
+    if (!user) return false;
+    if (room.userId === user.uid) return true;
+    if (room.propertyId) return !!myPropertyRoleFor(room.propertyId);
+    return false;
+  };
+  const canDeleteRoom = (room) => {
+    if (!user) return false;
+    if (room.userId === user.uid) return true;
+    if (room.propertyId) return canManageProperty(myPropertyRoleFor(room.propertyId));
+    return false;
+  };
+
   const toggleRoomAvailability = async (room) => {
-    if (!user || room.userId !== user.uid) return;
+    if (!canEditRoomStatus(room)) return;
     const newAvailable = !room.available;
     // Optimistic local update
     setMyAllRooms(prev => prev.map(r => r.id === room.id ? { ...r, available: newAvailable } : r));
@@ -2537,7 +2839,7 @@ const requestNotificationPermission = async (currentUser) => {
   // Permanently delete a room. Used for test posts or wrong listings.
   // Two-step confirmation to prevent accidents.
   const deleteMyRoom = async (room) => {
-    if (!user || room.userId !== user.uid) return;
+    if (!canDeleteRoom(room)) return;
     const confirmed = window.confirm(
       `Una uhakika unataka kufuta "${room.location || 'chumba hiki'}" kabisa?\n\nHaitarudi tena.`
     );
@@ -5897,7 +6199,7 @@ return (
       zIndex:50
     }}
   >
-    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="roommates"||page==="admin"||page==="groupDetail") && (
+    {(page==="create"||page==="profile"||page==="saved"||page==="seller"||page==="services"||page==="createService"||page==="communityDetail"||page==="collections"||page==="createCollection"||page==="collectionDetail"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="roommates"||page==="admin"||page==="groupDetail") && (
       <button
         onClick={()=>{
           if (page==="seller") closeSellerProfile();
@@ -9056,6 +9358,9 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
                 <div style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>Room listed!</div>
                 <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'28px'}}>Students can now find and contact you</div>
+                {createRoomData.propertyId && (
+                  <button onClick={()=>setShowCreateRoomSuccess(false)} style={{width:'100%',padding:'14px',background:'#7c3aed',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>+ Add another room to this property</button>
+                )}
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("rooms");}} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer',marginBottom:'12px'}}>View All Rooms</button>
                 <button onClick={()=>{setShowCreateRoomSuccess(false);setPage("home");}} style={{width:'100%',padding:'14px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'none',borderRadius:'12px',fontSize:'16px',fontWeight:'600',cursor:'pointer'}}>← Home</button>
               </div>
@@ -9105,6 +9410,34 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                     )}
                   </label>
                 </div>
+
+                {myProperties.length > 0 && (
+                  <div style={{marginBottom:'14px'}}>
+                    <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Property (optional)</label>
+                    <select
+                      value={createRoomData.propertyId}
+                      onChange={e=>{
+                        const propertyId = e.target.value;
+                        const property = myProperties.find(p => p.id === propertyId);
+                        setCreateRoomData(prev => ({
+                          ...prev,
+                          propertyId,
+                          landlordName: property ? property.landlordName : prev.landlordName,
+                          landlordPhone: property ? property.landlordPhone : prev.landlordPhone,
+                          location: property ? property.address : prev.location,
+                          nearUni: property ? property.nearUni : prev.nearUni,
+                        }));
+                      }}
+                      style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}
+                    >
+                      <option value="">Standalone room (no property)</option>
+                      {myProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>Picking a property fills in the contact details and address below — just adjust the room number and price.</div>
+                  </div>
+                )}
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Room number / label (optional)</label><input type="text" placeholder="e.g. A12" value={createRoomData.roomNumber} onChange={e=>setCreateRoomData({...createRoomData,roomNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
@@ -9183,6 +9516,99 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
           </div>
         </div>
       )}
+
+      {/* ============ CREATE PROPERTY ============ */}
+      {ENABLE_ROOMS && page==="createProperty" && (
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>New Property</h2>
+            <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>Group your rooms under one property — you'll pick this when adding each room, so you don't retype the same address and contact every time.</p>
+
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Property name *</label>
+              <input type="text" placeholder="e.g. Juma Hostel" value={createPropertyData.name} onChange={e=>setCreatePropertyData({...createPropertyData,name:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+            </div>
+
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Address / area *</label>
+              <input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createPropertyData.address} onChange={e=>setCreatePropertyData({...createPropertyData,address:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+            </div>
+
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label>
+              <input type="text" placeholder="e.g. Bwana Juma" value={createPropertyData.landlordName} onChange={e=>setCreatePropertyData({...createPropertyData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+            </div>
+
+            <div style={{marginBottom:'14px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Phone / WhatsApp *</label>
+              <input type="tel" placeholder="e.g. 0712345678" value={createPropertyData.landlordPhone} onChange={e=>setCreatePropertyData({...createPropertyData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+            </div>
+
+            <div style={{marginBottom:'20px'}}>
+              <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label>
+              <select value={createPropertyData.nearUni} onChange={e=>setCreatePropertyData({...createPropertyData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select>
+            </div>
+
+            <button onClick={handleCreateProperty} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Saving...":"🏢 Create Property"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* ============ PROPERTY TEAM ============ */}
+      {ENABLE_ROOMS && page==="propertyTeam" && (() => {
+        const teamProperty = myProperties.find(p => p.id === viewingPropertyId);
+        const myRole = teamProperty?.myRole;
+        return (
+        <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
+            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{teamProperty?.name || "Property"} Team</h2>
+            <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>Managers can add rooms and reply to inquiries. Caretakers can reply to inquiries and update room status. Only the owner can invite or remove people.</p>
+
+            {canManagePropertyTeam(myRole) && (
+              <div style={{border:'1px solid var(--border-color)',borderRadius:'10px',padding:'14px',marginBottom:'18px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Add team member by phone</label>
+                <input type="tel" placeholder="e.g. 0712345678" value={inviteTeamPhone} onChange={e=>setInviteTeamPhone(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'8px'}}/>
+                <div style={{display:'flex',gap:'8px',marginBottom:'10px'}}>
+                  <button onClick={()=>setInviteTeamRole("manager")} style={{flex:1,padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:inviteTeamRole==="manager"?'none':'1px solid var(--border-color)',cursor:'pointer',background:inviteTeamRole==="manager"?'#0d9488':'var(--surface-bg)',color:inviteTeamRole==="manager"?'#fff':'var(--text-primary)'}}>Manager</button>
+                  <button onClick={()=>setInviteTeamRole("caretaker")} style={{flex:1,padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:inviteTeamRole==="caretaker"?'none':'1px solid var(--border-color)',cursor:'pointer',background:inviteTeamRole==="caretaker"?'#0d9488':'var(--surface-bg)',color:inviteTeamRole==="caretaker"?'#fff':'var(--text-primary)'}}>Caretaker</button>
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'10px'}}>They need a Kampasika account already — this can't text-invite a brand-new number.</div>
+                <button onClick={()=>handleInviteToPropertyTeam(viewingPropertyId)} disabled={uploading} style={{width:'100%',padding:'12px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Adding...":"+ Add to team"}</button>
+              </div>
+            )}
+
+            <div style={{fontSize:'12px',fontWeight:'700',color:'var(--text-secondary)',marginBottom:'8px'}}>TEAM ({propertyTeam.length})</div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              {propertyTeam.map(member => {
+                const roleColors = { owner: '#7c3aed', manager: '#0d9488', caretaker: '#6b7280' };
+                const roleLabel = { owner: 'Owner', manager: 'Manager', caretaker: 'Caretaker' }[member.role] || member.role;
+                const canRemoveThis = member.role !== "owner" && (canManagePropertyTeam(myRole) || (canManageProperty(myRole) && member.role === "caretaker"));
+                return (
+                  <div key={member.uid} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px',border:'1px solid var(--border-color)',borderRadius:'10px'}}>
+                    <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--page-bg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',flexShrink:0}}>👤</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13px',fontWeight:'600',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{member.name || "Team member"}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{member.phone}</div>
+                    </div>
+                    {canManagePropertyTeam(myRole) && member.role !== "owner" ? (
+                      <select value={member.role} onChange={e=>handleUpdateTeamMemberRole(viewingPropertyId, member, e.target.value)} style={{fontSize:'11px',fontWeight:'600',padding:'5px 8px',borderRadius:'8px',border:'1px solid var(--border-color)',background:'var(--surface-bg)',color:'var(--text-primary)'}}>
+                        <option value="manager">Manager</option>
+                        <option value="caretaker">Caretaker</option>
+                      </select>
+                    ) : (
+                      <div style={{fontSize:'10px',fontWeight:'700',padding:'3px 8px',borderRadius:'10px',color:'#fff',background:roleColors[member.role] || '#6b7280',whiteSpace:'nowrap'}}>{roleLabel}</div>
+                    )}
+                    {canRemoveThis && (
+                      <button onClick={()=>handleRemoveTeamMember(viewingPropertyId, member)} style={{padding:'6px 8px',fontSize:'12px',borderRadius:'8px',border:'1px solid #fecaca',background:'var(--surface-bg)',color:'#ef4444',cursor:'pointer'}}>🗑</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* ============ ROOM DETAIL ============ */}
       {ENABLE_ROOMS && viewingRoom && (
@@ -10253,6 +10679,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
             {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
             {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
+            {ENABLE_ROOMS && <button onClick={()=>{setProfileTab("myProperties");setViewingPropertyId(null);}} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myProperties"?'#06d6c7':'none',color:profileTab==="myProperties"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Properties</button>}
           </div>
 
           {profileTab==="collections"&&(
@@ -10454,24 +10881,36 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             </div>
           )}
 
-          {ENABLE_ROOMS && profileTab==="myRooms" && (
+          {ENABLE_ROOMS && profileTab==="myRooms" && (() => {
+            const scopedProperty = viewingPropertyId ? myProperties.find(p => p.id === viewingPropertyId) : null;
+            const roomsToShow = viewingPropertyId ? myAllRooms.filter(room => room.propertyId === viewingPropertyId) : myAllRooms;
+            const canAddRoomHere = !scopedProperty || canManageProperty(scopedProperty.myRole);
+            return (
             <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              {scopedProperty && (
+                <button onClick={()=>{setViewingPropertyId(null);setProfileTab("myProperties");}} style={{alignSelf:'flex-start',padding:'6px 0',border:'none',background:'none',color:'#0d9488',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>← Back to properties</button>
+              )}
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>
-                  My Rooms ({myAllRooms.length})
+                  {scopedProperty ? scopedProperty.name : "My Rooms"} ({roomsToShow.length})
                 </h3>
-                <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
+                {canAddRoomHere && (
+                  <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}if(viewingPropertyId){startRoomForProperty(viewingPropertyId);}else{setPage("createRoom");}}} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add room</button>
+                )}
               </div>
 
-              {myAllRooms.length === 0 ? (
+              {roomsToShow.length === 0 ? (
                 <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'40px',marginBottom:'10px'}}>🏠</div>
                   <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Hauna chumba kilichoorodheshwa bado</div>
                   <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Bonyeza "Add room" hapo juu kuanza.</div>
                 </div>
               ) : (
-                myAllRooms.map(room => {
+                roomsToShow.map(room => {
                   const isAvailable = room.available !== false;
+                  const roomProperty = room.propertyId ? myProperties.find(p => p.id === room.propertyId) : null;
+                  const canManageThisRoom = canEditRoomStatus(room);
+                  const canDeleteThisRoom = canDeleteRoom(room);
                   return (
                     <div key={room.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)',display:'flex',gap:'12px',alignItems:'stretch'}}>
                       {/* Photo or placeholder */}
@@ -10484,52 +10923,137 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                       <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',minWidth:0}}>
                         <div>
                           <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                            {room.location || 'Chumba'}
+                            {room.location || 'Chumba'}{room.roomNumber ? ` · ${room.roomNumber}` : ''}
                           </div>
                           <div style={{fontSize:'12px',color:'var(--text-secondary)',marginBottom:'2px'}}>
                             {room.roomType ? `${room.roomType} · ` : ''}{room.price?.toLocaleString()} TSh/mwezi
                           </div>
-                          <div style={{
-                            display:'inline-block',
-                            fontSize:'10px',fontWeight:'600',
-                            color: isAvailable ? '#0d9488' : '#9ca3af',
-                            background: isAvailable ? '#f0fffe' : '#f3f4f6',
-                            padding:'2px 8px',borderRadius:'10px',marginTop:'2px'
-                          }}>
-                            {isAvailable ? '● KIPO WAZI' : '● KIMEPANGISHWA'}
+                          <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'2px'}}>
+                            <div style={{
+                              display:'inline-block',
+                              fontSize:'10px',fontWeight:'600',
+                              color: isAvailable ? '#0d9488' : '#9ca3af',
+                              background: isAvailable ? '#f0fffe' : '#f3f4f6',
+                              padding:'2px 8px',borderRadius:'10px'
+                            }}>
+                              {isAvailable ? '● KIPO WAZI' : '● KIMEPANGISHWA'}
+                            </div>
+                            {roomProperty && !scopedProperty && (
+                              <div style={{display:'inline-block',fontSize:'10px',fontWeight:'600',color:'#7c3aed',background:'#f5f0ff',padding:'2px 8px',borderRadius:'10px'}}>
+                                🏢 {roomProperty.name}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
-                          <button
-                            onClick={()=>toggleRoomAvailability(room)}
-                            style={{
-                              flex:1,
-                              padding:'7px 8px',
-                              fontSize:'11px',
-                              fontWeight:'600',
-                              borderRadius:'8px',
-                              border:'none',
-                              cursor:'pointer',
-                              background: isAvailable ? '#06d6c7' : '#10b981',
-                              color:'#fff'
-                            }}>
-                            {isAvailable ? 'Weka Kimepangishwa' : 'Rudisha Kipo Wazi'}
-                          </button>
-                          <button
-                            onClick={()=>deleteMyRoom(room)}
-                            style={{
-                              padding:'7px 10px',
-                              fontSize:'11px',
-                              fontWeight:'600',
-                              borderRadius:'8px',
-                              border:'1px solid #fecaca',
-                              cursor:'pointer',
-                              background:'var(--surface-bg)',
-                              color:'#ef4444'
-                            }}>
-                            🗑
-                          </button>
+                          {canManageThisRoom && (
+                            <button
+                              onClick={()=>toggleRoomAvailability(room)}
+                              style={{
+                                flex:1,
+                                padding:'7px 8px',
+                                fontSize:'11px',
+                                fontWeight:'600',
+                                borderRadius:'8px',
+                                border:'none',
+                                cursor:'pointer',
+                                background: isAvailable ? '#06d6c7' : '#10b981',
+                                color:'#fff'
+                              }}>
+                              {isAvailable ? 'Weka Kimepangishwa' : 'Rudisha Kipo Wazi'}
+                            </button>
+                          )}
+                          {canDeleteThisRoom && (
+                            <button
+                              onClick={()=>handleDuplicateRoom(room)}
+                              title="Duplicate this room"
+                              style={{
+                                padding:'7px 10px',
+                                fontSize:'11px',
+                                fontWeight:'600',
+                                borderRadius:'8px',
+                                border:'1px solid var(--border-color)',
+                                cursor:'pointer',
+                                background:'var(--surface-bg)',
+                                color:'var(--text-primary)'
+                              }}>
+                              ⧉
+                            </button>
+                          )}
+                          {canDeleteThisRoom && (
+                            <button
+                              onClick={()=>deleteMyRoom(room)}
+                              style={{
+                                padding:'7px 10px',
+                                fontSize:'11px',
+                                fontWeight:'600',
+                                borderRadius:'8px',
+                                border:'1px solid #fecaca',
+                                cursor:'pointer',
+                                background:'var(--surface-bg)',
+                                color:'#ef4444'
+                              }}>
+                              🗑
+                            </button>
+                          )}
                         </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            );
+          })()}
+
+          {ENABLE_ROOMS && profileTab==="myProperties" && (
+            <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <h3 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>
+                  My Properties ({myProperties.length})
+                </h3>
+                <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createProperty"));return;}setPage("createProperty");}} style={{padding:'8px 14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:'pointer'}}>+ Add property</button>
+              </div>
+
+              {myProperties.length === 0 ? (
+                <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
+                  <div style={{fontSize:'40px',marginBottom:'10px'}}>🏢</div>
+                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>No properties yet</div>
+                  <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Managing many rooms? Group them under one property so it's easier to keep track of.</div>
+                </div>
+              ) : (
+                myProperties.map(property => {
+                  const propertyRooms = myAllRooms.filter(room => room.propertyId === property.id);
+                  const vacantCount = propertyRooms.filter(room => room.available !== false).length;
+                  const canManage = canManageProperty(property.myRole);
+                  const roleLabel = { owner: 'Owner', manager: 'Manager', caretaker: 'Caretaker' }[property.myRole] || 'Caretaker';
+                  return (
+                    <div key={property.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'14px',border:'1px solid var(--border-color)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'6px'}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{property.name}</div>
+                          <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{property.address}</div>
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px'}}>
+                          <div style={{fontSize:'10px',fontWeight:'700',padding:'3px 8px',borderRadius:'10px',whiteSpace:'nowrap',color: property.verified ? '#0d9488' : '#92400e',background: property.verified ? '#f0fffe' : '#fef3c7'}}>
+                            {property.verified ? '✓ Verified' : 'Pending verification'}
+                          </div>
+                          <div style={{fontSize:'10px',fontWeight:'700',padding:'3px 8px',borderRadius:'10px',whiteSpace:'nowrap',color:'#7c3aed',background:'#f5f0ff'}}>
+                            {roleLabel}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)',marginBottom:'10px'}}>
+                        {propertyRooms.length} room{propertyRooms.length === 1 ? '' : 's'} · {vacantCount} vacant
+                      </div>
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                        <button onClick={()=>{setViewingPropertyId(property.id);setProfileTab("myRooms");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'none',cursor:'pointer',background:'#0d9488',color:'#fff'}}>View rooms</button>
+                        {canManage && (
+                          <button onClick={()=>startRoomForProperty(property.id)} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>+ Add room</button>
+                        )}
+                        {canManage && (
+                          <button onClick={()=>{setViewingPropertyId(property.id);loadPropertyTeam(property.id);setPage("propertyTeam");}} style={{flex:'1 1 auto',padding:'8px',fontSize:'12px',fontWeight:'600',borderRadius:'8px',border:'1px solid var(--border-color)',cursor:'pointer',background:'var(--surface-bg)',color:'var(--text-primary)'}}>👥 Team</button>
+                        )}
                       </div>
                     </div>
                   );
@@ -12319,7 +12843,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   height:'128px',
   background:'linear-gradient(to top, var(--page-bg) 0%, var(--page-bg) 18%, transparent 100%)',
   pointerEvents:'none',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'block',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="groupDetail"?'none':'block',
   zIndex:999
 }} />
 
@@ -12338,7 +12862,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
   boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="groupDetail"?'none':'flex',
+  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,

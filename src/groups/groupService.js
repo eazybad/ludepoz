@@ -863,7 +863,7 @@ export async function submitGroupWork(db, { groupId, workGroupId, user, profile,
   });
 }
 
-export async function sendGroupMessage(db, { groupId, channelId = "chats", text = "", user, profile, kind = "message", pinned = false, group = null, members = [], replyTo = null, attachments = [] }) {
+export async function sendGroupMessage(db, { groupId, channelId = "chats", text = "", user, profile, kind = "message", pinned = false, group = null, members = [], replyTo = null, attachments = [], collectionId = "" }) {
   const cleanText = text.trim();
   const mentionCategory = notificationCategory("group_mention");
   const mentionedMembers = mentionedMembersFromText(cleanText, members)
@@ -886,6 +886,7 @@ export async function sendGroupMessage(db, { groupId, channelId = "chats", text 
       text: (replyTo.text || replyTo.attachments?.[0]?.name || "Attachment").slice(0, 140),
     } : null,
     attachments,
+    ...(collectionId ? { collectionId } : {}),
     reactions: {},
     mentionedUids: mentionedMembers.map(member => member.uid),
     createdAt: serverTimestamp(),
