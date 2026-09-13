@@ -58,7 +58,6 @@ const functions = getFunctions(app);
 
 const UNIVERSITIES = [
   { id: 1, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
-  { id: 2, name: "Kampala International University in Tanzania", short: "KIUT", location: "Dar es Salaam" },
 ];
 
 const DEFAULT_UNI = UNIVERSITIES[0];
@@ -66,38 +65,6 @@ const ENABLE_PHONE_VERIFICATION = false;
 const USERNAME_AUTH_DOMAIN = "kampasika.local";
 const DISCOVER_FEED_CACHE_KEY = "kampasikaDiscoverFeed:v1";
 const DISCOVER_FEED_CACHE_LIMIT = 80;
-
-// Nearest-university field, factored out since it's used in more than one
-// form. Today it's a dropdown of known universities plus a free-text
-// fallback for anything not listed yet — value/onChange both just deal in
-// plain strings, so swapping the dropdown+fallback for a real search box
-// later (once the university list is large) won't need any data model
-// changes, just a different input here.
-function UniversityField({ value, onChange }) {
-  const isKnown = UNIVERSITIES.some(u => u.short === value);
-  return (
-    <>
-      <select
-        value={isKnown ? value : "__other__"}
-        onChange={e => onChange(e.target.value === "__other__" ? "" : e.target.value)}
-        style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}
-      >
-        {UNIVERSITIES.map(u => <option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}
-        <option value="__other__">✍️ Other (type it in)</option>
-      </select>
-      {!isKnown && (
-        <input
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Type the university name"
-          style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginTop:'8px'}}
-          autoFocus
-        />
-      )}
-    </>
-  );
-}
 
 function normalizeSignupUsername(value) {
   return String(value || "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9._-]/g, "");
@@ -9799,7 +9766,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><UniversityField value={createRoomData.nearUni} onChange={v=>setCreateRoomData({...createRoomData,nearUni:v})}/></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -9847,7 +9814,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             <div style={{marginBottom:'20px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label>
-              <UniversityField value={createPropertyData.nearUni} onChange={v=>setCreatePropertyData({...createPropertyData,nearUni:v})}/>
+              <select value={createPropertyData.nearUni} onChange={e=>setCreatePropertyData({...createPropertyData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select>
             </div>
 
             <button onClick={handleCreateProperty} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Saving...":"🏢 Create Property"}</button>
