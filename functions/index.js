@@ -23,6 +23,7 @@ const {
 // doc once by hand in Firestore — users/kampasika_official — with a name
 // ("Kampasika") and avatar, so it renders properly in the chat list.
 const KAMPASIKA_OFFICIAL_UID = "kampasika_official";
+const { generateAssistantReply, ANTHROPIC_API_KEY } = require("./assistantFunction");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
@@ -317,7 +318,10 @@ exports.sendKampasikaWelcome = onDocumentCreated("users/{uid}", async (event) =>
 // early `startsWith` check below is what keeps this cheap, since it skips
 // straight past ordinary DMs without doing any extra reads for them.
 exports.onKampasikaWelcomeReply = onDocumentCreated(
-  "conversations/{conversationId}/messages/{messageId}",
+  {
+    document: "conversations/{conversationId}/messages/{messageId}",
+    secrets: [ANTHROPIC_API_KEY],
+  },
   async (event) => {
     const { conversationId } = event.params;
     if (!conversationId.startsWith("kampasika_welcome_")) return null;
@@ -328,7 +332,32 @@ exports.onKampasikaWelcomeReply = onDocumentCreated(
     const db = getFirestore();
     const convRef = db.collection("conversations").doc(conversationId);
     const convSnap = await convRef.get();
-    if (!convSnap.exists || convSnap.data().welcomeStage !== "awaiting_language") return null;
+    if (!convSnap.exists) return null;
+    const stage = convSnap.data().welcomeStage;
+
+    // Scripted welcome is over — this is now an ongoing "how do I use
+    // Kampasika" assistant chat, scoped hard to app-usage questions only
+    // (see assistantFunction.js for the actual scoping/refusal logic).
+    if (stage === "done") {
+      const replyText = await generateAssistantReply(message.text);
+      if (!replyText) return null;
+      await convRef.collection("messages").add({
+        senderId: KAMPASIKA_OFFICIAL_UID,
+        senderName: "Kampasika",
+        text: replyText,
+        status: "sent",
+        readBy: [KAMPASIKA_OFFICIAL_UID],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await convRef.update({
+        lastMessage: replyText,
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        buyerUnread: admin.firestore.FieldValue.increment(1),
+      });
+      return null;
+    }
+
+    if (stage !== "awaiting_language") return null;
 
     const replyText = (message.text || "").trim();
     const isEnglish = LANGUAGE_MATCHERS.en.test(replyText);
@@ -1788,6 +1817,89 @@ exports.adminDeleteUser = onCall(async (request) => {
   await admin.auth().deleteUser(uid);
 
   return { success: true };
+});
+
+// One-time (idempotent) backfill: creates the kampasika_welcome_{uid}
+// conversation for any existing account that doesn't already have one.
+// Needed because sendKampasikaWelcome only fires when a users/{uid} doc is
+// CREATED — any account made before that function was deployed never got
+// this conversation, so they'd see neither the pinned assistant thread nor
+// a working Help button. Safe to call more than once: already-covered
+// accounts are skipped every time, and the bot account itself is excluded.
+// Call it once from an authenticated admin session (e.g. a temporary
+// button in the admin dashboard, or the Firebase console's function
+// tester) — no need to keep it around as a standing feature afterward.
+exports.backfillKampasikaWelcome = onCall(async (request) => {
+  assertAdmin(request);
+  const db = getFirestore();
+
+  // Every user's uid + doc data, paginated so this works regardless of how
+  // many accounts exist.
+  const userIds = [];
+  const userDocsById = new Map();
+  let lastDoc = null;
+  for (;;) {
+    let q = db.collection("users").orderBy(admin.firestore.FieldPath.documentId()).limit(500);
+    if (lastDoc) q = q.startAfter(lastDoc);
+    const snap = await q.get();
+    if (snap.empty) break;
+    snap.docs.forEach(d => {
+      if (d.id === KAMPASIKA_OFFICIAL_UID) return;
+      userIds.push(d.id);
+      userDocsById.set(d.id, d.data() || {});
+    });
+    lastDoc = snap.docs[snap.docs.length - 1];
+    if (snap.docs.length < 500) break;
+  }
+
+  // Every uid that already has a welcome conversation — one range query on
+  // document id instead of one read per user.
+  const existingSnap = await db.collection("conversations")
+    .where(admin.firestore.FieldPath.documentId(), ">=", "kampasika_welcome_")
+    .where(admin.firestore.FieldPath.documentId(), "<", "kampasika_welcome_\uf8ff")
+    .get();
+  const existingUids = new Set(existingSnap.docs.map(d => d.id.replace("kampasika_welcome_", "")));
+
+  const missingUids = userIds.filter(uid => !existingUids.has(uid));
+
+  let created = 0;
+  for (let i = 0; i < missingUids.length; i += 450) {
+    const chunk = missingUids.slice(i, i + 450);
+    const batch = db.batch();
+    chunk.forEach(uid => {
+      const userData = userDocsById.get(uid) || {};
+      const convRef = db.collection("conversations").doc(`kampasika_welcome_${uid}`);
+      const msgRef = convRef.collection("messages").doc();
+      batch.set(convRef, {
+        source: "system",
+        listingId: null,
+        buyerId: uid,
+        buyerName: userData.name || userData.displayName || "Member",
+        buyerAvatar: userData.avatar || userData.photoURL || null,
+        sellerId: KAMPASIKA_OFFICIAL_UID,
+        sellerName: "Kampasika",
+        sellerAvatar: null,
+        welcomeStage: "awaiting_language",
+        lastMessage: LANGUAGE_PROMPT,
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        buyerUnread: 1,
+        sellerUnread: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      batch.set(msgRef, {
+        senderId: KAMPASIKA_OFFICIAL_UID,
+        senderName: "Kampasika",
+        text: LANGUAGE_PROMPT,
+        status: "sent",
+        readBy: [KAMPASIKA_OFFICIAL_UID],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    created += chunk.length;
+  }
+
+  return { totalUsers: userIds.length, alreadyHadWelcome: existingUids.size, created };
 });
 
 exports.deleteMyAccount = onCall(async (request) => {

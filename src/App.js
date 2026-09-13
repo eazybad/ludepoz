@@ -83,6 +83,12 @@ const ROOM_NEARBY_UNIVERSITIES = [
   { short: "KIUT", name: "Kampala International University in Tanzania", location: "Dar es Salaam" },
 ];
 
+// Must match KAMPASIKA_OFFICIAL_UID in index.js exactly — this is the
+// fixed bot account used for the welcome flow and the "how to use
+// Kampasika" assistant that now continues in the same conversation once
+// the scripted welcome sequence finishes.
+const KAMPASIKA_BOT_UID = "kampasika_official";
+
 const ENABLE_PHONE_VERIFICATION = false;
 const USERNAME_AUTH_DOMAIN = "kampasika.local";
 const DISCOVER_FEED_CACHE_KEY = "kampasikaDiscoverFeed:v1";
@@ -530,6 +536,8 @@ function App() {
   const ENABLE_GROUP_FILES = false;
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
   const [REQUIRE_ROOM_USER_VERIFICATION, setRequireRoomUserVerification] = useState(false);
+  const [backfillingWelcome, setBackfillingWelcome] = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
   const pageHistory = useRef(["communities"]);
   const isGoingBack = useRef(false)
@@ -1993,6 +2001,25 @@ useEffect(() => {
     }
   };
 
+  // One-time admin action: creates the Kampasika assistant conversation for
+  // any account that predates sendKampasikaWelcome, or was otherwise missed.
+  // Safe to click more than once — see backfillKampasikaWelcome in
+  // index.js for why.
+  const handleBackfillKampasikaWelcome = async () => {
+    setBackfillingWelcome(true);
+    setBackfillResult(null);
+    try {
+      const run = httpsCallable(functions, "backfillKampasikaWelcome");
+      const res = await run();
+      setBackfillResult(res.data);
+    } catch (err) {
+      console.error("Backfill failed:", err);
+      setError("Backfill failed: " + (err.message || String(err)));
+    } finally {
+      setBackfillingWelcome(false);
+    }
+  };
+
  const deleteConversation = async (conversationId) => {
   if (!conversationId) return;
   if (!window.confirm("Delete this conversation? This cannot be undone.")) return;
@@ -3160,6 +3187,39 @@ const requestNotificationPermission = async (currentUser) => {
 
 
  
+  // Opens the fixed Kampasika assistant thread directly — used by the
+  // Help entry point. The conversation is auto-created for every account
+  // at signup (see sendKampasikaWelcome in index.js) with a deterministic
+  // id, so this is normally just picking it out of already-loaded
+  // conversations; the direct fetch is only a fallback for a slow initial
+  // load.
+  const openKampasikaAssistant = async () => {
+    if (!user) { requireAuth("message", openKampasikaAssistant); return; }
+    const existing = conversations.find(c => c.sellerId === KAMPASIKA_BOT_UID || c.buyerId === KAMPASIKA_BOT_UID);
+    if (existing) {
+      setActiveConversation(existing);
+      setMessages([]);
+      setPage("chat");
+      markAsRead(existing.id);
+      return;
+    }
+    try {
+      const convSnap = await getDoc(doc(db, "conversations", `kampasika_welcome_${user.uid}`));
+      if (convSnap.exists()) {
+        const conv = { id: convSnap.id, ...convSnap.data() };
+        setActiveConversation(conv);
+        setMessages([]);
+        setPage("chat");
+        markAsRead(conv.id);
+      } else {
+        setError("The assistant chat isn't ready yet — try again in a moment.");
+      }
+    } catch (err) {
+      console.error("Error opening Kampasika assistant:", err);
+      setError("Couldn't open the assistant chat.");
+    }
+  };
+
   const loadConversations = useCallback(async (userId) => {
     const uid = userId || user?.uid;
     if (!uid) return;
@@ -6121,11 +6181,20 @@ const loadSellerStats = useCallback(async (userId) => {
       byPerson.get(otherUid).conversations.push(conv);
     });
     const getTime = conv => conv.lastMessageAt?.seconds ? conv.lastMessageAt.seconds * 1000 : 0;
-    return order.map(uid => {
+    const sorted = order.map(uid => {
       const thread = byPerson.get(uid);
       thread.conversations.sort((a, b) => getTime(b) - getTime(a));
       return thread;
     }).sort((a, b) => getTime(b.conversations[0]) - getTime(a.conversations[0]));
+    // The assistant always sits at the very top of Chats, regardless of
+    // recency — it's meant to be a reliably-findable "how do I..." contact,
+    // not just another thread that scrolls away once other chats are newer.
+    const botIndex = sorted.findIndex(thread => thread.otherUid === KAMPASIKA_BOT_UID);
+    if (botIndex > 0) {
+      const [botThread] = sorted.splice(botIndex, 1);
+      sorted.unshift(botThread);
+    }
+    return sorted;
   })();
 if (loading) {
   return (
@@ -10675,6 +10744,23 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   </div>
                 </div>
 
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Kampasika Assistant Backfill</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>One-time: creates the assistant conversation for accounts that predate it. Safe to run more than once.</div>
+                    </div>
+                    <button onClick={handleBackfillKampasikaWelcome} disabled={backfillingWelcome} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:backfillingWelcome?'not-allowed':'pointer',fontWeight:'700',background:'#0d9488',color:'#fff',flexShrink:0}}>
+                      {backfillingWelcome ? 'Running...' : 'Run backfill'}
+                    </button>
+                  </div>
+                  {backfillResult && (
+                    <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)'}}>
+                      {backfillResult.totalUsers} accounts checked · {backfillResult.alreadyHadWelcome} already had it · <strong style={{color:'#0d9488'}}>{backfillResult.created} created</strong>
+                    </div>
+                  )}
+                </div>
+
                 {/* ─── VERIFICATION QUEUE ─── */}
                 <div style={{marginBottom:'24px'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
@@ -10968,6 +11054,30 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
             </div>
           ) : (
           <>
+          <button
+            type="button"
+            onClick={openKampasikaAssistant}
+            style={{
+              width:'100%',
+              display:'flex',
+              alignItems:'center',
+              gap:'10px',
+              padding:'12px 14px',
+              marginBottom:'16px',
+              background:'linear-gradient(135deg,#0d9488,#0ea5a0)',
+              color:'#fff',
+              border:'none',
+              borderRadius:'12px',
+              fontSize:'14px',
+              fontWeight:'700',
+              cursor:'pointer',
+              textAlign:'left',
+            }}
+          >
+            <span style={{fontSize:'20px'}}>💬</span>
+            <span style={{flex:1}}>How to use Kampasika — ask the assistant</span>
+            <span style={{fontSize:'16px'}}>›</span>
+          </button>
           {false && showAboutBanner && (
             <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'16px',marginBottom:'16px',border:'1px solid #ccfbf1',boxShadow:'0 4px 16px rgba(15,27,45,0.06)'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
