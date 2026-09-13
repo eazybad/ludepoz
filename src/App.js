@@ -56,15 +56,69 @@ const db = initializeFirestore(app, {
 const storage = getStorage(app);
 const functions = getFunctions(app);
 
+// Backs selectedUni, used for tagging Discover content (listings/services/
+// collections) with a university, and kept separate from
+// ROOM_NEARBY_UNIVERSITIES below — a room's "nearest university" is just a
+// location descriptor and has nothing to do with which account a member
+// belongs to. The two lists must never share this array or its numeric
+// ids: adding a room-facing university here previously caused a stray
+// numeric universityId on a user's own document to suddenly start
+// matching a real entry, silently reassigning that account away from its
+// real groups (which university scoped which groups a member could see
+// in Chats has since been removed entirely — see groupsForSelectedUni).
+// See loadUserProfile's setSelectedUni call for the fuller story.
 const UNIVERSITIES = [
   { id: 1, name: "Ardhi University", short: "ARU", location: "Dar es Salaam" },
 ];
 
 const DEFAULT_UNI = UNIVERSITIES[0];
+
+// Universities offered as "nearest university" options when listing a
+// room or property. Purely a display/search list — string-keyed (short
+// code), no numeric ids, so it can never collide with account-level
+// UNIVERSITIES data the way a shared list did. Safe to keep growing this
+// independently as more universities are added for room search.
+const ROOM_NEARBY_UNIVERSITIES = [
+  { short: "ARU", name: "Ardhi University", location: "Dar es Salaam" },
+  { short: "KIUT", name: "Kampala International University in Tanzania", location: "Dar es Salaam" },
+];
+
 const ENABLE_PHONE_VERIFICATION = false;
 const USERNAME_AUTH_DOMAIN = "kampasika.local";
 const DISCOVER_FEED_CACHE_KEY = "kampasikaDiscoverFeed:v1";
 const DISCOVER_FEED_CACHE_LIMIT = 80;
+
+// Nearest-university field, factored out since it's used in more than one
+// form. Today it's a dropdown of known universities plus a free-text
+// fallback for anything not listed yet — value/onChange both just deal in
+// plain strings, so swapping the dropdown+fallback for a real search box
+// later (once the university list is large) won't need any data model
+// changes, just a different input here.
+function UniversityField({ value, onChange }) {
+  const isKnown = ROOM_NEARBY_UNIVERSITIES.some(u => u.short === value);
+  return (
+    <>
+      <select
+        value={isKnown ? value : "__other__"}
+        onChange={e => onChange(e.target.value === "__other__" ? "" : e.target.value)}
+        style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}
+      >
+        {ROOM_NEARBY_UNIVERSITIES.map(u => <option key={u.short} value={u.short}>{u.name} ({u.short})</option>)}
+        <option value="__other__">✍️ Other (type it in)</option>
+      </select>
+      {!isKnown && (
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Type the university name"
+          style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginTop:'8px'}}
+          autoFocus
+        />
+      )}
+    </>
+  );
+}
 
 function normalizeSignupUsername(value) {
   return String(value || "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9._-]/g, "");
@@ -2620,7 +2674,17 @@ const requestNotificationPermission = async (currentUser) => {
       setUserHasPassword(userData.hasPassword !== false);
       setRoomUserVerificationStatus(userData.roomUserVerified === true ? "approved" : (userData.roomUserVerificationStatus || null));
       setPhoneVerified(userData.phoneVerified === true);
-      setSelectedUni(UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI);
+      // Was: UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI
+      // There is no validated flow anywhere in this app (checked App.js,
+      // GroupDetailPage.jsx, GroupListPage.jsx, groupService.js) that
+      // deliberately writes universityId onto a user's own document — so
+      // matching against it by numeric id was matching unvalidated, possibly
+      // stale data. That's exactly what silently hid an account's groups the
+      // moment a second university's id happened to coincide with a stray
+      // value already sitting in that field. Hardcoded to DEFAULT_UNI until
+      // there's an actual, validated place a member chooses their own
+      // university — re-enable a real lookup only alongside that flow.
+      setSelectedUni(DEFAULT_UNI);
       // Read both legacy "verified" and current "isVerified" field — handles
       // both data shapes since users created before v16 may have either.
       setIsVerified(userData.isVerified === true || userData.verified === true);
@@ -4146,7 +4210,6 @@ await updateDoc(convRef, {
     }
   };
 
-  const currentUniId = selectedUni?.id || "aru";
   const canSeeInviteOnlyGroup = (group) => (
     !!user?.uid
     && (
@@ -4169,7 +4232,6 @@ await updateDoc(convRef, {
 
   const groupUnreadCount = groups.filter(group => (
     group.active !== false
-    && (group.uniId || currentUniId) === currentUniId
     && canSeeInviteOnlyGroup(group)
     && group.lastActivityByUid !== user?.uid
     && group.activityAt?.toMillis
@@ -5993,9 +6055,13 @@ const loadSellerStats = useCallback(async (userId) => {
   const myServices = services.filter(s => s.userId === user?.uid);
   const showProfileListings = ENABLE_DISCOVER_GOODS;
   const showProfileServices = ENABLE_DISCOVER_SERVICES;
+  // NOTE: name kept as groupsForSelectedUni to avoid touching every call
+  // site, but this is no longer scoped by university — which groups a
+  // member can see in Chats shouldn't depend on which university they're
+  // from (unlike Discover, which does still tag content by university via
+  // selectedUni directly, and that's fine to leave as-is for now).
   const groupsForSelectedUni = groups.filter(group => (
     group.active !== false
-    && (group.uniId || currentUniId) === currentUniId
     && canSeeInviteOnlyGroup(group)
   ));
   const groupsById = new Map(groupsForSelectedUni.map(group => [group.id, group]));
@@ -9766,7 +9832,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><select value={createRoomData.nearUni} onChange={e=>setCreateRoomData({...createRoomData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><UniversityField value={createRoomData.nearUni} onChange={v=>setCreateRoomData({...createRoomData,nearUni:v})}/></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -9814,7 +9880,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
 
             <div style={{marginBottom:'20px'}}>
               <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label>
-              <select value={createPropertyData.nearUni} onChange={e=>setCreatePropertyData({...createPropertyData,nearUni:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}>{UNIVERSITIES.map(u=><option key={u.id} value={u.short}>{u.name} ({u.short})</option>)}</select>
+              <UniversityField value={createPropertyData.nearUni} onChange={v=>setCreatePropertyData({...createPropertyData,nearUni:v})}/>
             </div>
 
             <button onClick={handleCreateProperty} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Saving...":"🏢 Create Property"}</button>
