@@ -913,7 +913,6 @@ useEffect(() => {
   const dmMessagesContainerRef = useRef(null);
   const [showJumpToLatestDM, setShowJumpToLatestDM] = useState(false);
   const [messageText, setMessageText] = useState("");
-  const [showDmEmojiPicker, setShowDmEmojiPicker] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
   // Tracks whether we've finished loading the user's profile from Firestore.
@@ -7934,27 +7933,30 @@ return (
      {page==="chat"&&activeConversation&&(
   <div style={{
     position:'fixed',
-    top:'max(16px, env(safe-area-inset-top))',
+    top:'max(6px, env(safe-area-inset-top))',
     left:0,
     right:0,
     bottom:0,
     display:'flex',
     flexDirection:'column',
     background:'var(--page-bg)',
-    borderRadius:'48px 48px 0 0',
+    borderRadius:'26px 26px 0 0',
     overflow:'hidden',
     zIndex:100
   }}>
     
     {/* Chat Header - FIXED, never moves */}
     <div style={{
-      background:'var(--page-bg)',
-      padding:'12px 16px',
-      borderBottom:'1px solid var(--border-color)',
+      background:'var(--surface-bg)',
+      padding:'12px 16px 20px',
+      borderRadius:'0 0 26px 26px',
+      boxShadow:'0 10px 18px -12px rgba(15,27,45,0.22)',
       display:'flex',
       alignItems:'center',
       gap:'12px',
-      flexShrink:0
+      flexShrink:0,
+      position:'relative',
+      zIndex:1
     }}>
       <button 
         onClick={() => {
@@ -8205,36 +8207,12 @@ const bubbleRadius = '20px';
     )}
 
     {/* Message Input - part of flex layout, NOT fixed */}
-    {showDmEmojiPicker && (
-      <div style={{
-        background:'var(--surface-bg)',
-        borderTop:'1px solid var(--border-color)',
-        padding:'10px 12px',
-        display:'grid',
-        gridTemplateColumns:'repeat(8, minmax(0,1fr))',
-        gap:'4px',
-        maxHeight:'150px',
-        overflowY:'auto',
-        flexShrink:0,
-      }}>
-        {["😀","😂","😅","😊","😍","😘","😎","🤔","😢","😭","😡","😴","👍","👎","🙏","👏","💪","🙌","🔥","💯","❤️","💚","💛","💙","✨","🎉","🎓","😇","🤝","👋","🥳","😱"].map(emoji => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => setMessageText(prev => `${prev}${emoji}`)}
-            style={{ border:'none', background:'transparent', fontSize:'20px', cursor:'pointer', padding:'4px', lineHeight:1 }}
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
-    )}
     <form onSubmit={e=>{e.preventDefault(); sendMessage();}} autoComplete="off" style={{
       background:'var(--page-bg)',
       padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
-      alignItems:'center',
+      alignItems:'flex-end',
       flexShrink:0,
       width:'100%',
       boxSizing:'border-box'
@@ -8254,7 +8232,7 @@ const bubbleRadius = '20px';
           sendImageMessage(file);
         }}
       />
-      {/* "+" button — leading, attach action (photo, the only attachment type supported) */}
+      {/* "+" button — the one attach entry point (photo, the only attachment type supported) */}
       <button
         type="button"
         onClick={() => document.getElementById('chat-photo-input').click()}
@@ -8272,31 +8250,46 @@ const bubbleRadius = '20px';
           fontSize:'22px',
           fontWeight:'400',
           cursor:'pointer',
-          flexShrink:0
+          flexShrink:0,
+          marginBottom:'2px'
         }}
         title="Attach a photo"
       >
         +
       </button>
 
-      {/* Pill-shaped bar: text input + emoji + image, all one continuous shape */}
+      {/* Pill-shaped bar — just the text field now. An auto-growing
+          textarea, not a single-line input: the input version couldn't
+          wrap, so long unbroken text (or just a long message) scrolled
+          sideways and hid what you'd already typed instead of growing
+          downward. word-break here also covers a long word with no
+          spaces, which wouldn't wrap even in a plain textarea otherwise. */}
       <div style={{
         flex:1,
         minWidth:0,
         display:'flex',
-        alignItems:'center',
-        gap:'4px',
+        alignItems:'flex-end',
         background:'var(--surface-bg-alt)',
         border:'1px solid var(--border-color)',
-        borderRadius:'999px',
-        padding:'4px 6px 4px 16px',
+        borderRadius:'22px',
+        padding:'6px 16px',
         boxSizing:'border-box'
       }}>
-        <input
-          type="text"
+        <textarea
           value={messageText}
-          onChange={e=>setMessageText(e.target.value)}
+          onChange={e=>{
+            setMessageText(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+          }}
+          onKeyDown={e=>{
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (messageText.trim()) sendMessage();
+            }
+          }}
           placeholder="Text message"
+          rows={1}
           autoComplete="nope"
           autoCorrect="on"
           autoCapitalize="sentences"
@@ -8306,32 +8299,22 @@ const bubbleRadius = '20px';
           style={{
             flex:1,
             minWidth:0,
-            height:'32px',
+            maxHeight:'140px',
             padding:'0',
             background:'transparent',
             color:'var(--text-primary)',
             border:'none',
             outline:'none',
             fontSize:'16px',
+            lineHeight:'1.3',
+            resize:'none',
+            overflowY:'auto',
+            wordBreak:'break-word',
+            overflowWrap:'anywhere',
+            fontFamily:'inherit',
             boxSizing:'border-box'
           }}
         />
-        <button
-          type="button"
-          onClick={() => setShowDmEmojiPicker(v => !v)}
-          style={{ border:'none', background:'transparent', fontSize:'20px', cursor:'pointer', padding:'4px', flexShrink:0, lineHeight:1 }}
-          title="Emoji"
-        >
-          🙂
-        </button>
-        <button
-          type="button"
-          onClick={() => document.getElementById('chat-photo-input').click()}
-          style={{ border:'none', background:'transparent', fontSize:'19px', cursor:'pointer', padding:'4px', flexShrink:0, lineHeight:1 }}
-          title="Send a photo"
-        >
-          🖼️
-        </button>
       </div>
 
       {/* Trailing round action button — send, in Kampasika's own teal */}
