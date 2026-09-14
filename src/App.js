@@ -913,6 +913,7 @@ useEffect(() => {
   const dmMessagesContainerRef = useRef(null);
   const [showJumpToLatestDM, setShowJumpToLatestDM] = useState(false);
   const [messageText, setMessageText] = useState("");
+  const [showDmEmojiPicker, setShowDmEmojiPicker] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
   // Tracks whether we've finished loading the user's profile from Firestore.
@@ -7933,19 +7934,21 @@ return (
      {page==="chat"&&activeConversation&&(
   <div style={{
     position:'fixed',
-    top:0,
+    top:'max(16px, env(safe-area-inset-top))',
     left:0,
     right:0,
-    height:'100dvh',
+    bottom:0,
     display:'flex',
     flexDirection:'column',
     background:'var(--page-bg)',
+    borderRadius:'48px 48px 0 0',
+    overflow:'hidden',
     zIndex:100
   }}>
     
     {/* Chat Header - FIXED, never moves */}
     <div style={{
-      background:'var(--surface-bg)',
+      background:'var(--page-bg)',
       padding:'12px 16px',
       borderBottom:'1px solid var(--border-color)',
       display:'flex',
@@ -8110,9 +8113,10 @@ const nextMsg = messages[i + 1];
 const groupedWithPrev = prevMsg && prevMsg.senderId === msg.senderId && (sentAt - toMillis(prevMsg.createdAt)) < 3 * 60 * 1000;
 const groupedWithNext = nextMsg && nextMsg.senderId === msg.senderId && (toMillis(nextMsg.createdAt) - sentAt) < 3 * 60 * 1000;
 
-const bubbleRadius = isMine
-  ? `18px 18px ${groupedWithNext ? '18px' : '4px'} 18px`
-  : `18px 18px 18px ${groupedWithNext ? '18px' : '4px'}`;
+// Fully rounded on every corner, same amount regardless of grouping —
+// matches the pill-shaped bubble style requested, rather than the more
+// common "flat corner on the tail side" chat bubble shape.
+const bubbleRadius = '20px';
         return (
           <div key={msg.id} style={{
             display:'flex',
@@ -8201,9 +8205,32 @@ const bubbleRadius = isMine
     )}
 
     {/* Message Input - part of flex layout, NOT fixed */}
+    {showDmEmojiPicker && (
+      <div style={{
+        background:'var(--surface-bg)',
+        borderTop:'1px solid var(--border-color)',
+        padding:'10px 12px',
+        display:'grid',
+        gridTemplateColumns:'repeat(8, minmax(0,1fr))',
+        gap:'4px',
+        maxHeight:'150px',
+        overflowY:'auto',
+        flexShrink:0,
+      }}>
+        {["😀","😂","😅","😊","😍","😘","😎","🤔","😢","😭","😡","😴","👍","👎","🙏","👏","💪","🙌","🔥","💯","❤️","💚","💛","💙","✨","🎉","🎓","😇","🤝","👋","🥳","😱"].map(emoji => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => setMessageText(prev => `${prev}${emoji}`)}
+            style={{ border:'none', background:'transparent', fontSize:'20px', cursor:'pointer', padding:'4px', lineHeight:1 }}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+    )}
     <form onSubmit={e=>{e.preventDefault(); sendMessage();}} autoComplete="off" style={{
-      background:'var(--surface-bg)',
-      borderTop:'1px solid var(--border-color)',
+      background:'var(--page-bg)',
       padding:'8px 12px max(8px, env(safe-area-inset-bottom))',
       display:'flex',
       gap:'8px',
@@ -8227,61 +8254,94 @@ const bubbleRadius = isMine
           sendImageMessage(file);
         }}
       />
-      {/* Photo button */}
+      {/* "+" button — leading, attach action (photo, the only attachment type supported) */}
       <button
         type="button"
         onClick={() => document.getElementById('chat-photo-input').click()}
         style={{
-          width:'42px',
-          height:'42px',
-          minWidth:'42px',
+          width:'40px',
+          height:'40px',
+          minWidth:'40px',
           borderRadius:'50%',
           background:'var(--surface-bg-alt)',
-          border:'1.5px solid var(--border-color)',
+          color:'var(--text-primary)',
+          border:'none',
           display:'flex',
           alignItems:'center',
           justifyContent:'center',
-          fontSize:'18px',
+          fontSize:'22px',
+          fontWeight:'400',
           cursor:'pointer',
           flexShrink:0
         }}
-        title="Send photo"
+        title="Attach a photo"
       >
-        📷
+        +
       </button>
-      <input 
-        type="text" 
-        value={messageText} 
-        onChange={e=>setMessageText(e.target.value)} 
-        placeholder="Type a message..." 
-        autoComplete="nope"
-        autoCorrect="on"
-        autoCapitalize="sentences"
-        name="dm-message-text"
-        data-lpignore="true"
-        data-form-type="other"
-        className={isDarkMode ? "chat-dm-input chat-dm-input-dark" : "chat-dm-input"}
-        style={{
-          flex:1,
-          minWidth:0,
-          height:'42px',
-          padding:'10px 16px',
-          background:'var(--surface-bg-alt)',
-          color:'var(--text-primary)',
-          border:'1.5px solid var(--border-color)',
-          borderRadius:'24px',
-          fontSize:'16px',
-          outline:'none',
-          boxSizing:'border-box'
-        }} 
-      />
+
+      {/* Pill-shaped bar: text input + emoji + image, all one continuous shape */}
+      <div style={{
+        flex:1,
+        minWidth:0,
+        display:'flex',
+        alignItems:'center',
+        gap:'4px',
+        background:'var(--surface-bg-alt)',
+        border:'1px solid var(--border-color)',
+        borderRadius:'999px',
+        padding:'4px 6px 4px 16px',
+        boxSizing:'border-box'
+      }}>
+        <input
+          type="text"
+          value={messageText}
+          onChange={e=>setMessageText(e.target.value)}
+          placeholder="Text message"
+          autoComplete="nope"
+          autoCorrect="on"
+          autoCapitalize="sentences"
+          name="dm-message-text"
+          data-lpignore="true"
+          data-form-type="other"
+          style={{
+            flex:1,
+            minWidth:0,
+            height:'32px',
+            padding:'0',
+            background:'transparent',
+            color:'var(--text-primary)',
+            border:'none',
+            outline:'none',
+            fontSize:'16px',
+            boxSizing:'border-box'
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setShowDmEmojiPicker(v => !v)}
+          style={{ border:'none', background:'transparent', fontSize:'20px', cursor:'pointer', padding:'4px', flexShrink:0, lineHeight:1 }}
+          title="Emoji"
+        >
+          🙂
+        </button>
+        <button
+          type="button"
+          onClick={() => document.getElementById('chat-photo-input').click()}
+          style={{ border:'none', background:'transparent', fontSize:'19px', cursor:'pointer', padding:'4px', flexShrink:0, lineHeight:1 }}
+          title="Send a photo"
+        >
+          🖼️
+        </button>
+      </div>
+
+      {/* Trailing round action button — send, in Kampasika's own teal */}
       <button 
         type="submit"
         disabled={!messageText.trim()} 
         style={{
-          width:'42px',
-          height:'42px',
-          minWidth:'42px',
+          width:'44px',
+          height:'44px',
+          minWidth:'44px',
           borderRadius:'50%',
           background:messageText.trim()?'#06d6c7':'var(--surface-bg-alt)',
           color:messageText.trim()?'#0f1b2d':'var(--text-secondary)',
