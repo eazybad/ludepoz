@@ -4715,8 +4715,17 @@ useEffect(() => {
   }
 
   return () => unsubscribe();
+  // Keyed on activeConversation?.id, not the whole object — activeConversation
+  // gets a new object reference from several unrelated places in this file
+  // (e.g. setActiveConversation(prev => ({...prev, ...})) after sending a
+  // first message), which previously tore down and rebuilt this Firestore
+  // listener on every one of those reference changes even though the actual
+  // conversation being viewed hadn't changed. That churn is the likely cause
+  // of "message shows in the list but chat shows nothing" — a message could
+  // land in the gap between the old listener unsubscribing and the new one's
+  // first snapshot arriving.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeConversation, page, user]);
+}, [activeConversation?.id, page, user]);
 
 useEffect(() => {
   if (page !== "chat" || !activeConversation) return;
