@@ -904,6 +904,14 @@ useEffect(() => {
   const [messageFilterMode, setMessageFilterMode] = useState("all");
   const [expandedPersonUid, setExpandedPersonUid] = useState("");
   const [messages, setMessages] = useState([]);
+  // Mirrors GroupDetailPage's messageListRef/showJumpToLatest pattern —
+  // scrolling is driven by a stable ref and keyed on message COUNT, not
+  // the array itself, since a new array reference (which Firestore's
+  // onSnapshot produces on every fire, including for the sender's own
+  // optimistic update) previously forced the view back to the bottom on
+  // every re-render, making it impossible to scroll up and read history.
+  const dmMessagesContainerRef = useRef(null);
+  const [showJumpToLatestDM, setShowJumpToLatestDM] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [isVerified, setIsVerified] = useState(false);
@@ -4451,6 +4459,41 @@ await updateDoc(convRef, {
     return () => { if (unsubscribe) unsubscribe(); };
   }, [loadGroups]);
 
+  // Keeps the Chats list preview (last message + unread badge for every
+  // thread, shown OUTSIDE an open chat) live. This used to be a one-time
+  // getDocs() fetch that only ran again when re-entering the Chats page —
+  // so sending a message and going back could show a stale preview until
+  // the next full page-entry refetch happened to fire. Two listeners
+  // (as buyer, as seller) merged, same shape loadConversations already
+  // produced, mirroring how subscribeGroups keeps groups live above.
+  useEffect(() => {
+    if (!user?.uid) { setConversations([]); setUnreadCount(0); return undefined; }
+    const uid = user.uid;
+    let latestByRole = { buyer: [], seller: [] };
+    const merge = () => {
+      const allConvos = [...latestByRole.buyer, ...latestByRole.seller];
+      const uniqueConvos = Array.from(new Map(allConvos.map(c => [c.id, c])).values());
+      uniqueConvos.sort((a, b) => (b.lastMessageAt?.seconds || 0) - (a.lastMessageAt?.seconds || 0));
+      setConversations(uniqueConvos);
+      const unread = uniqueConvos.reduce((sum, conv) => {
+        const myUnread = uid === conv.buyerId ? conv.buyerUnread : conv.sellerUnread;
+        return sum + (myUnread || 0);
+      }, 0);
+      setUnreadCount(unread);
+    };
+    const unsubBuyer = onSnapshot(
+      query(collection(db, "conversations"), where("buyerId", "==", uid), orderBy("lastMessageAt", "desc")),
+      snap => { latestByRole.buyer = snap.docs.map(d => ({ id: d.id, ...d.data() })); merge(); },
+      err => console.error("conversations (buyer) listener:", err)
+    );
+    const unsubSeller = onSnapshot(
+      query(collection(db, "conversations"), where("sellerId", "==", uid), orderBy("lastMessageAt", "desc")),
+      snap => { latestByRole.seller = snap.docs.map(d => ({ id: d.id, ...d.data() })); merge(); },
+      err => console.error("conversations (seller) listener:", err)
+    );
+    return () => { unsubBuyer(); unsubSeller(); };
+  }, [user?.uid]);
+
   useEffect(() => {
     if (!user?.uid) {
       setMyGroupMemberships({});
@@ -4677,17 +4720,31 @@ useEffect(() => {
 
 useEffect(() => {
   if (page !== "chat" || !activeConversation) return;
-  const el = document.getElementById("messages-container");
+  const el = dmMessagesContainerRef.current;
   if (!el) return;
-  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-}, [page, activeConversation, messages.length]);
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+    setShowJumpToLatestDM(false);
+  });
+  // Keyed on message COUNT and conversation id — not the messages array
+  // itself, and not the whole activeConversation object — so this only
+  // fires when a message is actually added or a different conversation
+  // opens, not on every re-render that happens to produce a new (but
+  // equivalent) array or object reference.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page, activeConversation?.id, messages.length]);
 
-useEffect(() => {
-  const container = document.getElementById('messages-container');
-  if (container) {
-    container.scrollTop = container.scrollHeight;
-  }
-}, [messages]);
+const scrollDmChatToLatest = () => {
+  const el = dmMessagesContainerRef.current;
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  setShowJumpToLatestDM(false);
+};
+
+const handleDmChatScroll = () => {
+  const el = dmMessagesContainerRef.current;
+  if (!el) return;
+  setShowJumpToLatestDM(el.scrollHeight - el.scrollTop - el.clientHeight > 120);
+};
 
   const getAuthErrorMessage = (err, mode = "login") => {
     switch (err?.code) {
@@ -7994,6 +8051,8 @@ return (
     {/* Messages Container - scrollable middle area */}
     <div
       id="messages-container"
+      ref={dmMessagesContainerRef}
+      onScroll={handleDmChatScroll}
       style={{
   flex:1,
   overflowY:'auto',
@@ -8094,6 +8153,34 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
         );
       })}
     </div>
+
+    {showJumpToLatestDM && (
+      <button
+        type="button"
+        aria-label="Go to latest message"
+        onClick={scrollDmChatToLatest}
+        style={{
+          position:'absolute',
+          right:'16px',
+          bottom:'88px',
+          width:'40px',
+          height:'40px',
+          borderRadius:'50%',
+          border:'none',
+          background:'var(--surface-bg)',
+          color:'var(--text-primary)',
+          boxShadow:'0 4px 14px rgba(0,0,0,0.2)',
+          display:'flex',
+          alignItems:'center',
+          justifyContent:'center',
+          fontSize:'18px',
+          cursor:'pointer',
+          zIndex:5,
+        }}
+      >
+        ↓
+      </button>
+    )}
 
     {/* Message Input - part of flex layout, NOT fixed */}
     <form onSubmit={e=>{e.preventDefault(); sendMessage();}} autoComplete="off" style={{
