@@ -8069,25 +8069,20 @@ return (
   padding:'14px 12px',
   display:'flex',
   flexDirection:'column',
-  backgroundColor:isDarkMode?'#0b141a':'#f7f7f4',
-  backgroundImage:isDarkMode
-    ?"linear-gradient(rgba(11,20,26,0.85), rgba(11,20,26,0.85)), url('/chatwallpaper-dark.jpeg')"
-    :"linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url('/chatwallpaper-light.jpeg')",
-  backgroundSize:'cover',
-  backgroundPosition:'center'
+  background:'var(--page-bg)',
 }}
     >
       {messages.length === 0 && (
         <div style={{
           textAlign:'center',
           padding:'40px 16px',
-          color:'#8a9bb0'
+          color:'var(--text-secondary)'
         }}>
           <div style={{fontSize:'32px',marginBottom:'8px'}}>💬</div>
           <div style={{fontSize:'14px'}}>Send a message to start the conversation</div>
         </div>
       )}
-      {messages.map(msg=>{
+      {messages.map((msg, i)=>{
         const isMine=msg.senderId===user.uid;
         const toMillis = (value) => {
   if (!value) return 0;
@@ -8105,26 +8100,36 @@ const otherLastReadAt = isMine
   : null;
 
 const wasRead = isMine && sentAt > 0 && toMillis(otherLastReadAt) >= sentAt;
-const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
+
+// Consecutive-message grouping: messages from the same sender within a
+// short gap sit closer together, and only the last one in a run shows a
+// timestamp — this (plus the color change) is most of what separates
+// "feels current" from "feels like an old messaging app."
+const prevMsg = messages[i - 1];
+const nextMsg = messages[i + 1];
+const groupedWithPrev = prevMsg && prevMsg.senderId === msg.senderId && (sentAt - toMillis(prevMsg.createdAt)) < 3 * 60 * 1000;
+const groupedWithNext = nextMsg && nextMsg.senderId === msg.senderId && (toMillis(nextMsg.createdAt) - sentAt) < 3 * 60 * 1000;
+
+const bubbleRadius = isMine
+  ? `18px 18px ${groupedWithNext ? '18px' : '4px'} 18px`
+  : `18px 18px 18px ${groupedWithNext ? '18px' : '4px'}`;
         return (
           <div key={msg.id} style={{
             display:'flex',
             justifyContent:isMine?'flex-end':'flex-start',
-            marginBottom:'8px'
+            marginBottom: groupedWithNext ? '2px' : '10px'
           }}>
             <div style={{
               maxWidth:'78%',
-              background:isMine
-                ?(isDarkMode?'#005c4b':'#d9fdd3')
-                :'var(--surface-bg)',
-              color:isDarkMode?'#e9edef':'#111b21',
-              padding:'6px 10px 8px 10px',
-              borderRadius:isMine?'8px 8px 0 8px':'8px 8px 8px 0',
-              fontSize:'14.2px',
-              lineHeight:'1.4',
-              boxShadow:'0 1px 0.5px rgba(11,20,26,0.13)'
+              background:isMine ? '#0d9488' : 'var(--surface-bg)',
+              color:isMine ? '#ffffff' : 'var(--text-primary)',
+              padding:'8px 12px',
+              borderRadius:bubbleRadius,
+              fontSize:'14.5px',
+              lineHeight:'1.45',
+              boxShadow:'0 1px 2px rgba(0,0,0,0.06)'
             }}>
-              {!isMine&&<div style={{fontSize:'12px',fontWeight:'600',marginBottom:'2px',color:isDarkMode?'#8696a0':'#0f766e'}}>{msg.senderName}</div>}
+              {!isMine && !groupedWithPrev && <div style={{fontSize:'12px',fontWeight:'700',marginBottom:'2px',color:'#0d9488'}}>{msg.senderName}</div>}
               {msg.imageUrl && (
                 <img
                   src={msg.imageUrl}
@@ -8133,7 +8138,7 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                   style={{
                     maxWidth:'220px',
                     width:'100%',
-                    borderRadius:'10px',
+                    borderRadius:'12px',
                     display:'block',
                     cursor:'pointer',
                     opacity: msg._pending ? 0.6 : 1,
@@ -8142,21 +8147,25 @@ const statusText = msg._pending ? "Sending..." : wasRead ? "Read" : "Sent";
                 />
               )}
               {msg.text && <div style={{wordBreak:'break-word'}}>{msg.text}</div>}
-             <div style={{fontSize:'10px',marginTop:'4px',opacity:0.65,textAlign:'right'}}>
-  {msg.createdAt ? (() => {
-    try {
-      const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
-      return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
-    } catch(e) {
-      return '';
-    }
-  })() : ''}
-  {isMine && (
-    <span style={{marginLeft:'6px',color:wasRead?'#22c55e':'inherit',fontWeight:wasRead?'600':'400'}}>
-      {statusText}
-    </span>
-  )}
-</div>
+              {!groupedWithNext && (
+                <div style={{fontSize:'11px',marginTop:'4px',opacity:0.75,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'4px'}}>
+                  <span>
+                    {msg.createdAt ? (() => {
+                      try {
+                        const date = msg.createdAt instanceof Date ? msg.createdAt : msg.createdAt.toDate();
+                        return date.toLocaleTimeString('en', {hour:'2-digit', minute:'2-digit'});
+                      } catch(e) {
+                        return '';
+                      }
+                    })() : ''}
+                  </span>
+                  {isMine && (
+                    <span aria-label={msg._pending ? "Sending" : wasRead ? "Read" : "Sent"} style={{fontSize:'13px',lineHeight:1}}>
+                      {msg._pending ? '🕓' : wasRead ? '✓✓' : '✓'}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );
