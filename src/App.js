@@ -249,6 +249,15 @@ const generateSellerSlug = (name, uni) => {
     .replace(/^-|-$/g, '');
 };
 
+const ROOM_SEARCH_EXAMPLES = [
+  "Tafuta chumba karibu yako",
+  "Try: chumba chini ya 150k",
+  "Try: self contained Sinza",
+  "Try: master bedroom karibu na ARU",
+  "Try: chumba chenye maji na umeme",
+  "Try: single room chini ya 80k",
+];
+
 const SEARCH_EXAMPLES = [
   "Ni nini unatafuta leo?",
   "Try: iphone 11 chini ya 400k",
@@ -523,7 +532,7 @@ function App() {
     setIsDarkModeRaw(value);
     if (persist) localStorage.setItem('kp-theme', value ? 'dark' : 'light');
   };
-  const [page, setPageRaw] = useState("communities");
+  const [page, setPageRaw] = useState("home");
   // Hardcoded ON while active development is focused on Rooms — the
   // system/features-backed toggle below is intentionally ignored so a
   // slow sync or a stray admin click can't hide the feature mid-work.
@@ -719,14 +728,24 @@ function App() {
     title: "", desc: "", price: "", expectedPeople: "", options: "", paymentMethods: [], adminEmails: "", deadline: "", communityName: "", communityType: "class", collectionType: "order", groupId: "", photoFiles: [], photoPreviews: []
   });
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
-
-useEffect(() => {
-  if (searchQ) return;
-  const interval = setInterval(() => {
-    setPlaceholderIdx(i => (i + 1) % SEARCH_EXAMPLES.length);
-  }, 3500);
-  return () => clearInterval(interval);
-}, [searchQ]);
+  // Swahili toggle. Deliberately scoped to the screens a landlord has to get
+  // through on their own — listing a room and verification — rather than a
+  // half-finished translation of the whole app. Persisted so they only set it
+  // once. Extend COPY below as more screens are translated.
+  const [useSwahili, setUseSwahili] = useState(() => {
+    try { return localStorage.getItem("kampasikaLang") === "sw"; } catch (err) { return false; }
+  });
+  const toggleSwahili = () => setUseSwahili(prev => {
+    const next = !prev;
+    try { localStorage.setItem("kampasikaLang", next ? "sw" : "en"); } catch (err) { /* private mode */ }
+    return next;
+  });
+  const t = (en, sw) => (useSwahili ? sw : en);
+  const LangToggle = () => (
+    <button type="button" onClick={toggleSwahili} style={{display:'inline-flex',alignItems:'center',gap:'6px',padding:'6px 12px',borderRadius:'999px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg-alt)',color:'var(--text-primary)',fontSize:'12px',fontWeight:'800',cursor:'pointer',whiteSpace:'nowrap'}}>
+      🌐 {useSwahili ? "English" : "Kiswahili"}
+    </button>
+  );
 
 // ─── Upload watchdog ───
 // Mobile browsers can suspend JS during a long upload (when the user backgrounds
@@ -774,6 +793,14 @@ useEffect(() => {
   // Public feed shows only available; this lets the owner manage everything.
   const [myAllRooms, setMyAllRooms] = useState([]);
   const [roomSearchQ, setRoomSearchQ] = useState("");
+useEffect(() => {
+  if (searchQ || roomSearchQ) return;
+  const interval = setInterval(() => {
+    setPlaceholderIdx(i => (i + 1) % (SEARCH_EXAMPLES.length * ROOM_SEARCH_EXAMPLES.length));
+  }, 3500);
+  return () => clearInterval(interval);
+}, [searchQ, roomSearchQ]);
+
   const [committedRoomSearchQ, setCommittedRoomSearchQ] = useState("");
 
   useEffect(() => {
@@ -927,6 +954,17 @@ useEffect(() => {
   const [roomUserVerificationStatus, setRoomUserVerificationStatus] = useState(null);
   const [showRoomUserVerifyModal, setShowRoomUserVerifyModal] = useState(false);
   const [nidaNumberInput, setNidaNumberInput] = useState("");
+  // Which role the user picked in the verification role chooser. Decides which
+  // document we ask for (student ID / admission letter vs NIDA), and is stored
+  // on the user doc so "verified students only" gates (roommate finder) can
+  // tell an approved student apart from an approved landlord.
+  const [verifyRoleChoice, setVerifyRoleChoice] = useState("");
+  const [showVerifyRoleModal, setShowVerifyRoleModal] = useState(false);
+  const [roomUserVerifyRole, setRoomUserVerifyRole] = useState("");
+  const [roomCreateShowMore, setRoomCreateShowMore] = useState(false);
+  const [savedRoomIds, setSavedRoomIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("kampasikaSavedRooms") || "[]"); } catch (err) { return []; }
+  });
   const [nameOnIdInput, setNameOnIdInput] = useState("");
 
   // Public seller profile state
@@ -2400,9 +2438,15 @@ useEffect(() => {
           }))
         : [];
       const photoUrls = [...(createRoomData.existingPhotoUrls || []), ...uploadedUrls];
-      // eslint-disable-next-line no-unused-vars
       let videoUrl = null;
+      if (createRoomData.videoFile) {
+        const videoRef = ref(storage, `rooms/${uploadTs}_walkthrough.mp4`);
+        const videoSnap = await uploadBytes(videoRef, createRoomData.videoFile);
+        videoUrl = await getDownloadURL(videoSnap.ref);
+      }
       await addDoc(collection(db, "rooms"), {
+        videoUrl,
+        landlordVerified: roomUserVerificationStatus === "approved",
         landlordName: createRoomData.landlordName.trim(),
         landlordPhone: createRoomData.landlordPhone.trim(),
         roomType: createRoomData.roomType,
@@ -2434,6 +2478,7 @@ useEffect(() => {
         ...prev,
         roomType: "", price: "", desc: "", amenities: [],
         photoFiles: [], photoPreviews: [], existingPhotoUrls: [],
+        videoFile: null, videoPreview: null,
         roomNumber: "",
       }));
       await loadRooms();
@@ -2446,6 +2491,7 @@ useEffect(() => {
 
   const handleCreateRoommatePost = async () => {
     if (!user) { requireAuth("post", () => {}); return; }
+    if (!isVerifiedStudent) { openRoomUserVerification("roommates"); return; }
     if (!createRoommateData.budget || !createRoommateData.preferredArea.trim()) {
       setError("Please fill in budget and preferred area"); return;
     }
@@ -2500,7 +2546,6 @@ useEffect(() => {
     });
   };
   
-  // eslint-disable-next-line no-unused-vars
   const handleRoomVideoSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2599,18 +2644,78 @@ const requestNotificationPermission = async (currentUser) => {
 
   const openRoomUserVerification = () => {
     if (!user) {
-      requireAuth("verify room access", () => setShowRoomUserVerifyModal(true));
+      requireAuth("verify room access", () => setShowVerifyRoleModal(true));
       return;
     }
     setStudentIdFile(null);
     setStudentIdPreview(null);
     setNameOnIdInput("");
     setNidaNumberInput("");
-    setShowRoomUserVerifyModal(true);
+    setVerifyRoleChoice("");
+    // Always ask "student or landlord?" first — which document we want, which
+    // copy we show, and which badge is granted all follow from that answer.
+    setShowVerifyRoleModal(true);
     setError("");
   };
 
+  const chooseVerifyRole = (role) => {
+    setVerifyRoleChoice(role);
+    setShowVerifyRoleModal(false);
+    setShowRoomUserVerifyModal(true);
+  };
+
   const roomUserCanAccessRooms = !REQUIRE_ROOM_USER_VERIFICATION || roomUserVerificationStatus === "approved";
+
+  // "2h", "3d", "14 Mar" — compact relative age for the X-style feed timestamp.
+  const formatRoomAge = (value) => {
+    if (!value) return "";
+    const date = value instanceof Date ? value : (value.toDate ? value.toDate() : new Date(value));
+    if (isNaN(date.getTime())) return "";
+    const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+    if (mins < 1) return "now";
+    if (mins < 60) return mins + "m";
+    if (mins < 1440) return Math.floor(mins / 60) + "h";
+    if (mins < 10080) return Math.floor(mins / 1440) + "d";
+    return date.toLocaleDateString("en", { day: "numeric", month: "short" });
+  };
+
+  // Bookmarks live in localStorage rather than Firestore — a saved room is a
+  // private, device-level shortlist, and keeping it local means an unverified
+  // browser can still bookmark before it is allowed to see any contacts.
+  const isRoomSaved = (room) => savedRoomIds.includes(room.id);
+
+  const toggleSaveRoom = (room) => {
+    setSavedRoomIds(prev => {
+      const next = prev.includes(room.id) ? prev.filter(id => id !== room.id) : [...prev, room.id];
+      try { localStorage.setItem("kampasikaSavedRooms", JSON.stringify(next)); } catch (err) { /* private mode */ }
+      return next;
+    });
+  };
+
+  // Roommate finder is gated on being an approved *student*. Landlords get a
+  // clear explanation rather than a silent no-op.
+  const openRoommateFinder = () => {
+    if (!user) { requireAuth("find a roommate", () => setPage("roommates")); return; }
+    if (roomUserVerifyRole === "landlord" && roomUserVerificationStatus === "approved") {
+      setError("Roommate finder is for verified students only.");
+      return;
+    }
+    if (!isVerifiedStudent) { openRoomUserVerification("roommates"); return; }
+    setPage("roommates");
+  };
+
+  const shareRoom = async (room) => {
+    const typeName = ROOM_TYPES.find(t => t.id === room.roomType)?.name || "Room";
+    const text = `${typeName} — ${room.location}\n${room.price ? "TSh " + room.price.toLocaleString() + "/mwezi" : ""}\nNear ${room.nearUni || "ARU"}\n\nOn Kampasika: https://kampasika.netlify.app`;
+    try {
+      if (navigator.share) { await navigator.share({ title: `${typeName} — ${room.location}`, text }); return; }
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    } catch (err) { /* user dismissed the share sheet */ }
+  };
+
+  // Roommate finder is students-only: a landlord verified with NIDA is cleared
+  // for contacts and maps, but must not post or browse roommate requests.
+  const isVerifiedStudent = roomUserVerificationStatus === "approved" && roomUserVerifyRole !== "landlord";
 
   const submitRoomUserVerification = async () => {
     if (!user) return;
@@ -2618,12 +2723,22 @@ const requestNotificationPermission = async (currentUser) => {
       setError("Please add a profile picture first.");
       return;
     }
+    if (!verifyRoleChoice) {
+      setError("Please choose whether you are a student or a landlord.");
+      return;
+    }
     if (!studentIdFile) {
-      setError("Please upload your student ID or national ID.");
+      setError(verifyRoleChoice === "landlord"
+        ? "Please upload your NIDA or national ID."
+        : "Please upload your student ID or admission letter.");
       return;
     }
     if (!nameOnIdInput.trim()) {
       setError("Please enter the name shown on the ID.");
+      return;
+    }
+    if (verifyRoleChoice === "landlord" && !nidaNumberInput.trim()) {
+      setError("Please enter your NIDA number.");
       return;
     }
 
@@ -2665,6 +2780,9 @@ const requestNotificationPermission = async (currentUser) => {
         email: user.email,
         phone: userPhone || "",
         accountType: "room_user",
+        verifyRole: verifyRoleChoice,
+        idType: verifyRoleChoice === "landlord" ? "nida" : "studentId",
+        nidaNumber: verifyRoleChoice === "landlord" ? nidaNumberInput.trim() : "",
         nameOnId: nameOnIdInput.trim(),
         idUrl,
         studentIdUrl: idUrl,
@@ -2676,9 +2794,11 @@ const requestNotificationPermission = async (currentUser) => {
 
       await updateDoc(doc(db, "users", user.uid), {
         roomUserVerificationStatus: "pending",
+        roomUserVerifyRole: verifyRoleChoice,
         roomUserVerificationSubmittedAt: serverTimestamp(),
       });
       setRoomUserVerificationStatus("pending");
+      setRoomUserVerifyRole(verifyRoleChoice);
       setShowRoomUserVerifyModal(false);
       setStudentIdFile(null);
       setStudentIdPreview(null);
@@ -2708,6 +2828,7 @@ const requestNotificationPermission = async (currentUser) => {
       setUserPhone(userData.phone || "");
       setUserHasPassword(userData.hasPassword !== false);
       setRoomUserVerificationStatus(userData.roomUserVerified === true ? "approved" : (userData.roomUserVerificationStatus || null));
+      setRoomUserVerifyRole(userData.roomUserVerifyRole || "");
       setPhoneVerified(userData.phoneVerified === true);
       // Was: UNIVERSITIES.find(u => u.id === userData.universityId) || DEFAULT_UNI
       // There is no validated flow anywhere in this app (checked App.js,
@@ -3324,7 +3445,7 @@ const requestNotificationPermission = async (currentUser) => {
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
 
   useEffect(() => {
-    if (profileTab === "saved" || (profileTab === "listings" && !ENABLE_DISCOVER_GOODS) || (profileTab === "myServices" && !ENABLE_DISCOVER_SERVICES) || (profileTab === "myRooms" && !ENABLE_ROOMS)) {
+    if ((profileTab === "listings" && !ENABLE_DISCOVER_GOODS) || (profileTab === "myServices" && !ENABLE_DISCOVER_SERVICES) || (profileTab === "myRooms" && !ENABLE_ROOMS)) {
       setProfileTab("collections");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, profileTab]);
@@ -3895,6 +4016,7 @@ await updateDoc(convRef, {
         setUserPhone("");
         setUserHasPassword(true);
         setRoomUserVerificationStatus(null);
+        setRoomUserVerifyRole("");
         setPhoneVerified(false);
         setPhoneOtpCode("");
         setPhoneOtpSent(false);
@@ -6635,7 +6757,7 @@ return (
     {page !== "chat" && page !== "groupDetail" && page !== "communities" && page !== "profile" && page !== "collections" && (
   <div
     style={{
-      background:'var(--surface-bg)',
+      background:'var(--page-bg)',
       padding:'6px 10px',
       display:'flex',
       alignItems:'center',
@@ -6814,7 +6936,7 @@ return (
   display:'flex',
   alignItems:'center',
   gap:'10px',
-  background:'var(--surface-bg)',
+  background:'var(--surface-bg-alt)',
   height:'40px',
   borderRadius:'999px',
   padding:'0 12px',
@@ -6826,7 +6948,7 @@ return (
       
         <input
           type="text"
-          placeholder={homeTab === "rooms" ? "Tafuta room kwa eneo, bei, au amenity..." : homeTab === "services" ? "Tafuta huduma..." : SEARCH_EXAMPLES[placeholderIdx]}
+          placeholder={homeTab === "rooms" ? ROOM_SEARCH_EXAMPLES[placeholderIdx % ROOM_SEARCH_EXAMPLES.length] : homeTab === "services" ? "Tafuta huduma..." : SEARCH_EXAMPLES[placeholderIdx]}
           value={homeTab === "rooms" ? roomSearchQ : homeTab === "services" ? serviceSearchQ : searchQ}
           onChange={e => {
             const nextValue = e.target.value;
@@ -7394,17 +7516,30 @@ return (
 <div style={{display: ENABLE_ROOMS && homeTab==="rooms" ? "block" : "none"}}>
   <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
   {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
-  <div style={{margin:'0 16px 12px 16px',display:'flex',gap:'8px'}}>
-    <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{padding:'10px 16px',background:isOffline?'#d1d5db':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>+ List a Room</button>
-    <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;setPage("roommates");}} disabled={isOffline} style={{padding:'10px 16px',background:'var(--surface-bg-alt)',color:isOffline?'var(--text-secondary)':'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>🤝 Find Roommate</button>
-  </div>
-  {roomFilterMaxPrice === "" && <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{margin:'0 16px 12px 16px',padding:'6px 14px',background:'var(--page-bg)',border:'none',borderRadius:'8px',fontSize:'12px',color:'var(--text-secondary)',cursor:'pointer'}}>💰 Set max price filter</button>}
+  {/* Action row — two equal-width primary actions, then the price filter as a
+      quiet chip on its own line so the three stop competing for attention. */}
+  {/* One horizontal line: list, roommate, price filter. Each button sizes to
+      its own text and the row scrolls sideways on narrow phones rather than
+      wrapping or squashing the labels. */}
+  {roomFilterMaxPrice === "" && (
+    <div style={{margin:'0 16px 14px 16px',display:'flex',alignItems:'center',gap:'8px',overflowX:'auto',WebkitOverflowScrolling:'touch',scrollbarWidth:'none',paddingBottom:'2px'}}>
+      <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{flexShrink:0,padding:'10px 14px',background:isOffline?'#d1d5db':'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'999px',fontSize:'13px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',whiteSpace:'nowrap'}}>+ List a Room</button>
+      <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;openRoommateFinder();}} disabled={isOffline} style={{flexShrink:0,padding:'10px 14px',background:'var(--surface-bg-alt)',color:isOffline?'var(--text-secondary)':'var(--text-primary)',border:'1.5px solid var(--border-color)',borderRadius:'999px',fontSize:'13px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',whiteSpace:'nowrap'}}>🤝 Find Roommate</button>
+      <button onClick={()=>setRoomFilterMaxPrice("150000")} style={{flexShrink:0,padding:'10px 14px',background:'var(--surface-bg-alt)',border:'1.5px solid var(--border-color)',borderRadius:'999px',fontSize:'13px',fontWeight:'800',color:'var(--text-secondary)',cursor:'pointer',whiteSpace:'nowrap'}}>💰 Max price</button>
+    </div>
+  )}
   {roomFilterMaxPrice !== "" && (
-    <div style={{margin:'0 16px 12px 16px',display:'flex',alignItems:'center',gap:'8px'}}>
-      <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>Max:</span>
-      <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'6px 10px',border:'1.5px solid var(--border-color)',borderRadius:'8px',fontSize:'13px',outline:'none'}}/>
+    <div style={{margin:'0 16px 10px 16px',display:'flex',alignItems:'center',gap:'8px',overflowX:'auto',WebkitOverflowScrolling:'touch',scrollbarWidth:'none',paddingBottom:'2px'}}>
+      <button onClick={()=>{if(guardOfflineDiscoverAction("Posting"))return;if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} disabled={isOffline} style={{flexShrink:0,padding:'10px 14px',background:isOffline?'#d1d5db':'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'999px',fontSize:'13px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',whiteSpace:'nowrap'}}>+ List a Room</button>
+      <button onClick={()=>{if(guardOfflineDiscoverAction("Roommate finder"))return;openRoommateFinder();}} disabled={isOffline} style={{flexShrink:0,padding:'10px 14px',background:'var(--surface-bg-alt)',color:isOffline?'var(--text-secondary)':'var(--text-primary)',border:'1.5px solid var(--border-color)',borderRadius:'999px',fontSize:'13px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',whiteSpace:'nowrap'}}>🤝 Find Roommate</button>
+    </div>
+  )}
+  {roomFilterMaxPrice !== "" && (
+    <div style={{margin:'0 16px 14px 16px',display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+      <span style={{fontSize:'12px',fontWeight:'700',color:'var(--text-secondary)'}}>Max:</span>
+      <input type="number" value={roomFilterMaxPrice} onChange={e=>setRoomFilterMaxPrice(e.target.value)} placeholder="Max price" style={{width:'120px',padding:'8px 10px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
       <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>TSh</span>
-      <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
+      <button onClick={()=>setRoomFilterMaxPrice("")} style={{fontSize:'12px',fontWeight:'700',color:'#ef4444',background:'none',border:'none',cursor:'pointer'}}>✕ Clear</button>
     </div>
   )}
   {(()=>{
@@ -7435,31 +7570,74 @@ return (
         )}
       </div>
     ) : (
-      <div style={{display:'flex',flexDirection:'column',gap:'10px',margin:'0 16px'}}>
-        {filtered.map(room => (
-          <div key={room.id} onClick={()=>openRoomDetail(room)} style={{background:'var(--surface-bg)',borderRadius:'14px',overflow:'hidden',cursor:'pointer',border:'1px solid var(--border-color)'}}>
-            {room.photoUrl ? (
-              <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'180px',objectFit:'cover'}}/>
-            ) : (
-              <div style={{width:'100%',height:'120px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'48px'}}>🏠</div>
-            )}
-            <div style={{padding:'12px'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'6px'}}>
-                <div>
-                  <span style={{fontSize:'11px',background:'#e0f2fe',color:'#0369a1',padding:'2px 8px',borderRadius:'8px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
-                  <div style={{fontSize:'15px',fontWeight:'600',marginTop:'6px'}}>📍 {room.location}</div>
-                </div>
-                <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'#f59e0b'}}>{room.price?.toLocaleString()}<span style={{fontSize:'11px',fontWeight:'400',color:'var(--text-secondary)'}}>/mo</span></div>
+      <div style={{display:'flex',flexDirection:'column'}}>
+        {filtered.map(room => {
+          const poster = room.listedByName || room.landlordName || "Landlord";
+          const posterAvatar = room.listedByAvatar || null;
+          return (
+          <div key={room.id} onClick={()=>openRoomDetail(room)} style={{display:'flex',gap:'10px',padding:'14px 16px',cursor:'pointer',borderBottom:'1px solid var(--border-color)'}}>
+            {/* Avatar column, X-style */}
+            <div style={{width:'42px',height:'42px',flexShrink:0,borderRadius:'50%',backgroundImage:posterAvatar?`url(${posterAvatar})`:'none',backgroundColor:posterAvatar?'transparent':'#06d6c7',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',color:'#0f1b2d',fontSize:'15px',fontWeight:'800'}}>
+              {!posterAvatar && poster.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase()}
+            </div>
+
+            <div style={{flex:1,minWidth:0}}>
+              {/* Name · verified tick · timestamp */}
+              <div style={{display:'flex',alignItems:'center',gap:'5px',minWidth:0}}>
+                <span style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{poster}</span>
+                {room.landlordVerified && (
+                  <svg width="15" height="15" viewBox="0 0 24 24" style={{flexShrink:0}} aria-label="Verified"><path fill="#06d6c7" d="M12 1.5l2.6 2.2 3.4-.4 1 3.3 3 1.7-1.4 3.1 1.4 3.1-3 1.7-1 3.3-3.4-.4L12 22.5l-2.6-2.2-3.4.4-1-3.3-3-1.7L3.4 12.6 2 9.5l3-1.7 1-3.3 3.4.4z"/><path fill="#0f1b2d" d="M10.8 15.4l-3-3 1.3-1.3 1.7 1.7 4.1-4.1 1.3 1.3z"/></svg>
+                )}
+                <span style={{fontSize:'13px',color:'var(--text-secondary)',flexShrink:0}}>· {room.nearUni}</span>
+                <span style={{fontSize:'13px',color:'var(--text-secondary)',flexShrink:0,marginLeft:'auto'}}>{formatRoomAge(room.createdAt)}</span>
               </div>
-              <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{room.landlordName} • {room.nearUni}</div>
-              {room.amenities && room.amenities.length > 0 && (
-                <div style={{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}}>
-                  {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'10px',background:'var(--page-bg)',padding:'2px 6px',borderRadius:'6px'}}>{am.icon} {am.label}</span>:null;})}
+
+              {/* Post body: text first, media below — same order as X */}
+              <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginTop:'3px'}}>
+                📍 {room.location} · <span style={{color:'#f59e0b'}}>{room.price?.toLocaleString()}</span><span style={{fontSize:'12px',fontWeight:'500',color:'var(--text-secondary)'}}>/mo</span>
+              </div>
+              <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.45,marginTop:'2px'}}>
+                <span style={{color:'var(--text-primary)',fontWeight:'700'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
+                {room.description ? ` — ${room.description.length > 120 ? room.description.substring(0,120) + "…" : room.description}` : ""}
+              </div>
+
+              {(room.videoUrl || room.photoUrl) && (
+                <div style={{marginTop:'10px',borderRadius:'16px',overflow:'hidden',border:'1px solid var(--border-color)',position:'relative'}}>
+                  {room.videoUrl ? (
+                    <video src={room.videoUrl} muted playsInline preload="metadata" style={{width:'100%',height:'210px',objectFit:'cover',display:'block',background:'#000'}} />
+                  ) : (
+                    <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'210px',objectFit:'cover',display:'block'}}/>
+                  )}
+                  {room.videoUrl && (
+                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+                      <div style={{width:'52px',height:'52px',borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'20px'}}>▶</div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Amenities — readable chips, not near-invisible on dark */}
+              {room.amenities && room.amenities.length > 0 && (
+                <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}>
+                  {room.amenities.slice(0,4).map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?(
+                    <span key={a} style={{fontSize:'11px',fontWeight:'700',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'1px solid var(--border-color)',padding:'4px 10px',borderRadius:'999px'}}>{am.icon} {am.label}</span>
+                  ):null;})}
+                </div>
+              )}
+
+              {/* Action row — bookmark and share only; no likes/comments/views */}
+              <div style={{display:'flex',gap:'28px',marginTop:'10px',color:'var(--text-secondary)'}}>
+                <button type="button" aria-label="Bookmark" onClick={e=>{e.stopPropagation();toggleSaveRoom(room);}} style={{border:'none',background:'none',padding:'4px 0',cursor:'pointer',color:isRoomSaved(room)?'#06d6c7':'var(--text-secondary)',display:'flex',alignItems:'center'}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={isRoomSaved(room)?'currentColor':'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                </button>
+                <button type="button" aria-label="Share" onClick={e=>{e.stopPropagation();shareRoom(room);}} style={{border:'none',background:'none',padding:'4px 0',cursor:'pointer',color:'var(--text-secondary)',display:'flex',alignItems:'center'}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                </button>
+              </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     );
   })()}
@@ -9808,7 +9986,7 @@ const bubbleRadius = '20px';
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
             <div style={{display:'flex',gap:'8px'}}>
               <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'var(--surface-bg)',color:'var(--accent-teal-bright)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
-              <button onClick={()=>setPage("roommates")} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
+              <button onClick={()=>openRoommateFinder()} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
             </div>
           </div>
 
@@ -9902,8 +10080,11 @@ const bubbleRadius = '20px';
       {ENABLE_ROOMS && page==="createRoom"&&(
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'20px',margin:'0 16px'}}>
-            <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'4px'}}>{showCreateRoomSuccess?"Room Listed!":"List a Room"}</h2>
-            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>List your room and students will contact you directly.</p>}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',marginBottom:'4px'}}>
+              <h2 style={{fontSize:'20px',fontWeight:'700',margin:0}}>{showCreateRoomSuccess?t("Room Listed!","Chumba Kimewekwa!"):t("List a Room","Weka Chumba")}</h2>
+              <LangToggle />
+            </div>
+            {!showCreateRoomSuccess && <p style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>{t("List your room and students will contact you directly.","Weka chumba chako na wanafunzi watakupigia moja kwa moja.")}</p>}
             {showCreateRoomSuccess ? (
               <div style={{textAlign:'center',padding:'32px 16px'}}>
                 <div style={{fontSize:'56px',marginBottom:'16px'}}>🏠</div>
@@ -9917,6 +10098,27 @@ const bubbleRadius = '20px';
               </div>
             ) : (
               <>
+                {/* Video walkthrough — the headline input. Listing a room should
+                    feel like sending a WhatsApp video, so this sits first and
+                    everything optional is pushed below "More options". */}
+                <div style={{marginBottom:'14px'}}>
+                  <input type="file" id="room-video" accept="video/*" capture="environment" style={{display:'none'}} onChange={handleRoomVideoSelect}/>
+                  <label htmlFor="room-video" style={{display:'block',cursor:'pointer'}}>
+                    {createRoomData.videoPreview ? (
+                      <div style={{position:'relative',borderRadius:'14px',overflow:'hidden'}}>
+                        <video src={createRoomData.videoPreview} controls playsInline style={{width:'100%',height:'220px',objectFit:'cover',display:'block',background:'#000'}}/>
+                        <div style={{position:'absolute',top:'8px',right:'8px',background:'rgba(0,0,0,0.65)',color:'#fff',padding:'4px 10px',borderRadius:'8px',fontSize:'11px',fontWeight:'700'}}>Tap to change</div>
+                      </div>
+                    ) : (
+                      <div style={{border:'2px dashed #06d6c7',borderRadius:'14px',padding:'30px 20px',textAlign:'center',background:'var(--mint-tint)'}}>
+                        <div style={{fontSize:'42px',marginBottom:'8px'}}>🎥</div>
+                        <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)'}}>{t("Record or add a room video","Rekodi au weka video ya chumba")}</div>
+                        <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>{t("Walk through the room like you would for WhatsApp — max 50MB","Tembea ndani ya chumba kama unavyotuma WhatsApp — isizidi 50MB")}</div>
+                      </div>
+                    )}
+                  </label>
+                </div>
+
                 {/* Photos */}
                 <input type="file" id="room-photo" accept="image/*" multiple style={{display:'none'}} onChange={handleRoomPhotoSelect}/>
                 <label htmlFor="room-photo" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
@@ -9927,12 +10129,85 @@ const bubbleRadius = '20px';
                   ) : (
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
                       <div style={{fontSize:'40px',marginBottom:'8px'}}>📸</div>
-                      <div style={{fontSize:'14px',fontWeight:'600'}}>Add Room Photos</div>
-                      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Up to 5 photos — show the room, bathroom, entrance</div>
+                      <div style={{fontSize:'14px',fontWeight:'600'}}>{t("Add Room Photos","Weka Picha za Chumba")}</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{t("Up to 5 photos — show the room, bathroom, entrance","Hadi picha 5 — onyesha chumba, bafu, mlango")}</div>
                     </div>
                   )}
                 </label>
 
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Landlord / Contact Name *","Jina la Mwenye Nyumba *")}</label><input type="text" placeholder={t("e.g. Bwana Juma","mfano: Bwana Juma")} value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📱 Phone / WhatsApp *","📱 Simu / WhatsApp *")}</label><input type="tel" placeholder="0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>{t("Room Type *","Aina ya Chumba *")}</label>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                    {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
+                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'var(--surface-bg)',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Monthly Rent (TSh) *","Kodi ya Mwezi (TSh) *")}</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 80,000 or 80k"
+                    value={createRoomData.price}
+                    onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})}
+                    style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}
+                  />
+                  {createRoomData.price && (
+                    <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
+                      {formatPriceHint(createRoomData.price) ? formatPriceHint(createRoomData.price) + ' kwa mwezi' : '⚠ Bei haisomeki'}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📍 Location / Area *","📍 Eneo / Mtaa *")}</label>
+                  <input type="text" placeholder={t("e.g. Sinza C, near Ardhi gate","mfano: Sinza C, karibu na geti la Ardhi")} value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'8px'}}/>
+                  <button type="button" onClick={()=>{
+                    if (!navigator.geolocation) { setError("GPS not supported on this device"); return; }
+                    setSuccess("Getting your location...");
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        setCreateRoomData(prev => ({ ...prev, lat: latitude, lng: longitude }));
+                        setSuccess("📍 Location pinned! Map will show exact position.");
+                        setTimeout(() => setSuccess(""), 3000);
+                      },
+                      (err) => {
+                        setSuccess("");
+                        setError("Could not get location: " + (err.message || "Permission denied"));
+                      },
+                      { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                  }} style={{width:'100%',padding:'10px',background: createRoomData.lat ? 'var(--success-tint)' : 'var(--surface-bg-alt)',color: createRoomData.lat ? 'var(--success-dark)' : 'var(--text-primary)',border: createRoomData.lat ? '1.5px solid #6ee7b7' : '1px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
+                    {createRoomData.lat ? (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> {t("GPS pinned — exact location saved","Eneo limehifadhiwa kwa GPS")}</>
+                    ) : (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> {t("Pin exact location with GPS (optional)","Weka eneo halisi kwa GPS (si lazima)")}</>
+                    )}
+                  </button>
+                  {createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',fontFamily:'monospace'}}>Lat: {createRoomData.lat.toFixed(5)}, Lng: {createRoomData.lng.toFixed(5)}</div>}
+                  {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
+                </div>
+
+                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Description (optional)","Maelezo (si lazima)")}</label><textarea placeholder={t("Any extra details — available date, rules, what's nearby...","Maelezo mengine — tarehe ya kuingia, masharti, kilicho karibu...")} value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+
+                <div style={{marginBottom:'16px'}}>
+                  <button type="button" onClick={()=>setRoomCreateShowMore(v=>!v)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 14px',background:'var(--surface-bg-alt)',border:'1.5px solid var(--border-color)',borderRadius:'12px',fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',cursor:'pointer'}}>
+                    <span>{roomCreateShowMore ? t("Hide extra details","Ficha maelezo ya ziada") : t("More options","Mengineyo")}</span>
+                    <span style={{fontSize:'12px',color:'var(--text-secondary)',fontWeight:'700'}}>{roomCreateShowMore ? "▲" : t("▼ property, amenities, university","▼ huduma, chuo, jengo")}</span>
+                  </button>
+                  {!roomCreateShowMore && (
+                    <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'6px',lineHeight:1.5}}>{t("Optional — amenities, nearest university, property grouping, room number.","Si lazima — huduma, chuo kilicho karibu, jengo, namba ya chumba.")}</div>
+                  )}
+                </div>
+
+                <div style={{display: roomCreateShowMore ? 'block' : 'none'}}>
                 {/* Outdoor photo */}
                 <div style={{marginBottom:'16px'}}>
                   <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📸 Outdoor Photo / Picha ya mazingira ya nje (optional)</label>
@@ -9990,68 +10265,9 @@ const bubbleRadius = '20px';
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Room number / label (optional)</label><input type="text" placeholder="e.g. A12" value={createRoomData.roomNumber} onChange={e=>setCreateRoomData({...createRoomData,roomNumber:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Landlord / Contact Name *</label><input type="text" placeholder="e.g. Bwana Juma" value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Nearest University","Chuo Kilicho Karibu")}</label><UniversityField value={createRoomData.nearUni} onChange={v=>setCreateRoomData({...createRoomData,nearUni:v})}/></div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📱 Phone / WhatsApp *</label><input type="tel" placeholder="e.g. 0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
-
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Room Type *</label>
-                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                    {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
-                      <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'var(--surface-bg)',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Monthly Rent (TSh) *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="e.g. 80,000 or 80k"
-                    value={createRoomData.price}
-                    onChange={e=>setCreateRoomData({...createRoomData,price:e.target.value})}
-                    style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}
-                  />
-                  {createRoomData.price && (
-                    <div style={{fontSize:'11px',color:formatPriceHint(createRoomData.price) ? '#0d9488' : '#ef4444',marginTop:'4px',fontWeight:'600'}}>
-                      {formatPriceHint(createRoomData.price) ? formatPriceHint(createRoomData.price) + ' kwa mwezi' : '⚠ Bei haisomeki'}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>📍 Location / Area *</label>
-                  <input type="text" placeholder="e.g. Sinza C, near Ardhi gate" value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'8px'}}/>
-                  <button type="button" onClick={()=>{
-                    if (!navigator.geolocation) { setError("GPS not supported on this device"); return; }
-                    setSuccess("Getting your location...");
-                    navigator.geolocation.getCurrentPosition(
-                      (pos) => {
-                        const { latitude, longitude } = pos.coords;
-                        setCreateRoomData(prev => ({ ...prev, lat: latitude, lng: longitude }));
-                        setSuccess("📍 Location pinned! Map will show exact position.");
-                        setTimeout(() => setSuccess(""), 3000);
-                      },
-                      (err) => {
-                        setSuccess("");
-                        setError("Could not get location: " + (err.message || "Permission denied"));
-                      },
-                      { enableHighAccuracy: true, timeout: 10000 }
-                    );
-                  }} style={{width:'100%',padding:'10px',background: createRoomData.lat ? 'var(--success-tint)' : 'var(--surface-bg-alt)',color: createRoomData.lat ? 'var(--success-dark)' : 'var(--text-primary)',border: createRoomData.lat ? '1.5px solid #6ee7b7' : '1px solid var(--border-color)',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}}>
-                    {createRoomData.lat ? (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> GPS pinned — exact location saved</>
-                    ) : (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Pin exact location with GPS (optional)</>
-                    )}
-                  </button>
-                  {createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',fontFamily:'monospace'}}>Lat: {createRoomData.lat.toFixed(5)}, Lng: {createRoomData.lng.toFixed(5)}</div>}
-                  {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
-                </div>
-
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Nearest University</label><UniversityField value={createRoomData.nearUni} onChange={v=>setCreateRoomData({...createRoomData,nearUni:v})}/></div>
-
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>Amenities</label>
+                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>{t("Amenities","Huduma Zilizopo")}</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_AMENITIES.map(a=>{const sel=(createRoomData.amenities||[]).includes(a.id);return(
                       <button key={a.id} onClick={()=>{const cur=createRoomData.amenities||[];setCreateRoomData({...createRoomData,amenities:sel?cur.filter(x=>x!==a.id):[...cur,a.id]});}} style={{padding:'6px 12px',borderRadius:'8px',border:sel?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:sel?'#e0f2fe':'var(--surface-bg)',fontSize:'12px',cursor:'pointer'}}>{a.icon} {a.label}</button>
@@ -10059,9 +10275,9 @@ const bubbleRadius = '20px';
                   </div>
                 </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Description (optional)</label><textarea placeholder="Any extra details — available date, rules, what's nearby..." value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+                </div>
 
-                <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?"Uploading...":"🏠 List Room"}</button>
+                <button onClick={handleCreateRoom} disabled={uploading} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:uploading?'not-allowed':'pointer'}}>{uploading?t("Uploading...","Inapakia..."):t("🏠 List Room","🏠 Weka Chumba")}</button>
               </>
             )}
           </div>
@@ -10497,7 +10713,24 @@ const bubbleRadius = '20px';
         <div style={{width:'100%',flex:1,overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',boxSizing:'border-box',paddingBottom:'100px'}}>
           <div style={{padding:'16px'}}>
             <h2 style={{fontSize:'20px',fontWeight:'700',marginBottom:'16px'}}>🤝 Looking for Roommate</h2>
-            
+
+            {/* Students only. Rendered as a hard gate rather than hiding the
+                page, so a landlord who lands here understands why. */}
+            {!isVerifiedStudent ? (
+              <div style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'14px',padding:'24px',textAlign:'center'}}>
+                <div style={{fontSize:'40px',marginBottom:'10px'}}>🎓</div>
+                <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'6px'}}>Verified students only</div>
+                <p style={{fontSize:'13px',lineHeight:1.55,color:'var(--text-secondary)',margin:'0 0 18px'}}>
+                  {roomUserVerifyRole === "landlord"
+                    ? "Roommate finder matches students with each other, so it isn't available on landlord accounts."
+                    : "Verify with your student ID or admission letter to post and browse roommate requests."}
+                </p>
+                {roomUserVerifyRole !== "landlord" && (
+                  <button type="button" onClick={()=>openRoomUserVerification("roommates")} style={{padding:'12px 22px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Get verified</button>
+                )}
+              </div>
+            ) : (
+            <>
             {/* Post form */}
             {user && (
               <div style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'16px',border:'1.5px solid var(--border-color)',marginBottom:'16px'}}>
@@ -10536,6 +10769,8 @@ const bubbleRadius = '20px';
                   </div>
                 ))}
               </div>
+            )}
+            </>
             )}
           </div>
         </div>
@@ -11430,6 +11665,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
             {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
             {ENABLE_ROOMS && <button onClick={()=>{setProfileTab("myProperties");setViewingPropertyId(null);}} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myProperties"?'#06d6c7':'none',color:profileTab==="myProperties"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Properties</button>}
+            <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>🔖 Saved</button>
           </div>
 
           {profileTab==="collections"&&(
@@ -11753,6 +11989,61 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 })
               )}
             </div>
+            );
+          })()}
+
+          {profileTab==="saved" && (() => {
+            const bookmarkedRooms = (discoverRooms || []).filter(r => savedRoomIds.includes(r.id));
+            if (cart.length === 0 && bookmarkedRooms.length === 0) {
+              return (
+                <div style={{textAlign:'center',padding:'44px 18px',background:'var(--surface-bg)',borderRadius:'12px',border:'1px solid var(--border-color)'}}>
+                  <div style={{fontSize:'38px',marginBottom:'10px'}}>🔖</div>
+                  <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'4px'}}>Nothing saved yet</div>
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5}}>Tap the bookmark on a room or listing and it will show up here.</div>
+                </div>
+              );
+            }
+            return (
+              <div style={{display:'flex',flexDirection:'column',gap:'18px'}}>
+                {bookmarkedRooms.length > 0 && (
+                  <div>
+                    <div style={{fontSize:'12px',fontWeight:'800',color:'var(--text-secondary)',marginBottom:'8px'}}>SAVED ROOMS ({bookmarkedRooms.length})</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                      {bookmarkedRooms.map(room => (
+                        <div key={room.id} onClick={()=>openRoomDetail(room)} style={{display:'flex',gap:'10px',alignItems:'center',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'12px',padding:'10px',cursor:'pointer'}}>
+                          <div style={{width:'56px',height:'56px',flexShrink:0,borderRadius:'10px',overflow:'hidden',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px'}}>
+                            {room.photoUrl ? <img src={room.photoUrl} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/> : "🏠"}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>📍 {room.location}</div>
+                            <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{ROOM_TYPES.find(x=>x.id===room.roomType)?.name || room.roomType} · <span style={{color:'#f59e0b',fontWeight:'700'}}>{room.price?.toLocaleString()}</span>/mo</div>
+                          </div>
+                          <button type="button" onClick={e=>{e.stopPropagation();toggleSaveRoom(room);}} style={{border:'none',background:'none',color:'#ef4444',fontSize:'12px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {cart.length > 0 && (
+                  <div>
+                    <div style={{fontSize:'12px',fontWeight:'800',color:'var(--text-secondary)',marginBottom:'8px'}}>SAVED LISTINGS ({cart.length})</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                      {cart.map(item => (
+                        <div key={item.id} style={{display:'flex',gap:'10px',alignItems:'center',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'12px',padding:'10px'}}>
+                          <div style={{width:'56px',height:'56px',flexShrink:0,borderRadius:'10px',overflow:'hidden',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'22px'}}>
+                            {item.photoUrl ? <img src={item.photoUrl} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/> : "🛍"}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.title}</div>
+                            <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{item.price?.toLocaleString()} TSh</div>
+                          </div>
+                          <button type="button" onClick={()=>toggleSave(item)} style={{border:'none',background:'none',color:'#ef4444',fontSize:'12px',fontWeight:'800',cursor:'pointer',flexShrink:0}}>Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })()}
 
@@ -12704,12 +12995,51 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   </div>
 )}
 
+      {showVerifyRoleModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:560,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowVerifyRoleModal(false)}>
+          <div style={{background:'var(--surface-bg)',borderRadius:'18px',padding:'22px',width:'100%',maxWidth:'420px',boxSizing:'border-box'}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',margin:'0 0 6px'}}>
+              <h3 style={{fontSize:'20px',fontWeight:'900',color:'var(--text-primary)',margin:0}}>{t("Get verified","Thibitisha akaunti")}</h3>
+              <LangToggle />
+            </div>
+            <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:'0 0 18px'}}>
+              {t("Phone numbers and messages are only shown to verified people. First — which are you?","Namba za simu na ujumbe huonyeshwa kwa waliothibitishwa pekee. Kwanza — wewe ni nani?")}
+            </p>
+            <button type="button" onClick={()=>chooseVerifyRole("student")} style={{width:'100%',display:'flex',alignItems:'center',gap:'12px',textAlign:'left',padding:'16px',marginBottom:'10px',borderRadius:'14px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg-alt)',cursor:'pointer'}}>
+              <span style={{fontSize:'26px'}}>🎓</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:'block',fontSize:'15px',fontWeight:'800',color:'var(--text-primary)'}}>{t("I'm a student","Mimi ni mwanafunzi")}</span>
+                <span style={{display:'block',fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{t("Student ID or admission letter + your photo","Kitambulisho cha chuo au barua ya udahili + picha yako")}</span>
+              </span>
+              <span style={{fontSize:'18px',color:'var(--text-secondary)'}}>›</span>
+            </button>
+            <button type="button" onClick={()=>chooseVerifyRole("landlord")} style={{width:'100%',display:'flex',alignItems:'center',gap:'12px',textAlign:'left',padding:'16px',marginBottom:'14px',borderRadius:'14px',border:'1.5px solid var(--border-color)',background:'var(--surface-bg-alt)',cursor:'pointer'}}>
+              <span style={{fontSize:'26px'}}>🏠</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:'block',fontSize:'15px',fontWeight:'800',color:'var(--text-primary)'}}>{t("I'm a landlord or agent","Mimi ni mwenye nyumba au dalali")}</span>
+                <span style={{display:'block',fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{t("NIDA or national ID + your photo","NIDA au kitambulisho cha taifa + picha yako")}</span>
+              </span>
+              <span style={{fontSize:'18px',color:'var(--text-secondary)'}}>›</span>
+            </button>
+            <button type="button" onClick={()=>setShowVerifyRoleModal(false)} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>{t("Not now","Sio sasa")}</button>
+          </div>
+        </div>
+      )}
+
       {showRoomUserVerifyModal && user && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:560,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowRoomUserVerifyModal(false)}>
           <div style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'22px',width:'100%',maxWidth:'420px',maxHeight:'90vh',overflowY:'auto',boxSizing:'border-box'}} onClick={e=>e.stopPropagation()}>
-            <h3 style={{fontSize:'20px',fontWeight:'900',color:'var(--text-primary)',margin:'0 0 6px'}}>Room User Verification</h3>
+            <div style={{display:'flex',alignItems:'center',gap:'10px',margin:'0 0 6px'}}>
+              <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setShowVerifyRoleModal(true);}} style={{width:'30px',height:'30px',flexShrink:0,borderRadius:'50%',border:'none',background:'var(--surface-bg-alt)',color:'var(--text-primary)',fontSize:'16px',cursor:'pointer'}}>←</button>
+              <h3 style={{fontSize:'20px',fontWeight:'900',color:'var(--text-primary)',margin:0,flex:1,minWidth:0}}>
+                {verifyRoleChoice === "landlord" ? t("🏠 Landlord verification","🏠 Uthibitisho wa mwenye nyumba") : t("🎓 Student verification","🎓 Uthibitisho wa mwanafunzi")}
+              </h3>
+              <LangToggle />
+            </div>
             <p style={{fontSize:'13px',lineHeight:1.5,color:'var(--text-secondary)',margin:'0 0 16px'}}>
-              Add a profile picture and upload a student ID or national ID before viewing room contacts, maps, or posting rooms when this protection is enabled.
+              {verifyRoleChoice === "landlord"
+                ? t("Upload your NIDA or national ID and add a profile picture of yourself. Both are needed before your phone number and messages become visible to students.","Pakia NIDA au kitambulisho chako cha taifa na uweke picha yako halisi. Vyote viwili vinahitajika kabla namba yako ya simu na ujumbe kuonekana kwa wanafunzi.")
+                : t("Upload your student ID or admission letter and add a profile picture of yourself. Both are needed before phone numbers and messages become visible to you.","Pakia kitambulisho chako cha chuo au barua ya udahili na uweke picha yako halisi. Vyote viwili vinahitajika kabla ya kuona namba za simu na ujumbe.")}
             </p>
             {roomUserVerificationStatus === "pending" && (
               <div style={{background:'#fffbeb',color:'#92400e',border:'1px solid #fde68a',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',marginBottom:'14px'}}>Your Room User Verification is waiting for admin review.</div>
@@ -12719,30 +13049,38 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             )}
             {!userAvatar && (
               <div style={{background:'#fef2f2',color:'var(--danger-dark)',border:'1px solid #fecaca',borderRadius:'10px',padding:'12px',fontSize:'13px',marginBottom:'14px'}}>
-                <strong style={{display:'block',marginBottom:'6px'}}>Profile picture required</strong>
-                <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true);}} style={{padding:'9px 12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Add profile picture</button>
+                <strong style={{display:'block',marginBottom:'6px'}}>{t("Profile picture required","Picha ya wasifu inahitajika")}</strong>
+                <button type="button" onClick={()=>{setShowRoomUserVerifyModal(false);setEditProfileData({name:userName,bio:userBio,services:userServices,avatarFile:null,avatarPreview:userAvatar,avatarPreset:null});setShowEditProfile(true);}} style={{padding:'9px 12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>{t("Add profile picture","Weka picha yako")}</button>
               </div>
             )}
             <div style={{marginBottom:'12px'}}>
-              <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>Name as shown on ID</label>
-              <input type="text" value={nameOnIdInput} onChange={e=>setNameOnIdInput(e.target.value)} placeholder="Full name" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box'}} />
+              <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>{t("Name as shown on ID","Jina kama lilivyo kwenye kitambulisho")}</label>
+              <input type="text" value={nameOnIdInput} onChange={e=>setNameOnIdInput(e.target.value)} placeholder="Full name" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}} />
             </div>
+            {verifyRoleChoice === "landlord" && (
+              <div style={{marginBottom:'12px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'800',marginBottom:'6px'}}>{t("NIDA number","Namba ya NIDA")}</label>
+                <input type="text" value={nidaNumberInput} onChange={e=>setNidaNumberInput(e.target.value)} placeholder="e.g. 19850315-12345-12345-12" style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'15px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}} />
+              </div>
+            )}
             <input type="file" id="room-user-id-upload" accept="image/*" style={{display:'none'}} onChange={(e)=>{const file=e.target.files[0];if(!file)return;if(!file.type.startsWith('image/')){setError("Please choose an image.");return;}if(file.size>5*1024*1024){setError("Image is too large. Max 5MB.");return;}setStudentIdFile(file);const reader=new FileReader();reader.onload=event=>setStudentIdPreview(event.target.result);reader.readAsDataURL(file);}} />
             <label htmlFor="room-user-id-upload" style={{display:'block',cursor:'pointer',marginBottom:'14px'}}>
               {studentIdPreview ? (
                 <img src={studentIdPreview} alt="Room user ID preview" style={{width:'100%',height:'180px',objectFit:'cover',borderRadius:'12px',border:'1.5px solid var(--border-color)'}} />
               ) : (
                 <div style={{border:'2px dashed var(--border-color)',borderRadius:'12px',padding:'28px',textAlign:'center',background:'var(--surface-bg)'}}>
-                  <div style={{fontSize:'36px',marginBottom:'8px'}}>ID</div>
-                  <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)'}}>Upload student ID or national ID</div>
-                  <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>Image only, max 5MB</div>
+                  <div style={{fontSize:'36px',marginBottom:'8px'}}>{verifyRoleChoice === "landlord" ? "🪪" : "🎓"}</div>
+                  <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)'}}>
+                    {verifyRoleChoice === "landlord" ? t("Upload NIDA / national ID","Pakia NIDA / kitambulisho cha taifa") : t("Upload student ID or admission letter","Pakia kitambulisho cha chuo au barua ya udahili")}
+                  </div>
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px'}}>{t("Image only, max 5MB","Picha pekee, isizidi 5MB")}</div>
                 </div>
               )}
             </label>
             <button type="button" onClick={submitRoomUserVerification} disabled={uploading || !userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved"} style={{width:'100%',padding:'13px',background:(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'#d1d5db':'#0f1b2d',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'900',cursor:uploading?'wait':(!userAvatar || roomUserVerificationStatus === "pending" || roomUserVerificationStatus === "approved")?'not-allowed':'pointer'}}>
-              {uploading ? "Submitting..." : roomUserVerificationStatus === "pending" ? "Waiting for review" : roomUserVerificationStatus === "approved" ? "Approved" : "Submit for review"}
+              {uploading ? t("Submitting...","Inawasilisha...") : roomUserVerificationStatus === "pending" ? t("Waiting for review","Inasubiri ukaguzi") : roomUserVerificationStatus === "approved" ? t("Approved","Imethibitishwa") : t("Submit for review","Wasilisha kwa ukaguzi")}
             </button>
-            <button type="button" onClick={()=>setShowRoomUserVerifyModal(false)} disabled={uploading} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:uploading?'wait':'pointer',marginTop:'8px'}}>Cancel</button>
+            <button type="button" onClick={()=>setShowRoomUserVerifyModal(false)} disabled={uploading} style={{width:'100%',padding:'12px',background:'var(--page-bg)',color:'var(--text-tertiary)',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:uploading?'wait':'pointer',marginTop:'8px'}}>{t("Cancel","Ghairi")}</button>
           </div>
         </div>
       )}
@@ -13623,12 +13961,12 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   boxSizing:'border-box',
   padding:'6px 4px'
 }}>
+        {discoverHasEnabledSection && <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>}
         <button onClick={()=>setPage("communities")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="communities"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Chats</span>
           {(groupUnreadCount+dmUnreadCount)>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount+dmUnreadCount}</span>}
         </button>
-        {discoverHasEnabledSection && <button onClick={()=>{setPage("home");handleTabTap(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{transition:'all 0.2s ease'}}><circle cx="10.5" cy="10.5" r="6" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" fill="none"/><line x1="15" y1="15" x2="20" y2="20" stroke={page==="home"?'#06d6c7':'#8a9bb0'} strokeWidth="2.2" strokeLinecap="round"/><path d="M16.5 4.5L17.2 6.3L19 7L17.2 7.7L16.5 9.5L15.8 7.7L14 7L15.8 6.3Z" fill={page==="home"?'#06d6c7':'#8a9bb0'}/></svg><span style={{fontSize:'10px',color:page==="home"?'#06d6c7':'#8a9bb0',fontWeight:page==="home"?'700':'500',transition:'all 0.2s ease'}}>Discover</span></button>}
         <button onClick={()=>setPage("collections")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="collections"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v3"/><path d="M16 4v3"/></svg>
           <span style={{fontSize:'10px',color:page==="collections"?'#06d6c7':'#8a9bb0',fontWeight:page==="collections"?'700':'500',transition:'all 0.2s ease'}}>Collections</span>
