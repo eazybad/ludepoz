@@ -732,6 +732,23 @@ function App() {
   // through on their own — listing a room and verification — rather than a
   // half-finished translation of the whole app. Persisted so they only set it
   // once. Extend COPY below as more screens are translated.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const baseline = vv ? vv.height : window.innerHeight;
+    const handleResize = () => {
+      const current = vv ? vv.height : window.innerHeight;
+      // A shrink of 120px+ is a keyboard opening, not a rotation or browser
+      // chrome nudge — those move far less than a soft keyboard does.
+      setKeyboardOpen(baseline - current > 120);
+    };
+    if (vv) vv.addEventListener("resize", handleResize);
+    else window.addEventListener("resize", handleResize);
+    return () => {
+      if (vv) vv.removeEventListener("resize", handleResize);
+      else window.removeEventListener("resize", handleResize);
+    };
+  }, []);
   const [useSwahili, setUseSwahili] = useState(() => {
     try { return localStorage.getItem("kampasikaLang") === "sw"; } catch (err) { return false; }
   });
@@ -11663,7 +11680,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
             {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
             {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
-            {ENABLE_ROOMS && <button onClick={()=>setProfileTab("myRooms")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
+            {ENABLE_ROOMS && <button onClick={()=>{setProfileTab("myRooms");setViewingPropertyId(null);}} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
             {ENABLE_ROOMS && <button onClick={()=>{setProfileTab("myProperties");setViewingPropertyId(null);}} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myProperties"?'#06d6c7':'none',color:profileTab==="myProperties"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Properties</button>}
             <button onClick={()=>setProfileTab("saved")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="saved"?'#0f1b2d':'none',color:profileTab==="saved"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>🔖 Saved</button>
           </div>
@@ -11888,8 +11905,18 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
               {roomsToShow.length === 0 ? (
                 <div style={{textAlign:'center',padding:'40px 16px',background:'var(--surface-bg)',borderRadius:'12px'}}>
                   <div style={{fontSize:'40px',marginBottom:'10px'}}>🏠</div>
-                  <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Hauna chumba kilichoorodheshwa bado</div>
-                  <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Bonyeza "Add room" hapo juu kuanza.</div>
+                  {scopedProperty && myAllRooms.length > 0 ? (
+                    <>
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>No rooms under {scopedProperty.name} yet</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)',marginBottom:'10px'}}>You have {myAllRooms.length} room{myAllRooms.length===1?'':'s'} listed under other properties.</div>
+                      <button onClick={()=>{setViewingPropertyId(null);}} style={{padding:'8px 16px',background:'var(--surface-bg-alt)',border:'1px solid var(--border-color)',borderRadius:'8px',fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',cursor:'pointer'}}>Show all my rooms</button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>Hauna chumba kilichoorodheshwa bado</div>
+                      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>Bonyeza "Add room" hapo juu kuanza.</div>
+                    </>
+                  )}
                 </div>
               ) : (
                 roomsToShow.map(room => {
@@ -13954,7 +13981,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
   boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
-  display:!user||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'flex',
+  display:!user||keyboardOpen||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,
