@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, onAuthStateChanged, signOut, updatePassword } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -190,6 +190,116 @@ function reviveDiscoverItem(item = {}) {
 // eslint-disable-next-line no-unused-vars
 const ENABLE_COLLECTIONS = true;  // Communities & events (group orders)
 // ====================================
+
+
+// Swipeable media strip for a Discover room card — an optional video first
+// (muted, looping, plays only while actually visible on screen, X-style),
+// then any photos, with a native scroll-snap swipe and a dot indicator.
+// A single photo (the common case today) renders with no carousel chrome.
+function RoomMediaCarousel({ room }) {
+  const trackRef = useRef(null);
+  const videoRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const items = useMemo(() => {
+    const list = [];
+    if (room.videoUrl) list.push({ type: "video", src: room.videoUrl });
+    const photos = (room.photos && room.photos.length > 0) ? room.photos : (room.photoUrl ? [room.photoUrl] : []);
+    photos.forEach(src => { if (src) list.push({ type: "photo", src }); });
+    return list;
+  }, [room.videoUrl, room.photos, room.photoUrl]);
+
+  // Autoplay the video only while it's actually on screen — both vertically
+  // (the feed card is in view) and horizontally (it's the active carousel
+  // slide, since overflow-hidden clips it out of the intersection rect).
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        el.play().catch(() => { /* autoplay can be blocked until user interacts once */ });
+      } else {
+        el.pause();
+      }
+    }, { threshold: [0, 0.6, 1] });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [items]);
+
+  const handleScroll = () => {
+    const el = trackRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setActiveIndex(Math.round(el.scrollLeft / el.clientWidth));
+  };
+
+  if (items.length === 0) return null;
+
+  return (
+    <div style={{marginTop:'10px',borderRadius:'16px',overflow:'hidden',border:'1px solid var(--border-color)',position:'relative'}}>
+      <div
+        ref={trackRef}
+        onScroll={handleScroll}
+        onClick={e=>e.stopPropagation()}
+        style={{display:'flex',overflowX: items.length > 1 ? 'auto' : 'hidden',scrollSnapType: items.length > 1 ? 'x mandatory' : 'none',WebkitOverflowScrolling:'touch',scrollbarWidth:'none'}}
+      >
+        {items.map((item, i) => (
+          <div key={i} style={{flex:'0 0 100%',scrollSnapAlign:'start',position:'relative',height:'210px',background:'#000'}}>
+            {item.type === "video" ? (
+              <video ref={videoRef} src={item.src} muted loop playsInline preload="metadata" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} />
+            ) : (
+              <img src={item.src} alt="" loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {items.length > 1 && (
+        <div style={{position:'absolute',bottom:'8px',left:0,right:0,display:'flex',justifyContent:'center',gap:'5px'}}>
+          {items.map((_, i) => (
+            <div key={i} style={{width: i===activeIndex ? '14px' : '5px',height:'5px',borderRadius:'3px',background: i===activeIndex ? '#fff' : 'rgba(255,255,255,0.5)',transition:'width 0.15s'}} />
+          ))}
+        </div>
+      )}
+
+      {items.length > 1 && (
+        <div style={{position:'absolute',top:'8px',right:'8px',background:'rgba(0,0,0,0.55)',color:'#fff',fontSize:'11px',fontWeight:'700',padding:'2px 8px',borderRadius:'999px'}}>{activeIndex+1}/{items.length}</div>
+      )}
+    </div>
+  );
+}
+
+
+// Instagram/Airbnb-style shimmer placeholder shown while the first rooms
+// fetch is in flight, so the person never sees a false "no rooms" empty
+// state flash before real data has had a chance to arrive.
+function RoomCardSkeleton() {
+  return (
+    <div style={{display:'flex',gap:'10px',padding:'14px 16px',borderBottom:'1px solid var(--border-color)'}}>
+      <div className="kampasika-shimmer" style={{width:'42px',height:'42px',flexShrink:0,borderRadius:'50%'}} />
+      <div style={{flex:1,minWidth:0}}>
+        <div className="kampasika-shimmer" style={{width:'55%',height:'13px',borderRadius:'6px',marginBottom:'8px'}} />
+        <div className="kampasika-shimmer" style={{width:'75%',height:'15px',borderRadius:'6px',marginBottom:'10px'}} />
+        <div className="kampasika-shimmer" style={{width:'100%',height:'190px',borderRadius:'16px'}} />
+      </div>
+    </div>
+  );
+}
+
+function RoomFeedSkeleton() {
+  return (
+    <div>
+      <style>{`
+        @keyframes kampasikaShimmer { 0% { background-position: -300px 0; } 100% { background-position: 300px 0; } }
+        .kampasika-shimmer {
+          background: linear-gradient(90deg, var(--surface-bg-alt) 25%, var(--surface-bg) 50%, var(--surface-bg-alt) 75%);
+          background-size: 600px 100%;
+          animation: kampasikaShimmer 1.4s ease-in-out infinite;
+        }
+      `}</style>
+      <RoomCardSkeleton /><RoomCardSkeleton /><RoomCardSkeleton />
+    </div>
+  );
+}
 
 function WhatsAppIcon({ size = 16, color = '#fff' }) {
   return (
@@ -806,6 +916,7 @@ useEffect(() => {
   const [editingCollection, setEditingCollection] = useState(false);
   // Rooms & Housing state
   const [rooms, setRooms] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   // All rooms owned by the current user, INCLUDING unavailable/rented ones.
   // Public feed shows only available; this lets the owner manage everything.
   const [myAllRooms, setMyAllRooms] = useState([]);
@@ -2416,6 +2527,8 @@ useEffect(() => {
         const snap2 = await getDocs(q2);
         setRooms(snap2.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() })));
       } catch (err2) { console.error("Error loading rooms:", err2); }
+    } finally {
+      setRoomsLoading(false);
     }
   }, []);
 
@@ -3262,6 +3375,7 @@ const requestNotificationPermission = async (currentUser) => {
     setRoommatePosts([]);
     setMyAllRooms([]);
     setMyProperties([]);
+    setRoomsLoading(false);
     return;
   }
 
@@ -7576,6 +7690,12 @@ return (
         );
       }
     }
+    // Only show "no rooms" once the first fetch has actually finished — before
+    // that, a shimmer placeholder stands in, the same way Instagram/Airbnb
+    // never show an empty state while data is still in flight.
+    if (roomsLoading && filtered.length === 0) {
+      return <RoomFeedSkeleton />;
+    }
     return filtered.length === 0 ? (
       <div style={{margin:'0 16px'}}>
         <EmptyResults kind="room" query={committedRoomSearchQ} parsedFilters={aiParsed?.filters}
@@ -7618,20 +7738,7 @@ return (
                 {room.description ? ` — ${room.description.length > 120 ? room.description.substring(0,120) + "…" : room.description}` : ""}
               </div>
 
-              {(room.videoUrl || room.photoUrl) && (
-                <div style={{marginTop:'10px',borderRadius:'16px',overflow:'hidden',border:'1px solid var(--border-color)',position:'relative'}}>
-                  {room.videoUrl ? (
-                    <video src={room.videoUrl} muted playsInline preload="metadata" style={{width:'100%',height:'210px',objectFit:'cover',display:'block',background:'#000'}} />
-                  ) : (
-                    <img src={room.photoUrl} alt="" loading="lazy" style={{width:'100%',height:'210px',objectFit:'cover',display:'block'}}/>
-                  )}
-                  {room.videoUrl && (
-                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
-                      <div style={{width:'52px',height:'52px',borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'20px'}}>▶</div>
-                    </div>
-                  )}
-                </div>
-              )}
+              <RoomMediaCarousel room={room} />
 
               {/* Amenities — readable chips, not near-invisible on dark */}
               {room.amenities && room.amenities.length > 0 && (
@@ -10050,6 +10157,9 @@ const bubbleRadius = '20px';
                   r.landlordName?.toLowerCase().includes(q)
                 );
               }
+            }
+            if (roomsLoading && filtered.length === 0) {
+              return <RoomFeedSkeleton />;
             }
             return filtered.length === 0 ? (
               <div style={{margin:'0 16px'}}>
