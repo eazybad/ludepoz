@@ -29,6 +29,8 @@ import {
 import { computePriceSignal, PriceSignalBadge } from './priceSignal';
 import { CreateGroupModal, GroupListPage } from './groups/GroupListPage';
 import { GroupDetailPage } from './groups/GroupDetailPage';
+import { BizEntryCard } from './biz/BizEntryCard';
+import { BizApplyBar } from './biz/BizApplyBar';
 import {
   addGroupResource,
   createUniversityGroup,
@@ -10813,6 +10815,19 @@ const bubbleRadius = '20px';
                 )}
               </div>
 
+              <BizApplyBar
+                db={db}
+                functions={functions}
+                room={viewingRoom}
+                user={user}
+                userName={userName}
+                userPhone={userPhone}
+                roomLabel={ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name || 'Room'}
+                canAccess={roomUserCanAccessRooms}
+                onNeedAccess={()=>openRoomUserVerification("roomContact")}
+                requireAuth={requireAuth}
+                isOffline={isOffline}
+              />
               <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'16px',paddingBottom:'calc(16px + env(safe-area-inset-bottom, 0px))',display:'flex',gap:'8px'}}>
                 <button onClick={()=>{
                   if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}
@@ -12000,6 +12015,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             const canAddRoomHere = !scopedProperty || canManageProperty(scopedProperty.myRole);
             return (
             <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              {!scopedProperty && <BizEntryCard />}
               {scopedProperty && (
                 <button onClick={()=>{setViewingPropertyId(null);setProfileTab("myProperties");}} style={{alignSelf:'flex-start',padding:'6px 0',border:'none',background:'none',color:'#0d9488',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>← Back to properties</button>
               )}
@@ -12186,6 +12202,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
           {ENABLE_ROOMS && profileTab==="myProperties" && (
             <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+              <BizEntryCard />
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <h3 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)'}}>
                   My Properties ({myProperties.length})

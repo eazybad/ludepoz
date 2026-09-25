@@ -152,7 +152,7 @@ export function GroupListPage({
     <div className={`groups-page ${isDarkMode ? "dark-mode" : "light-mode"} ${searchActive ? "groups-searching" : ""}`}>
       <div className="groups-hero">
         <div className="groups-topbar">
-          <h2>Kampasika</h2>
+          <h2>Chats</h2>
           <div className="groups-new-chat-wrap">
             <button
               className="groups-camera-btn"

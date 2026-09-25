@@ -68,9 +68,40 @@ service firebase.storage {
         && allowedGroupFile();
     }
 
-    match /{allPaths=**} {
-      allow read: if true;
+    // ID photos for student / landlord verification (App.js). Private to the
+    // owner and the Kampasika admin. Before this, the catch-all below made
+    // them publicly readable.
+    match /verification/{uid}/{fileName} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid || request.auth.uid == 'LTrwUHH6utQJGiw4lcsKflzXvPR2');
       allow write: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ─── Kampasika Biz: operator compliance documents ───
+    // BRELA certificate, TIN, owner ID, licence. Private to the owner and the
+    // Kampasika admin (same UID as isAdmin() in firestore.rules).
+    match /biz/{operatorId}/documents/{fileName} {
+      allow read: if signedIn()
+        && (request.auth.uid == operatorId || request.auth.uid == 'LTrwUHH6utQJGiw4lcsKflzXvPR2');
+      allow write: if signedIn()
+        && request.auth.uid == operatorId
+        && request.resource.size < 10 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf'
+        );
+    }
+
+    // Catch-all for older paths. Storage, like Firestore, allows access if
+    // ANY matching rule allows it, so this excludes biz/ explicitly —
+    // otherwise operator documents would be publicly readable.
+    match /{topDir}/{allPaths=**} {
+      allow read: if !(topDir in ['biz', 'verification']);
+      allow write: if !(topDir in ['biz', 'verification'])
+        && signedIn()
         && request.resource.size < 12 * 1024 * 1024;
     }
   }

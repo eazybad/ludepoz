@@ -220,6 +220,31 @@ exports.sendInAppNotificationPush = onDocumentCreated(
 exports.kampasikaSearch = require('./searchFunction').kampasikaSearch;
 exports.kampasikaCreateAssist = require('./createAssistFunction').kampasikaCreateAssist;
 
+// ─── Kampasika Biz (hostel / PBSA operators) ───
+// Kept in its own module, like groups/ on the frontend. See functions/biz/.
+const bizFunctions = require('./biz/bizFunctions');
+exports.bizConnectPawapay = bizFunctions.bizConnectPawapay;
+exports.bizDisconnectPawapay = bizFunctions.bizDisconnectPawapay;
+exports.bizCreateTestDeposit = bizFunctions.bizCreateTestDeposit;
+exports.bizRefreshDeposit = bizFunctions.bizRefreshDeposit;
+exports.bizPawapayCallback = bizFunctions.bizPawapayCallback;
+exports.bizAdminReview = bizFunctions.bizAdminReview;
+const bizApplications = require('./biz/bizApplications');
+exports.bizSyncOperatorPublic = bizApplications.bizSyncOperatorPublic;
+exports.bizSubmitApplication = bizApplications.bizSubmitApplication;
+exports.bizWithdrawApplication = bizApplications.bizWithdrawApplication;
+exports.bizDecideApplication = bizApplications.bizDecideApplication;
+const bizLeases = require('./biz/bizLeases');
+exports.bizCreateLease = bizLeases.bizCreateLease;
+exports.bizSignLease = bizLeases.bizSignLease;
+exports.bizDeclineLease = bizLeases.bizDeclineLease;
+exports.bizCancelLease = bizLeases.bizCancelLease;
+const bizRent = require('./biz/bizRent');
+exports.bizPayCharge = bizRent.bizPayCharge;
+exports.bizRecordPayment = bizRent.bizRecordPayment;
+exports.bizWaiveCharge = bizRent.bizWaiveCharge;
+exports.bizRentReminders = bizRent.bizRentReminders;
+
 // Fires ~60-90s after a member taps "Pay" from chat. Runs every minute,
 // picks up any paymentReminders doc whose dueAt has passed, and writes a
 // notification doc for it — reusing the existing sendInAppNotificationPush

@@ -26,9 +26,9 @@
   position: sticky;
   top: 8px;
   z-index: 15;
-  margin: 0 16px 14px;
-  padding: 14px;
-  border-radius: 24px;
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 20px;
   background: var(--surface-bg);
   border: 1px solid #e3e8ef;
   box-shadow: 0 0 24px 6px var(--page-bg);
@@ -53,7 +53,7 @@
 .groups-hero h2 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 26px;
+  font-size: 21px;
   font-weight: 900;
 }
 
@@ -66,12 +66,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .groups-camera-btn {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 50%;
   background: #ecfeff;
@@ -91,9 +91,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 46px;
-  padding: 0 14px;
-  margin-bottom: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+  margin-bottom: 8px;
   border-radius: 999px;
   background: #eef4f4;
   color: var(--text-secondary);
@@ -287,7 +287,7 @@
 .groups-filter-chips {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .groups-filter-chip {
@@ -295,7 +295,7 @@
   border-radius: 999px;
   background: var(--surface-bg);
   color: #536173;
-  padding: 6px 16px;
+  padding: 4px 14px;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;

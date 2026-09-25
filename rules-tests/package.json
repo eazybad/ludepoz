@@ -1,0 +1,12 @@
+{
+  "name": "kampasika-rules-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "cd .. && firebase emulators:exec --project demo-kampasika --only firestore,storage \"node rules-tests/rules.test.js\""
+  },
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.9.0"
+  }
+}

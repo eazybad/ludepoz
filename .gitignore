@@ -39,3 +39,4 @@ yarn-error.log*
 /settings.gradle
 /store_icon.png
 /twa-manifest.json
+*-debug.log

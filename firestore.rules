@@ -6,6 +6,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Same single UID as ADMIN_UIDS in the Cloud Functions (index.js) —
+    // keep these two in sync if the admin account ever changes.
+    function isAdmin() {
+      return signedIn() && request.auth.uid == 'LTrwUHH6utQJGiw4lcsKflzXvPR2';
+    }
+
     function groupMember(groupId) {
       return signedIn()
         && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
@@ -73,6 +79,7 @@ service cloud.firestore {
         'paymentRef',
         'amountDue',
         'amountPaid',
+        'selectedOption',
         'paymentProofUrl',
         'proofRequested',
         'proofRequestMessage',
@@ -121,7 +128,30 @@ service cloud.firestore {
       allow delete: if canAdminGroup(groupId);
 
       match /members/{uid} {
+        function groupNeedsApproval() {
+          return get(/databases/$(database)/documents/groups/$(groupId)).data.get('joinPolicy', '') == 'approvalRequired';
+        }
+        // Joining: active straight away, or pending where the group needs approval.
+        function allowedJoinStatus() {
+          return request.resource.data.get('status', 'active') == 'pending'
+            || (request.resource.data.get('status', 'active') == 'active' && !groupNeedsApproval());
+        }
+        // What a member may do to their own membership: edit their own
+        // details (name, avatar, mute, notification prefs) without changing
+        // status; leave; or re-join after leaving / removal / rejection.
+        // Never: approve themselves, un-block themselves, or promote themselves.
+        function allowedSelfStatusChange() {
+          return request.resource.data.get('status', '') == resource.data.get('status', '')
+            || request.resource.data.get('status', '') == 'left'
+            || (
+              resource.data.get('status', '') in ['left', 'removed', 'rejected', 'pending']
+              && allowedJoinStatus()
+            );
+        }
+
         allow read: if activeGroupMember(groupId) || resource.data.uid == request.auth.uid;
+        // joinUniversityGroup() checks for an existing membership first.
+        allow get: if signedIn() && resource == null;
         allow create: if signedIn()
           && validRole(request.resource.data.role)
           && (
@@ -129,6 +159,7 @@ service cloud.firestore {
               uid == request.auth.uid
               && request.resource.data.uid == request.auth.uid
               && request.resource.data.role == 'member'
+              && allowedJoinStatus()
             )
             || (
               uid == request.auth.uid
@@ -148,8 +179,12 @@ service cloud.firestore {
             (
               uid == request.auth.uid
               && request.resource.data.uid == request.auth.uid
-              && request.resource.data.role == resource.data.role
-              && request.resource.data.status in ['active', 'left']
+              && resource.data.get('status', '') != 'blocked'
+              && (
+                request.resource.data.role == resource.data.role
+                || request.resource.data.role == 'member'
+              )
+              && allowedSelfStatusChange()
             )
             || canAdminGroup(groupId)
           );
@@ -166,9 +201,44 @@ service cloud.firestore {
           allow create: if (activeGroupMember(groupId) || activeGroupMemberAfter(groupId))
             && request.resource.data.authorUid == request.auth.uid;
           allow update: if canManageGroup(groupId)
-            || (activeGroupMember(groupId) && messageReactionFieldsOnly());
-          allow delete: if canManageGroup(groupId);
+            || (activeGroupMember(groupId) && messageReactionFieldsOnly())
+            // Authors can edit their own resources (updateGroupResource).
+            || (
+              activeGroupMember(groupId)
+              && resource.data.authorUid == request.auth.uid
+              && request.resource.data.authorUid == request.auth.uid
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinned', 'pinnedByUid', 'pinnedAt', 'reactions'])
+            );
+          // Managers can delete anything; members can unsend their own.
+          allow delete: if canManageGroup(groupId)
+            || (activeGroupMember(groupId) && resource.data.authorUid == request.auth.uid);
         }
+      }
+
+      // Study / work groups inside a group (createGroupWorkGroup etc.).
+      match /workGroups/{workGroupId} {
+        function inWorkGroup() {
+          return request.auth.uid == resource.data.get('leaderUid', '')
+            || request.auth.uid in resource.data.get('memberUids', [])
+            || request.auth.uid == resource.data.get('createdByUid', '');
+        }
+        allow read: if activeGroupMember(groupId);
+        allow create: if activeGroupMember(groupId)
+          && request.resource.data.createdByUid == request.auth.uid;
+        allow update: if canManageGroup(groupId)
+          || (activeGroupMember(groupId) && inWorkGroup()
+              && request.resource.data.createdByUid == resource.data.createdByUid);
+        allow delete: if canManageGroup(groupId)
+          || (activeGroupMember(groupId) && resource.data.createdByUid == request.auth.uid);
+      }
+
+      // Older announcements feed (postAnnouncement in App.js).
+      match /announcements/{announcementId} {
+        allow read: if true;
+        allow create: if activeGroupMember(groupId)
+          && request.resource.data.authorUid == request.auth.uid;
+        allow update, delete: if canManageGroup(groupId)
+          || (activeGroupMember(groupId) && resource.data.authorUid == request.auth.uid);
       }
 
       match /collections/{collectionId} {
@@ -194,16 +264,21 @@ service cloud.firestore {
               || publicEventCollection(groupId, collectionId)
             )
             && (
-              paymentId == request.auth.uid
-              || canManageGroup(groupId)
+              canManageGroup(groupId)
               || canAdminGroupAfter(groupId)
+              // A member's own payment starts unverified — only managers
+              // (or the pawaPay / AzamPay functions) can mark it paid.
+              || (
+                paymentId == request.auth.uid
+                && request.resource.data.get('status', 'pending') in ['pending', 'registered', 'sent']
+              )
             );
           allow update: if signedIn()
             && (
               (
                 paymentId == request.auth.uid
                 && request.resource.data.uid == request.auth.uid
-                && request.resource.data.status in ['pending', 'registered']
+                && request.resource.data.status in ['pending', 'registered', 'sent']
                 && memberPaymentFieldsOnly()
                 && (activeGroupMember(groupId) || publicEventCollection(groupId, collectionId))
               )
@@ -214,11 +289,528 @@ service cloud.firestore {
       }
     }
 
-    // Compatibility for existing marketplace/chat collections while the app is
-    // migrated into more granular rule blocks.
-    match /{document=**} {
+    match /users/{uid} {
+      // Verification-approval fields must only ever be set by the admin
+      // review flow (approveVerification/rejectVerification in App.js),
+      // never by the account owner directly — otherwise anyone could grant
+      // themselves a verified badge with a raw Firestore write, bypassing
+      // ID review entirely.
+      function touchesProtectedVerificationFields() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'roomUserVerified', 'isVerified', 'verificationBadge',
+          'roomUserVerifiedAt', 'verifiedAt', 'roomUserVerificationRejectedAt'
+        ]);
+      }
+      // The owner can submit (or resubmit) their own verification — moving
+      // roomUserVerificationStatus to 'pending' — but can never set it to
+      // 'approved' or 'rejected' themselves; only isAdmin() can do that.
+      function selfSubmittedStatusOnly() {
+        return !('roomUserVerificationStatus' in request.resource.data.diff(resource.data).affectedKeys())
+          || request.resource.data.roomUserVerificationStatus == 'pending';
+      }
+
+      // On create there's no existing doc to diff against, so check the
+      // new doc's keys directly (diff() against a missing doc would make
+      // every sign-up fail).
+      function createsProtectedVerificationFields() {
+        return request.resource.data.keys().hasAny([
+          'roomUserVerified', 'isVerified', 'verificationBadge',
+          'roomUserVerifiedAt', 'verifiedAt', 'roomUserVerificationRejectedAt'
+        ])
+          || request.resource.data.get('roomUserVerificationStatus', 'none') in ['approved', 'rejected'];
+      }
+
       allow read: if true;
-      allow write: if signedIn();
+      allow create: if signedIn() && uid == request.auth.uid
+        && !createsProtectedVerificationFields();
+      allow update: if isAdmin()
+        || (
+          signedIn() && uid == request.auth.uid
+          && !touchesProtectedVerificationFields()
+          && selfSubmittedStatusOnly()
+        );
+      allow delete: if isAdmin();
     }
+
+    match /rooms/{roomId} {
+      // A room's landlordVerified badge must always match the poster's
+      // actual, admin-approved status — never a value the client claims on
+      // its own. exists() guards the get() so this can't throw if, somehow,
+      // the caller has no user doc yet.
+      function posterIsVerifiedLandlord() {
+        return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roomUserVerified', false) == true;
+      }
+      function landlordVerifiedMatchesProfile() {
+        return request.resource.data.get('landlordVerified', false) == posterIsVerifiedLandlord();
+      }
+      // Editing an existing room may keep whatever badge it already had
+      // (e.g. a room listed before its owner was verified); it just can't be
+      // switched to a value that doesn't match the profile.
+      function landlordVerifiedUnchangedOrValid() {
+        return request.resource.data.get('landlordVerified', false) == resource.data.get('landlordVerified', false)
+          || landlordVerifiedMatchesProfile();
+      }
+      // Owner / manager of the room's property (see properties/{id}/team).
+      function managesRoomProperty() {
+        return signedIn()
+          && resource.data.get('propertyId', null) is string
+          && exists(/databases/$(database)/documents/properties/$(resource.data.propertyId)/team/$(request.auth.uid))
+          && get(/databases/$(database)/documents/properties/$(resource.data.propertyId)/team/$(request.auth.uid)).data.role in ['owner', 'manager'];
+      }
+
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && landlordVerifiedMatchesProfile();
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && landlordVerifiedUnchangedOrValid()
+        )
+        // Property owners/managers can mark rooms available / taken
+        // (toggleRoomAvailability in App.js).
+        || (
+          managesRoomProperty()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['available'])
+        );
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.userId == request.auth.uid)
+        || managesRoomProperty();
+    }
+
+    // A verified-student-only feature end to end: gated in the UI already,
+    // now gated at the data layer too, so a landlord account (or an
+    // unverified one) can't read or post roommate requests by calling
+    // Firestore directly.
+    function callerIsVerifiedStudent() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roomUserVerified', false) == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roomUserVerifyRole', '') != 'landlord';
+    }
+
+    match /roommatePosts/{postId} {
+      // Authors can always read their own posts — the profile editor
+      // queries roommatePosts by userId to update names/avatars.
+      allow read: if isAdmin() || callerIsVerifiedStudent()
+        || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if callerIsVerifiedStudent()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin()
+        || (
+          signedIn() && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+        );
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    match /properties/{propertyId} {
+      // owner/manager/caretaker — mirrors PROPERTY_ROLE_RANK in App.js.
+      function propertyTeamRole() {
+        return get(/databases/$(database)/documents/properties/$(propertyId)/team/$(request.auth.uid)).data.role;
+      }
+      function isOnPropertyTeam() {
+        return signedIn()
+          && exists(/databases/$(database)/documents/properties/$(propertyId)/team/$(request.auth.uid));
+      }
+      function canManagePropertyDoc() {
+        return isOnPropertyTeam() && propertyTeamRole() in ['owner', 'manager'];
+      }
+      // 'verified' (a badge on the property itself) is admin-only, same
+      // reasoning as roomUserVerified on users — never self-granted.
+      function touchesVerifiedField() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified']);
+      }
+
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.verified != true;
+      allow update: if isAdmin()
+        || (
+          canManagePropertyDoc()
+          && request.resource.data.ownerId == resource.data.ownerId
+          && !touchesVerifiedField()
+        );
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.ownerId == request.auth.uid);
+
+      match /team/{memberUid} {
+        // The very first team doc a new property gets is the owner adding
+        // themself, right after the property doc itself is created — so this
+        // checks the property that will exist a moment later, same pattern
+        // groups already use for their own first-member doc.
+        function selfAsOwnerAtPropertyCreation() {
+          return memberUid == request.auth.uid
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.role == 'owner'
+            && getAfter(/databases/$(database)/documents/properties/$(propertyId)).data.ownerId == request.auth.uid;
+        }
+        function invitedByOwner() {
+          return isOnPropertyTeam() && propertyTeamRole() == 'owner'
+            && request.resource.data.role in ['manager', 'caretaker'];
+        }
+
+        allow read: if signedIn();
+        allow create: if isAdmin() || selfAsOwnerAtPropertyCreation() || invitedByOwner();
+        allow update: if isAdmin()
+          || (
+            isOnPropertyTeam() && propertyTeamRole() == 'owner'
+            && resource.data.role != 'owner'
+          );
+        allow delete: if isAdmin()
+          || (
+            resource.data.role != 'owner'
+            && isOnPropertyTeam()
+            && (
+              propertyTeamRole() == 'owner'
+              || (propertyTeamRole() == 'manager' && resource.data.role == 'caretaker')
+            )
+          );
+      }
+    }
+
+    match /verificationRequests/{reqId} {
+      // Contains ID photo URLs, NIDA numbers, full names — private to the
+      // submitter and the admin reviewer, never broadly readable.
+      function isSubmitter() {
+        return signedIn() && resource.data.userId == request.auth.uid;
+      }
+      // At submission, status can only be 'pending' and reviewedBy/reviewedAt
+      // must be unset — those two are the admin's signature on a decision,
+      // added only by approveVerification/rejectVerification.
+      function isPendingSelfSubmission() {
+        return request.resource.data.userId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && !('reviewedBy' in request.resource.data)
+          && !('reviewedAt' in request.resource.data);
+      }
+
+      allow read: if isAdmin() || isSubmitter();
+      allow create: if signedIn() && isPendingSelfSubmission();
+      // Only the admin review flow may transition status away from
+      // 'pending' (approved/rejected) or set reviewedBy/reviewedAt — the
+      // submitter has no update path at all once it's created.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      // Only written today by the admin approve/reject flow — the recipient
+      // can read and mark their own as read, but never author one.
+      // Group features (groupService.js writeNotification) notify other
+      // members: allowed only for group_* types, unread, and only to someone
+      // who is a member of that group. Official notifications (verification,
+      // Biz, payments) are written by the admin or Cloud Functions.
+      function isGroupNotification() {
+        return signedIn()
+          && request.resource.data.read == false
+          && request.resource.data.type is string
+          && request.resource.data.type.matches('group_.*')
+          && request.resource.data.groupId is string
+          && request.resource.data.userId is string
+          && exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId)/members/$(request.resource.data.userId));
+      }
+
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      // writeNotification() checks whether a de-duplicated notification
+      // already exists before writing it, so a group member may look up a
+      // missing doc or another member's group_* notification in that group.
+      allow get: if signedIn() && (
+        resource == null
+        || (
+          resource.data.type is string
+          && resource.data.type.matches('group_.*')
+          && resource.data.groupId is string
+          && activeGroupMember(resource.data.groupId)
+        )
+      );
+      allow create: if isAdmin() || isGroupNotification();
+      allow update: if isAdmin()
+        || (
+          signedIn() && resource.data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        );
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    // ─── Group admin tools ───
+    // The Kampasika admin can manage any group (demo seeding, moderation).
+    match /groups/{groupId}/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Private chats (buyer ↔ seller, group DMs, property inquiries) ───
+    // Only the two people in a conversation can see it — plus, for room
+    // inquiries, the team of the property it's about (Property Inbox).
+    function onPropertyTeam(propertyId) {
+      return propertyId is string
+        && exists(/databases/$(database)/documents/properties/$(propertyId)/team/$(request.auth.uid));
+    }
+    function conversationMember(conv) {
+      return signedIn() && (
+        conv.get('buyerId', '') == request.auth.uid
+        || conv.get('sellerId', '') == request.auth.uid
+        || onPropertyTeam(conv.get('propertyId', null))
+      );
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if conversationMember(resource.data);
+      // Opening a chat checks whether it already exists first.
+      allow get: if signedIn() && resource == null;
+      allow create: if signedIn()
+        && (request.resource.data.buyerId == request.auth.uid || request.resource.data.sellerId == request.auth.uid)
+        && request.resource.data.buyerId != request.resource.data.sellerId;
+      // Members update last message, unread counts, read times, names and
+      // (property team) assignment — but can't change who is in the chat.
+      allow update: if conversationMember(resource.data)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['buyerId', 'sellerId', 'propertyId']);
+      allow delete: if signedIn()
+        && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
+
+      match /messages/{messageId} {
+        function conv() {
+          return get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+        }
+        function convAfter() {
+          return getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data;
+        }
+        allow read: if conversationMember(conv());
+        // First message is written in the same batch as the conversation.
+        allow create: if request.resource.data.senderId == request.auth.uid
+          && conversationMember(convAfter());
+        allow update: if false;
+        allow delete: if signedIn()
+          && (conv().buyerId == request.auth.uid || conv().sellerId == request.auth.uid);
+      }
+    }
+
+    // ─── Marketplace listings and services ───
+    // Public to read. Owners edit; anyone signed in may only bump the
+    // view / save counters by one.
+    function onlyCounterBump(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
+        && (
+          request.resource.data.get(field, 0) == resource.data.get(field, 0) + 1
+          || request.resource.data.get(field, 0) == resource.data.get(field, 0) - 1
+        );
+    }
+
+    match /listings/{listingId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.userId == request.auth.uid
+            && request.resource.data.userId == resource.data.userId)
+        || (signedIn() && (onlyCounterBump('views') || onlyCounterBump('saves')));
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.userId == request.auth.uid
+            && request.resource.data.userId == resource.data.userId);
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    // ─── Standalone collections (class orders / contributions) and orders ───
+    function collectionAdmin(col) {
+      return signedIn() && (
+        col.userId == request.auth.uid
+        || request.auth.token.get('email', '').lower() in col.get('adminEmails', [])
+        || request.auth.uid in col.get('adminUserIds', [])
+      );
+    }
+
+    match /collections/{collectionId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      // Admins edit anything except the owner; anyone signed in may update the
+      // running totals when they order / pay (placeOrder, confirmPayment).
+      allow update: if isAdmin()
+        || (collectionAdmin(resource.data) && request.resource.data.userId == resource.data.userId)
+        || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['totalOrders', 'totalAmount', 'totalPaid', 'totalCollected']));
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+
+      match /orders/{orderId} {
+        function col() {
+          return get(/databases/$(database)/documents/collections/$(collectionId)).data;
+        }
+        // Order lists are shown to everyone viewing the collection (as before).
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.get('paid', false) == false;
+        // The buyer records their own payment details; admins confirm.
+        allow update: if collectionAdmin(col())
+          || (
+            signedIn()
+            && resource.data.userId == request.auth.uid
+            && request.resource.data.userId == resource.data.userId
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verifiedByQR', 'verifiedAt', 'amount'])
+          );
+        allow delete: if collectionAdmin(col());
+      }
+    }
+
+    // ─── Search alerts, reports, payment reminders ───
+    // These hold phone numbers / emails: the creator and the admin only.
+    match /searchAlerts/{alertId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    match /reports/{reportId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if signedIn() && request.resource.data.reporterId == request.auth.uid;
+    }
+
+    // Written by groupService.schedulePaymentReminder, sent by a Function.
+    match /paymentReminders/{reminderId} {
+      allow read, update, delete: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.sent == false;
+    }
+
+    // ─── Kampasika Biz (hostel / PBSA operators) ───
+    // operators/{ownerUid}: one business per owner account. The owner edits
+    // their own profile, documents list, settlement details and pawaPay
+    // application progress. Everything that means "Kampasika trusts this
+    // business" — review, pawapay connection, paymentMode, liveAt — is set
+    // only by Cloud Functions (functions/biz) or the admin, never the owner.
+    match /operators/{operatorId} {
+      function isOperatorOwner() {
+        return signedIn() && operatorId == request.auth.uid;
+      }
+      function touchesProtectedOperatorFields() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'ownerUid', 'review', 'pawapay', 'paymentMode', 'liveAt'
+        ]);
+      }
+      // The owner may only move their own status from draft/needs_changes to
+      // in_review ("submit for review"); live/suspended are admin decisions.
+      function ownerStatusChangeAllowed() {
+        return request.resource.data.status == resource.data.status
+          || (
+            resource.data.status in ['draft', 'needs_changes']
+            && request.resource.data.status == 'in_review'
+          );
+      }
+
+      allow read: if isAdmin() || isOperatorOwner();
+      allow create: if isOperatorOwner()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && !request.resource.data.keys().hasAny(['review', 'pawapay', 'paymentMode', 'liveAt']);
+      allow update: if isAdmin()
+        || (
+          isOperatorOwner()
+          && !touchesProtectedOperatorFields()
+          && ownerStatusChangeAllowed()
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Encrypted operator pawaPay tokens — Cloud Functions only.
+    match /bizOperatorSecrets/{operatorId} {
+      allow read, write: if false;
+    }
+
+    // Deposits Biz creates. Written only by Cloud Functions. The student who
+    // started a rent payment can watch its status.
+    match /bizDeposits/{depositId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+          resource.data.operatorId == request.auth.uid
+          || resource.data.createdBy == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    // Public "this landlord takes online applications" record, mirrored from
+    // operators/ by the bizSyncOperatorPublic function.
+    match /bizPublic/{operatorId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Room applications — the student and the operator can read; only
+    // Cloud Functions write (bizSubmitApplication / bizDecideApplication …).
+    match /bizApplications/{applicationId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+          resource.data.studentUid == request.auth.uid
+          || resource.data.operatorId == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    // Leases — readable by the two parties; only Cloud Functions write
+    // (bizCreateLease / bizSignLease / bizDeclineLease / bizCancelLease).
+    match /bizLeases/{leaseId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+          resource.data.studentUid == request.auth.uid
+          || resource.data.operatorId == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    // Rent charges — the tenant and the operator can read; only Cloud
+    // Functions write (lease signing, bizPayCharge, bizRecordPayment …).
+    match /bizCharges/{chargeId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+          resource.data.studentUid == request.auth.uid
+          || resource.data.operatorId == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    // Feature flags (App.js admin panel). Everyone reads; only the admin writes.
+    match /system/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Written and read only by Cloud Functions. Before this, the wildcard let
+    // any signed-in user read or rewrite them — e.g. resetting `attempts` on a
+    // login OTP to brute-force someone else's code.
+    match /phoneOtps/{docId} { allow read, write: if false; }
+    match /phoneAuthOtps/{docId} { allow read, write: if false; }
+    match /azamPayTransactions/{docId} { allow read, write: if false; }
+    match /pawaPayTransactions/{docId} { allow read, write: if false; }
+    match /pawaPayWebhookEvents/{docId} { allow read, write: if false; }
+    match /pawaPayTestDeposits/{docId} { allow read, write: if false; }
+    match /snippeWebhookEvents/{docId} { allow read, write: if false; }
+    match /collectionPaymentAttempts/{docId} { allow read, write: if false; }
+
+    // Collection-group queries the app runs (App.js: team, members;
+    // groupService.js: public events). Each matches exactly what its query
+    // asks for: your own team / member entries (they hold emails and phone
+    // numbers) and public event collections.
+    match /{path=**}/team/{docId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /{path=**}/members/{docId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /{path=**}/collections/{docId} {
+      allow read: if resource.data.get('visibility', '') == 'public';
+    }
+
+    // There is no catch-all rule any more: every collection the app uses has
+    // its own block above, and anything else is denied by default. A new
+    // collection needs its own rule before the app can read or write it.
   }
 }

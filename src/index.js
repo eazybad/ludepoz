@@ -5,11 +5,27 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+
+// Kampasika Biz (hostel / PBSA operators) lives at /biz with its own entry
+// point. Its code is loaded on demand, so the student app's bundle and
+// start-up are unchanged — only /biz downloads the Biz chunk.
+const isBiz = window.location.pathname === '/biz' || window.location.pathname.startsWith('/biz/');
+
+if (isBiz) {
+  import('./biz/BizApp').then(({ default: BizApp }) => {
+    root.render(
+      <React.StrictMode>
+        <BizApp />
+      </React.StrictMode>
+    );
+  });
+} else {
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))
