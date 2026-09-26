@@ -8457,6 +8457,19 @@ const bubbleRadius = '20px';
                 />
               )}
               {msg.text && <div style={{wordBreak:'break-word'}}>{msg.text}</div>}
+              {msg.senderId === KAMPASIKA_BOT_UID && typeof msg.videoUrl === 'string' && msg.videoUrl.startsWith('https://kampasika.org/media/') && (
+                <video
+                  src={msg.videoUrl}
+                  poster={typeof msg.videoPoster === 'string' && msg.videoPoster.startsWith('https://kampasika.org/media/') ? msg.videoPoster : undefined}
+                  controls
+                  playsInline
+                  preload="none"
+                  style={{maxWidth:'220px',width:'100%',aspectRatio:'9 / 16',borderRadius:'12px',display:'block',marginTop:'8px',background:'#0f1b2d'}}
+                />
+              )}
+              {msg.senderId === KAMPASIKA_BOT_UID && msg.linkUrl === 'https://kampasika.org/biz' && (
+                <a href="/biz" style={{display:'inline-block',marginTop:'8px',padding:'7px 12px',borderRadius:'10px',background:'#0d9488',color:'#fff',fontWeight:700,fontSize:'13px',textDecoration:'none'}}>Kampasika Biz →</a>
+              )}
               {!groupedWithNext && (
                 <div style={{fontSize:'11px',marginTop:'4px',opacity:0.75,textAlign:'right',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'4px'}}>
                   <span>

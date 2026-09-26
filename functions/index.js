@@ -364,12 +364,18 @@ exports.onKampasikaWelcomeReply = onDocumentCreated(
     // Kampasika" assistant chat, scoped hard to app-usage questions only
     // (see assistantFunction.js for the actual scoping/refusal logic).
     if (stage === "done") {
-      const replyText = await generateAssistantReply(message.text);
+      const reply = await generateAssistantReply(message.text);
+      if (!reply) return null;
+      // Older deploys returned a plain string; accept both.
+      const { text: replyText, videoUrl, videoPoster, linkUrl } =
+        typeof reply === "string" ? { text: reply } : reply;
       if (!replyText) return null;
       await convRef.collection("messages").add({
         senderId: KAMPASIKA_OFFICIAL_UID,
         senderName: "Kampasika",
         text: replyText,
+        ...(videoUrl ? { videoUrl, videoPoster: videoPoster || null } : {}),
+        ...(linkUrl ? { linkUrl } : {}),
         status: "sent",
         readBy: [KAMPASIKA_OFFICIAL_UID],
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2000,4 +2006,4 @@ async function assertGroupManager(db, groupId, uid) {
     throw new HttpsError("permission-denied", "Only group leaders can prepare document previews.");
   }
   return group;
-}
+}
