@@ -125,6 +125,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  // Videos and other media stream with Range requests — let the browser
+  // fetch them directly instead of copying whole files into the cache.
+  if (event.request.headers.has('range') || new URL(event.request.url).pathname.startsWith('/media/')) return;
+
   const url = event.request.url;
   if (
     url.includes('firestore.googleapis.com') ||

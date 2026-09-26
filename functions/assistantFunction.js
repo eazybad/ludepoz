@@ -32,6 +32,14 @@ const BIZ_VIDEO_URL = `${SITE}/media/kampasika-biz-pitch.mp4`;
 const BIZ_VIDEO_POSTER = `${SITE}/media/kampasika-biz-pitch.jpg`;
 const BIZ_LINK_URL = `${SITE}/biz`;
 
+// Questions that should always get the Biz video, whatever the model says —
+// asking for "the video"/"demo", or clearly coming from a hostel owner.
+// English + Swahili; matched on the student's own message.
+const BIZ_VIDEO_REQUEST = /\b(video|vide?o|demo|pitch|kampasika\s*biz|biz)\b|landlord|hostel\s*owner|my\s+hostel|my\s+rooms?\b|tenants?|lease|rent\s+collect|collect\s+rent|mwenye\s+(nyumba|hosteli)|nina\s+hosteli|hosteli\s+yangu|vyumba\s+vyangu|wapangaji|mpangaji|mkataba|kukusanya\s+kodi|kodi\s+ya/i;
+
+const VIDEO_ASK = /\b(video|demo|pitch)\b/i;
+const BIZ_VIDEO_INTRO = "Hii hapa video fupi ya Kampasika Biz — jinsi mwanafunzi anavyoona chumba, anaomba, anasaini mkataba na kulipa kodi moja kwa moja kwenye akaunti yako, na unavyoona yote kwenye dashibodi. Anza hapa: kampasika.org/biz\n\nHere's a short Kampasika Biz video — how students find your room, apply, sign the lease and pay rent straight to your own account, and how you track it all on your dashboard. Start at kampasika.org/biz";
+
 const ASSISTANT_PROMPT = `You are the Kampasika Assistant, replying inside a 1:1 chat on Kampasika — a Tanzanian student marketplace and campus app. Your ONLY job is to help people understand HOW TO USE the app. You are not a general chatbot and you have no access to anyone's account data.
 
 ═══ WHAT KAMPASIKA HAS (only describe features that exist — do not invent anything) ═══
@@ -60,7 +68,7 @@ const ASSISTANT_PROMPT = `You are the Kampasika Assistant, replying inside a 1:1
 4. If the message is NOT about using Kampasika (small talk, general knowledge, anything unrelated), respond with EXACTLY this and nothing else, matching the detected language — do not soften it, explain further, translate it, or add anything else:
    English: "${OFF_TOPIC_REPLY_EN}"
    Swahili: "${OFF_TOPIC_REPLY_SW}"
-5. If the person is a landlord / hostel or student-housing owner, or asks about Kampasika Biz, managing tenants, leases, collecting rent or getting their hostel listed, answer about Kampasika Biz (point them to kampasika.org/biz) and put the exact marker ${BIZ_VIDEO_MARKER} on its own at the very end of your reply — a short video showing the whole process will be attached. Use the marker only in that case, at most once, and never in the off-topic reply.
+5. If the person asks for the video / a demo, is a landlord / hostel or student-housing owner, or asks about Kampasika Biz, managing tenants, leases, collecting rent or getting their hostel listed, answer about Kampasika Biz (point them to kampasika.org/biz) and put the exact marker ${BIZ_VIDEO_MARKER} on its own at the very end of your reply — a short video showing the whole process will be attached. Use the marker only in that case, at most once, and never in the off-topic reply.
 6. Never guess at account-specific details (their own listings, payment status, a specific room, etc.) — you have no access to their data. If asked something account-specific, explain where in the app they'd find that themselves instead of guessing an answer.`;
 
 // Returns null (nothing to answer) or { text, videoUrl?, videoPoster?, linkUrl? }.
@@ -78,8 +86,14 @@ async function generateAssistantReply(userText) {
     });
     const raw = response.content?.[0]?.text?.trim();
     if (!raw) return { text: OFF_TOPIC_REPLY_EN };
-    const wantsVideo = raw.includes(BIZ_VIDEO_MARKER);
-    const text = raw.split(BIZ_VIDEO_MARKER).join("").trim() || OFF_TOPIC_REPLY_EN;
+    const isOffTopic = raw.includes(OFF_TOPIC_REPLY_EN) || raw.includes(OFF_TOPIC_REPLY_SW);
+    const askedForVideo = VIDEO_ASK.test(trimmed);
+    const wantsVideo = raw.includes(BIZ_VIDEO_MARKER) || askedForVideo || (!isOffTopic && BIZ_VIDEO_REQUEST.test(trimmed));
+    // Asked straight for the video but the model filed it as off-topic:
+    // send the video with a fixed intro instead of the refusal line.
+    const text = (askedForVideo && isOffTopic)
+      ? BIZ_VIDEO_INTRO
+      : (raw.split(BIZ_VIDEO_MARKER).join("").trim() || OFF_TOPIC_REPLY_EN);
     if (!wantsVideo) return { text };
     return { text, videoUrl: BIZ_VIDEO_URL, videoPoster: BIZ_VIDEO_POSTER, linkUrl: BIZ_LINK_URL };
   } catch (err) {
