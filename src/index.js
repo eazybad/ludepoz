@@ -11,6 +11,18 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 // start-up are unchanged — only /biz downloads the Biz chunk.
 const isBiz = window.location.pathname === '/biz' || window.location.pathname.startsWith('/biz/');
 
+// One canonical URL per page for search engines (index.html is shared by
+// every path). Biz sub-pages all point at /biz; everything else at itself.
+const SITE_ORIGIN = 'https://kampasika.org';
+const canonicalPath = isBiz ? '/biz' : (window.location.pathname || '/');
+let canonicalLink = document.querySelector('link[rel="canonical"]');
+if (!canonicalLink) {
+  canonicalLink = document.createElement('link');
+  canonicalLink.setAttribute('rel', 'canonical');
+  document.head.appendChild(canonicalLink);
+}
+canonicalLink.setAttribute('href', SITE_ORIGIN + canonicalPath);
+
 if (isBiz) {
   import('./biz/BizApp').then(({ default: BizApp }) => {
     root.render(
