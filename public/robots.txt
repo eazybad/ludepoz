@@ -1,3 +1,13 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Allow: /
+# Signed-in parts of Kampasika Biz — nothing useful for search engines.
+Disallow: /biz/admin
+Disallow: /biz/step/
+Disallow: /biz/applications
+Disallow: /biz/leases
+Disallow: /biz/lease/
+Disallow: /biz/lease-template
+Disallow: /biz/rent
+
+Sitemap: https://kampasika.org/sitemap.xml

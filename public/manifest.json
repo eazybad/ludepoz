@@ -1,7 +1,7 @@
 {
   "short_name": "Kampasika",
-  "name": "Kampasika - Campus Workspace",
-  "description": "Organize group files, tasks, updates, submissions, and campus activity in one student workspace.",
+  "name": "Kampasika - Student rooms & campus groups",
+  "description": "Find verified student rooms and hostels near your university, sign your lease and pay rent by mobile money, and run your campus groups.",
   "icons": [
     {
       "src": "favicon.ico",
@@ -26,7 +26,11 @@
   "orientation": "portrait",
   "theme_color": "#0f1b2d",
   "background_color": "#f4f6f8",
-  "categories": ["shopping", "education", "lifestyle"],
+  "categories": [
+    "shopping",
+    "education",
+    "lifestyle"
+  ],
   "lang": "en",
   "scope": "/"
 }

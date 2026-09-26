@@ -5,26 +5,72 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1,interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0f1b2d" />
+
+    <!-- Search & sharing. Update the domain here (and in public/sitemap.xml,
+         public/robots.txt) if Kampasika moves to a new main domain. -->
+    <title>Kampasika · Student rooms, hostels &amp; campus groups in Tanzania</title>
     <meta
       name="description"
-      content="Kampasika helps university students organize groups, collect contributions and event payments, and track who's paid — all in one place."
+      content="Find verified rooms and hostels near your university, apply and sign your lease online, pay rent by M-Pesa, Airtel Money or Mixx, and run your class and campus groups — all in one app. For hostel owners: Kampasika Biz."
     />
+    <meta name="keywords" content="student rooms Tanzania, hostels near university, Dar es Salaam student accommodation, vyumba vya kupanga karibu na chuo, hosteli za wanafunzi, ARU, UDSM, CBE, pay rent M-Pesa, campus groups, Kampasika Biz" />
+    <link rel="canonical" href="https://kampasika.org/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Kampasika" />
+    <meta property="og:url" content="https://kampasika.org/" />
+    <meta property="og:title" content="Kampasika · Student rooms, hostels & campus groups" />
+    <meta property="og:description" content="Find verified rooms near your university, sign your lease and pay rent by mobile money, and run your campus groups — all in one app." />
+    <meta property="og:image" content="https://kampasika.org/logo512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:locale" content="en_TZ" />
+    <meta property="og:locale:alternate" content="sw_TZ" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Kampasika · Student rooms, hostels & campus groups" />
+    <meta name="twitter:description" content="Find verified rooms near your university, sign your lease and pay rent by mobile money, and run your campus groups." />
+    <meta name="twitter:image" content="https://kampasika.org/logo512.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://kampasika.org/#organization",
+            "name": "Kampasika Solutions",
+            "url": "https://kampasika.org/",
+            "logo": "https://kampasika.org/logo512.png",
+            "areaServed": "TZ"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://kampasika.org/#website",
+            "name": "Kampasika",
+            "url": "https://kampasika.org/",
+            "inLanguage": ["en", "sw"],
+            "publisher": { "@id": "https://kampasika.org/#organization" }
+          },
+          {
+            "@type": "WebApplication",
+            "name": "Kampasika",
+            "url": "https://kampasika.org/",
+            "applicationCategory": "LifestyleApplication",
+            "operatingSystem": "Web, Android",
+            "description": "Student rooms and hostels near Tanzanian universities, online applications and leases, rent payments by mobile money, and campus groups.",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "TZS" },
+            "publisher": { "@id": "https://kampasika.org/#organization" }
+          }
+        ]
+      }
+    </script>
+
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
     -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>Kampasika</title>
   </head>
   <script>
   if ('serviceWorker' in navigator) {
@@ -35,17 +81,13 @@
   }
  </script>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>
+      <h1>Kampasika — student rooms, hostels and campus groups in Tanzania</h1>
+      <p>Find verified rooms and hostels near your university (ARU, UDSM, CBE and more), apply and sign your lease online, and pay rent by M-Pesa, Airtel Money or Mixx by Yas. Run your class, faith and club groups: announcements, contributions and events in one place.</p>
+      <p>Tafuta vyumba na hosteli karibu na chuo chako, omba na saini mkataba mtandaoni, na lipa kodi kwa pesa ya simu.</p>
+      <p>Hostel owners: <a href="https://kampasika.org/biz">Kampasika Biz</a> — applications, leases and rent collection straight to your own account.</p>
+      <p>You need to enable JavaScript to use the Kampasika app.</p>
+    </noscript>
     <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
   </body>
 </html>

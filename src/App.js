@@ -1171,7 +1171,7 @@ useEffect(() => {
     const sellerUni = item.universityName || "campus";
     const priceStr = item.price ? `TSh ${item.price.toLocaleString()}` : "";
     const locationStr = item.location ? `📍 ${item.location}` : "";
-    const appUrl = "https://kampasika.netlify.app";
+    const appUrl = "https://kampasika.org";
     const msg = `Hey! I found this ${sellerUni} student's listing on Kampasika:\n\n` +
       `*${item.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
       `${item.description ? item.description.substring(0, 80) + (item.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -2838,7 +2838,7 @@ const requestNotificationPermission = async (currentUser) => {
 
   const shareRoom = async (room) => {
     const typeName = ROOM_TYPES.find(t => t.id === room.roomType)?.name || "Room";
-    const text = `${typeName} — ${room.location}\n${room.price ? "TSh " + room.price.toLocaleString() + "/mwezi" : ""}\nNear ${room.nearUni || "ARU"}\n\nOn Kampasika: https://kampasika.netlify.app`;
+    const text = `${typeName} — ${room.location}\n${room.price ? "TSh " + room.price.toLocaleString() + "/mwezi" : ""}\nNear ${room.nearUni || "ARU"}\n\nOn Kampasika: https://kampasika.org`;
     try {
       if (navigator.share) { await navigator.share({ title: `${typeName} — ${room.location}`, text }); return; }
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
@@ -7794,7 +7794,7 @@ return (
                     if (lastCreatedListing) {
                       const priceStr = lastCreatedListing.price ? `TSh ${lastCreatedListing.price.toLocaleString()}` : "";
                       const locationStr = lastCreatedListing.location ? `📍 ${lastCreatedListing.location}` : "";
-                      const appUrl = "https://kampasika.netlify.app";
+                      const appUrl = "https://kampasika.org";
                       const msg = `I just listed something on Kampasika!\n\n` +
                         `*${lastCreatedListing.title}*${priceStr ? ` — ${priceStr}` : ""}\n` +
                         `${lastCreatedListing.description ? lastCreatedListing.description.substring(0, 80) + (lastCreatedListing.description.length > 80 ? '...' : '') + '\n' : ''}` +
@@ -9831,7 +9831,7 @@ const bubbleRadius = '20px';
                 msg += `\n📱 Pay to:\n`;
                 methods.forEach(m => { msg += `• ${m.network}: ${m.number}${m.name ? ' ('+m.name+')' : ''}\n`; });
               }
-              msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
+              msg += `\nOrder here: https://kampasika.org/collection/${viewingCollection.id}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
             }} style={{width:'calc(100% - 32px)',margin:'0 16px 16px 16px',padding:'14px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',boxShadow:'0 2px 8px rgba(37,211,102,0.25)'}}>
               📲 Share on WhatsApp
@@ -10044,7 +10044,7 @@ const bubbleRadius = '20px';
                       msg += `💰 ${viewingCollection.price.toLocaleString()} TSh per person\n`;
                       if (viewingCollection.deadline) msg += `⏰ Deadline: ${viewingCollection.deadline}\n`;
                       if (viewingCollection.payNumber) msg += `\n📱 Pay to: ${viewingCollection.payNumber}${viewingCollection.payName ? ' ('+viewingCollection.payName+')' : ''}\n`;
-                      msg += `\nOrder here: https://kampasika.netlify.app/collection/${viewingCollection.id}`;
+                      msg += `\nOrder here: https://kampasika.org/collection/${viewingCollection.id}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
                     } else {
                       const unpaid = collectionOrders.filter(o=>!o.paid);
@@ -10983,7 +10983,7 @@ const bubbleRadius = '20px';
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                const profileUrl = `https://kampasika.org/seller/${slug}`;
                 const msg = `Check out ${publicSeller.name}'s listings on Kampasika!\n\n${profileUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
               }} style={{flex:1,padding:'9px',background:'var(--whatsapp-green)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
@@ -10991,7 +10991,7 @@ const bubbleRadius = '20px';
               </button>
               <button onClick={()=>{
                 const slug = generateSellerSlug(publicSeller.name, publicSeller.universityName);
-                const profileUrl = `https://kampasika.netlify.app/seller/${slug}`;
+                const profileUrl = `https://kampasika.org/seller/${slug}`;
                 navigator.clipboard?.writeText(profileUrl).then(()=>{setSuccess("Link copied!"); setTimeout(()=>setSuccess(""),2000);}).catch(()=>{});
               }} style={{padding:'9px 14px',background:'var(--surface-bg-alt)',color:'var(--text-primary)',border:'1px solid #e2e6ea',borderRadius:'8px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>
                 🔗

@@ -280,7 +280,15 @@ export default function BizApp() {
   const overdueCharges = (charges || []).filter(c => isOverdue(c)).length;
 
   useEffect(() => {
-    document.title = "Kampasika Biz";
+    // Kampasika Biz has its own title / description for search engines
+    // (Google runs this JavaScript when it indexes /biz).
+    document.title = "Kampasika Biz · Hostel management & rent collection in Tanzania";
+    const setMeta = (selector, attr, value) => {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute(attr, value);
+    };
+    setMeta('meta[name="description"]', "content", "For hostel and student-accommodation owners: get student applications from Kampasika, sign leases online and collect rent by mobile money straight into your own pawaPay account. Kiswahili and English.");
+    setMeta('link[rel="canonical"]', "href", "https://kampasika.org/biz");
     return onAuthStateChanged(auth, u => setUser(u || null));
   }, []);
 
