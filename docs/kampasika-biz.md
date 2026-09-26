@@ -1,6 +1,6 @@
 # Kampasika Biz
 
-Step 1: onboarding & pawaPay readiness · Step 2: room applications · Step 3: leases · Step 4: rent
+Step 1: onboarding & pawaPay readiness · Step 2: room applications · Step 3: leases · Step 4: rent · Placement fee
 
 Kampasika Biz is the business side of Kampasika for hostel / PBSA operators.
 It lives at **/biz** on the same site and Firebase project. Step 1 gets an
@@ -175,6 +175,51 @@ Deploy step 4 functions (the lease functions again too, since signing now
 creates charges):
 ```
 firebase deploy --only functions:bizPayCharge,functions:bizRecordPayment,functions:bizWaiveCharge,functions:bizRentReminders,functions:bizSignLease,functions:bizRefreshDeposit,functions:bizPawapayCallback,functions:bizSyncOperatorPublic
+```
+
+## Kampasika's fees (revenue)
+
+The Tanzanian norm is that the tenant pays the finder (dalali), so owners
+compare Kampasika with madalali. The model is a mix:
+
+- **Owners pay nothing per placement** and receive 100% of the rent (that is
+  the incentive to list). A monthly per-bed Biz subscription can come later.
+- **Students pay a Kampasika service fee when they sign a lease** — a % of
+  the whole lease's rent, capped at a share of one month's rent so it always
+  stays cheaper than a dalali. It is shown on the room ("free to apply…"),
+  on the lease before signing ("Sign & pay service fee"), and to the owner on
+  "Create lease".
+
+Both fees are paid by mobile money into **Kampasika's own pawaPay account**
+(`PAWAPAY_API_TOKEN`) — Kampasika's income, never rent, so no third-party
+money is held.
+
+How the service fee works (`functions/biz/bizBilling.js`, `bizLeases.js`):
+1. `bizCreateLease` fixes the fee on the lease (`lease.serviceFee`) from
+   `system/bizPricing.serviceFee = { enabled, percent, capPercentOfMonth }`.
+2. The student signs → the signature is recorded and the lease is
+   **`pending_fee`**; an invoice `bizInvoices/{leaseId}_service` (payer = the
+   student) is created. No rent charges yet, room still listed.
+3. The student pays on the lease page (`bizPayInvoice`); `bizRefreshPlatformDeposit`
+   / `pawapayCallback` confirm with pawaPay → `activateLease()` makes the lease
+   `signed`: rent charges, room unavailable, both sides notified. Runs once.
+4. Unpaid: reminders; the owner can withdraw the lease (the fee is then
+   cancelled). The admin can waive a fee, which activates the lease.
+5. With the service fee switched off, signing activates the lease immediately
+   (as before).
+
+Optional **owner placement fee** (DigsConnect-style, `placementFee`) is still
+there, **off by default**: invoice to the owner on activation, `/biz/fees`,
+free placements, and new leases pause when one is long overdue.
+
+Settings: `/biz/admin` → "Student service fee" and "Owner placement fee"
+(the pawaPay environment of Kampasika's token — `sandbox` / `production` —
+is set in the second card and applies to both).
+
+Deploy:
+```
+firebase deploy --only firestore:rules
+firebase deploy --only functions:bizPayInvoice,functions:bizRefreshPlatformDeposit,functions:bizAdminWaiveInvoice,functions:bizFeeReminders,functions:bizCreateLease,functions:bizSignLease,functions:bizCancelLease,functions:pawapayCallback,functions:onKampasikaWelcomeReply
 ```
 
 ## Possible next steps

@@ -46,6 +46,9 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "bizCharges/L1_r01"), { operatorId: "alice", studentUid: "bob", leaseId: "L1", status: "due" });
   await setDoc(doc(db, "bizDeposits/d1"), { operatorId: "alice", createdBy: "bob", status: "pending" });
   await setDoc(doc(db, "bizPublic/alice"), { businessName: "A" });
+  await setDoc(doc(db, "bizInvoices/L1_placement"), { operatorId: "alice", studentUid: "bob", status: "due", amount: 45000 });
+  await setDoc(doc(db, "bizInvoices/L1_service"), { kind: "service_fee", operatorId: "alice", payerUid: "bob", studentUid: "bob", status: "due", amount: 45000 });
+  await setDoc(doc(db, "system/bizPricing"), { placementFee: { enabled: true, type: "percent", amount: 50 } });
   // chats, groups, marketplace
   await setDoc(doc(db, "conversations/c1"), { buyerId: "bob", sellerId: "alice", lastMessage: "hi", propertyId: null });
   await setDoc(doc(db, "conversations/c1/messages/m1"), { senderId: "bob", text: "hi" });
@@ -219,6 +222,17 @@ await check("student marks charge paid", "deny", () => updateDoc(doc(fs("bob"), 
 await check("student watches own payment", "allow", () => getDoc(doc(fs("bob"), "bizDeposits/d1")));
 await check("anyone reads bizPublic", "allow", () => getDoc(doc(fs(null), "bizPublic/alice")));
 await check("write bizPublic", "deny", () => setDoc(doc(fs("alice"), "bizPublic/alice"), { live: true }));
+await check("operator reads own fee invoice", "allow", () => getDoc(doc(fs("alice"), "bizInvoices/L1_placement")));
+await check("operator lists own due invoices", "allow", () => getDocs(query(collection(fs("alice"), "bizInvoices"), where("operatorId", "==", "alice"), where("status", "==", "due"))));
+await check("tenant reads operator's fee invoice", "deny", () => getDoc(doc(fs("bob"), "bizInvoices/L1_placement")));
+await check("student reads own service fee", "allow", () => getDoc(doc(fs("bob"), "bizInvoices/L1_service")));
+await check("stranger reads a student's service fee", "deny", () => getDoc(doc(fs("stud"), "bizInvoices/L1_service")));
+await check("student marks own service fee paid", "deny", () => updateDoc(doc(fs("bob"), "bizInvoices/L1_service"), { status: "paid" }));
+await check("operator marks own fee paid", "deny", () => updateDoc(doc(fs("alice"), "bizInvoices/L1_placement"), { status: "paid" }));
+await check("operator resets own placement counter", "deny", () => updateDoc(doc(fs("alice"), "operators/alice"), { billing: { placements: 0 } }));
+await check("anyone reads Biz pricing", "allow", () => getDoc(doc(fs(null), "system/bizPricing")));
+await check("operator changes Biz pricing", "deny", () => setDoc(doc(fs("alice"), "system/bizPricing"), { placementFee: { enabled: false } }));
+await check("admin changes Biz pricing", "allow", () => setDoc(doc(fs(ADMIN), "system/bizPricing"), { placementFee: { enabled: true, type: "fixed", amount: 20000 } }));
 
 // ── Storage ──
 await check("stranger downloads an ID photo", "deny", () => getBytes(ref(st("bob"), "verification/alice/id.jpg")));

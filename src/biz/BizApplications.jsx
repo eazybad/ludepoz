@@ -205,7 +205,7 @@ export function ApplicationDetail({ lang, apps, applicationId, onNavigate }) {
       {app.status === "approved" && (
         <div className="biz-card">
           <h2 className="biz-h2">{t(lang, "applicationLease")}</h2>
-          {app.lease && ["sent", "signed"].includes(app.lease.status) ? (
+          {app.lease && ["sent", "pending_fee", "signed"].includes(app.lease.status) ? (
             <div className="biz-actions" style={{ marginTop: 8, alignItems: "center" }}>
               <span className={`biz-pill lease-${app.lease.status}`}>{t(lang, `leaseStatus.${app.lease.status}`)}</span>
               <button type="button" className="biz-btn ghost small" onClick={() => onNavigate(`/biz/lease/${app.lease.id}`)}>{t(lang, "viewLease")} ›</button>

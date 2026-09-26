@@ -51,9 +51,9 @@ const ASSISTANT_PROMPT = `You are the Kampasika Assistant, replying inside a 1:1
 - Collections: group payments inside a group — contributions, event registration, group orders — tracked per member with payment status.
 - Chats: 1:1 messaging with sellers, landlords, or this assistant. Message someone directly from their listing, room, or service to ask about it.
 - Saved searches / alerts: get notified when something matching a search gets posted later.
-- Everything is free: posting a listing, room, or service costs nothing, and browsing/searching costs nothing either — there's no fee anywhere in either direction.
+- Posting a listing, room, or service costs nothing, and browsing/searching and applying for rooms cost nothing either. The only fee: when a student signs a lease with a Kampasika Biz hostel, they pay Kampasika a small service fee, shown before signing and kept cheaper than a dalali (described below).
 - Every listing's location is pinned exactly (a precise map point, not a vague area), so it's easy to walk straight to it, or get there quickly with a Bolt ride.
-- Kampasika Biz (kampasika.org/biz, also linked from My Rooms / My Properties): a free business side for hostel and student-housing owners (landlords, PBSA operators). It has:
+- Kampasika Biz (kampasika.org/biz, also linked from My Rooms / My Properties): the business side for hostel and student-housing owners (landlords, PBSA operators). It's free for owners, and owners receive 100% of the rent. When a student signs a lease through Kampasika, the STUDENT pays Kampasika a service fee (a small % of the lease rent with a cap so it stays cheaper than a dalali; the exact amount is shown on the lease before signing — never quote a number); the lease becomes active once it's paid. It has:
   • Setup: business profile, documents (BRELA, TIN, owner ID) reviewed by Kampasika, and help setting up the owner's OWN pawaPay account so students can pay online.
   • Applications: students tap "Omba · Apply" on the owner's rooms; the owner sees every application in one list, can call/WhatsApp the student, shortlist, approve or reject.
   • Leases: a standard lease in English and Kiswahili the owner can edit; the student reads it and signs in the app by typing their name; both sides can print / save it as PDF.
@@ -68,8 +68,9 @@ const ASSISTANT_PROMPT = `You are the Kampasika Assistant, replying inside a 1:1
 4. If the message is NOT about using Kampasika (small talk, general knowledge, anything unrelated), respond with EXACTLY this and nothing else, matching the detected language — do not soften it, explain further, translate it, or add anything else:
    English: "${OFF_TOPIC_REPLY_EN}"
    Swahili: "${OFF_TOPIC_REPLY_SW}"
-5. If the person asks for the video / a demo, is a landlord / hostel or student-housing owner, or asks about Kampasika Biz, managing tenants, leases, collecting rent or getting their hostel listed, answer about Kampasika Biz (point them to kampasika.org/biz) and put the exact marker ${BIZ_VIDEO_MARKER} on its own at the very end of your reply — a short video showing the whole process will be attached. Use the marker only in that case, at most once, and never in the off-topic reply.
-6. Never guess at account-specific details (their own listings, payment status, a specific room, etc.) — you have no access to their data. If asked something account-specific, explain where in the app they'd find that themselves instead of guessing an answer.`;
+5. If the person asks for the video / a demo, is a landlord / hostel or student-housing owner, or asks about Kampasika Biz, managing tenants, leases, collecting rent or getting their hostel listed, answer about Kampasika Biz (point them to kampasika.org/biz) and put the exact marker ${BIZ_VIDEO_MARKER} on its own at the very end of your reply — the app then attaches a short video showing the whole process automatically, right in this chat. So you CAN send the video: never say you can't send videos or that the video is somewhere else. Use the marker only in that case, at most once, and never in the off-topic reply.
+6. Write plain text only — the chat does not render Markdown, so no **bold**, # headings or links in brackets.
+7. Never guess at account-specific details (their own listings, payment status, a specific room, etc.) — you have no access to their data. If asked something account-specific, explain where in the app they'd find that themselves instead of guessing an answer.`;
 
 // Returns null (nothing to answer) or { text, videoUrl?, videoPoster?, linkUrl? }.
 async function generateAssistantReply(userText) {
@@ -86,14 +87,16 @@ async function generateAssistantReply(userText) {
     });
     const raw = response.content?.[0]?.text?.trim();
     if (!raw) return { text: OFF_TOPIC_REPLY_EN };
+    // (non-video replies also get Markdown bold stripped below)
     const isOffTopic = raw.includes(OFF_TOPIC_REPLY_EN) || raw.includes(OFF_TOPIC_REPLY_SW);
     const askedForVideo = VIDEO_ASK.test(trimmed);
     const wantsVideo = raw.includes(BIZ_VIDEO_MARKER) || askedForVideo || (!isOffTopic && BIZ_VIDEO_REQUEST.test(trimmed));
     // Asked straight for the video but the model filed it as off-topic:
     // send the video with a fixed intro instead of the refusal line.
-    const text = (askedForVideo && isOffTopic)
-      ? BIZ_VIDEO_INTRO
-      : (raw.split(BIZ_VIDEO_MARKER).join("").trim() || OFF_TOPIC_REPLY_EN);
+    // Asked straight for the video: always the fixed intro, so the text can
+    // never contradict the attachment ("I can't send videos…").
+    const cleaned = raw.split(BIZ_VIDEO_MARKER).join("").replace(/\*\*(.+?)\*\*/g, "$1").trim();
+    const text = askedForVideo ? BIZ_VIDEO_INTRO : (cleaned || OFF_TOPIC_REPLY_EN);
     if (!wantsVideo) return { text };
     return { text, videoUrl: BIZ_VIDEO_URL, videoPoster: BIZ_VIDEO_POSTER, linkUrl: BIZ_LINK_URL };
   } catch (err) {
@@ -104,4 +107,4 @@ async function generateAssistantReply(userText) {
   }
 }
 
-module.exports = { generateAssistantReply, ANTHROPIC_API_KEY };
+module.exports = { generateAssistantReply, ANTHROPIC_API_KEY };

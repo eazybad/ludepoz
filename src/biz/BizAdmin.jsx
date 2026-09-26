@@ -11,6 +11,7 @@ import {
   subscribeAllOperators,
 } from "./bizService";
 import { ConnectPanel } from "./BizSteps";
+import { AdminFees } from "./BizFees";
 
 const FILTERS = ["all", "in_review", "needs_changes", "draft", "live", "suspended"];
 
@@ -64,6 +65,10 @@ export function BizAdminList({ lang, onOpen }) {
           </button>
         );
       })}
+
+      <div style={{ marginTop: 28 }}>
+        <AdminFees lang={lang} />
+      </div>
     </>
   );
 }

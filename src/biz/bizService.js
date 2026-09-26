@@ -456,3 +456,151 @@ export function isOverdue(charge, today = todayIso()) {
 export const payCharge = ({ chargeId, phone, provider, amount }) => call("bizPayCharge", { chargeId, phone, provider, amount });
 export const recordPayment = ({ chargeId, amount, method, reference, paidOn }) => call("bizRecordPayment", { chargeId, amount, method, reference, paidOn });
 export const waiveCharge = (chargeId, note) => call("bizWaiveCharge", { chargeId, note });
+
+// ─── Kampasika fees (placement fee — Kampasika's own revenue) ───
+// Pricing: system/bizPricing (admin-edited). Invoices: bizInvoices, created
+// by functions/biz/bizBilling.js when a student signs a lease.
+
+export const DEFAULT_PRICING = {
+  serviceFee: { enabled: false, percent: 0, capPercentOfMonth: 0 },
+  placementFee: { enabled: false, type: "percent", amount: 0, freePlacements: 0, dueDays: 7 },
+  graceDays: 14,
+  platformEnvironment: "sandbox",
+};
+
+export function normalizePricing(raw) {
+  const fee = raw?.placementFee || {};
+  const sf = raw?.serviceFee || {};
+  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  return {
+    serviceFee: {
+      enabled: sf.enabled === true,
+      percent: Math.min(100, Math.max(0, num(sf.percent, 0))),
+      capPercentOfMonth: Math.max(0, num(sf.capPercentOfMonth, 0)),
+    },
+    placementFee: {
+      enabled: fee.enabled === true,
+      type: fee.type === "fixed" ? "fixed" : "percent",
+      amount: Math.max(0, num(fee.amount, 0)),
+      freePlacements: Math.max(0, Math.floor(num(fee.freePlacements, 0))),
+      dueDays: Math.max(0, Math.floor(num(fee.dueDays, 7))),
+    },
+    graceDays: Math.max(0, Math.floor(num(raw?.graceDays, 14))),
+    platformEnvironment: raw?.platformEnvironment === "production" ? "production" : "sandbox",
+  };
+}
+
+export function subscribePricing(onData, onError) {
+  return onSnapshot(doc(db, "system", "bizPricing"), snap => onData(normalizePricing(snap.exists() ? snap.data() : null)), onError);
+}
+
+export function savePricing(pricing) {
+  const p = normalizePricing(pricing);
+  return setDoc(doc(db, "system", "bizPricing"), { ...p, updatedAt: serverTimestamp() });
+}
+
+// Mirrors placementFeeFor() in functions/biz/bizBilling.js.
+export function monthlyRentOf(terms) {
+  const rent = Number(terms?.rent || 0);
+  if (terms?.rentPeriod === "semester") return rent / 6;
+  if (terms?.rentPeriod === "year") return rent / 12;
+  return rent;
+}
+
+export function placementFeeFor(terms, fee) {
+  if (!fee || !fee.enabled || !(fee.amount > 0)) return 0;
+  const raw = fee.type === "fixed" ? fee.amount : (monthlyRentOf(terms) * Math.min(fee.amount, 100)) / 100;
+  return Math.max(0, Math.round(raw / 100) * 100);
+}
+
+// ── Student service fee (mirrors functions/biz/bizBilling.js) ──
+function isoAddDays(iso, days) { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
+function isoAddMonths(iso, months) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+  return d.toISOString().slice(0, 10);
+}
+function isoDaysBetween(a, b) { return Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000); }
+
+// Total rent over the lease — same schedule as buildSchedule() in functions/biz/bizRent.js.
+export function leaseRentTotal(terms) {
+  const { startDate, endDate, rentPeriod } = terms || {};
+  const rent = Number(terms?.rent || 0);
+  if (!startDate || !endDate || endDate <= startDate || !(rent > 0)) return 0;
+  if (rentPeriod === "month") {
+    let total = 0;
+    for (let i = 0; i < 60; i += 1) {
+      const start = i === 0 ? startDate : isoAddMonths(startDate, i);
+      if (start > endDate) break;
+      const fullEnd = isoAddDays(isoAddMonths(startDate, i + 1), -1);
+      const end = fullEnd < endDate ? fullEnd : endDate;
+      const fullDays = isoDaysBetween(start, fullEnd) + 1;
+      const days = isoDaysBetween(start, end) + 1;
+      total += days >= fullDays ? rent : Math.max(0, Math.round((rent * days) / fullDays / 100) * 100);
+    }
+    return total;
+  }
+  const block = rentPeriod === "year" ? 12 : 6;
+  let n = 0;
+  while (isoAddMonths(startDate, n + 1) <= isoAddDays(endDate, 1) && n < 600) n += 1;
+  const rest = isoDaysBetween(isoAddMonths(startDate, n), isoAddDays(endDate, 1));
+  const months = n + (rest > 0 ? rest / 30 : 0);
+  return rent * Math.max(1, Math.ceil(months / block - 0.01));
+}
+
+export function serviceFeeFor(terms, cfg) {
+  if (!cfg || !cfg.enabled || !(cfg.percent > 0)) return null;
+  const totalRent = leaseRentTotal(terms);
+  let amount = (totalRent * cfg.percent) / 100;
+  const cap = cfg.capPercentOfMonth > 0 ? (monthlyRentOf(terms) * cfg.capPercentOfMonth) / 100 : 0;
+  if (cap > 0) amount = Math.min(amount, cap);
+  amount = Math.max(0, Math.round(amount / 100) * 100);
+  return amount > 0 ? { amount, totalRent, percent: cfg.percent, capPercentOfMonth: cfg.capPercentOfMonth } : null;
+}
+
+export function subscribeInvoice(invoiceId, onData, onError) {
+  return onSnapshot(doc(db, "bizInvoices", invoiceId), snap => onData(snap.exists() ? { id: snap.id, ...snap.data() } : null), onError);
+}
+
+export function freePlacementsLeft(operator, pricing) {
+  const used = Number(operator?.billing?.placements || 0);
+  return Math.max(0, Number(pricing?.placementFee?.freePlacements || 0) - used);
+}
+
+export function subscribeOperatorInvoices(operatorId, onData, onError) {
+  return onSnapshot(
+    query(collection(db, "bizInvoices"), where("operatorId", "==", operatorId)),
+    snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt))),
+    onError
+  );
+}
+
+export function subscribeAllInvoices(onData, onError) {
+  return onSnapshot(
+    collection(db, "bizInvoices"),
+    snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt))),
+    onError
+  );
+}
+
+export function invoiceBalance(inv) {
+  return Math.max(0, Number(inv?.amount || 0) - Number(inv?.amountPaid || 0));
+}
+
+// "late" = past the due date; "blocking" = past due + grace (new leases paused).
+export function invoiceState(inv, graceDays = 14, today = todayIso()) {
+  if (inv?.status !== "due") return inv?.status || "due";
+  if (String(inv.dueDate) >= today) return "due";
+  const d = new Date(`${inv.dueDate}T00:00:00`);
+  d.setDate(d.getDate() + Number(graceDays || 0));
+  const limit = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return limit < today ? "blocking" : "late";
+}
+
+export const payInvoice = ({ invoiceId, phone, provider }) => call("bizPayInvoice", { invoiceId, phone, provider });
+export const refreshPlatformDeposit = (depositId) => call("bizRefreshPlatformDeposit", { depositId });
+export const adminWaiveInvoice = (invoiceId, note) => call("bizAdminWaiveInvoice", { invoiceId, note });

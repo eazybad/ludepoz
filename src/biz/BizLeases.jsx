@@ -16,6 +16,7 @@ import {
 } from "./bizService";
 import { LEASE_PLACEHOLDERS, renderText, templateFor } from "./bizLeaseTemplate";
 import { LeaseCharges } from "./BizRent";
+import { FeeNotice, ServiceFeeBox } from "./BizFees";
 
 const PERIODS = ["month", "semester", "year"];
 const LEASE_FILTERS = { sent: ["sent"], signed: ["signed"], closed: ["declined", "cancelled"] };
@@ -306,7 +307,7 @@ function TermsFields({ lang, language, value, onChange, withRent = true, withDat
 }
 
 // ─── Create lease from an approved application ───
-export function CreateLeaseForm({ operator, lang, application, onCreated }) {
+export function CreateLeaseForm({ operator, lang, application, pricing, onCreated }) {
   const [language, setLanguage] = useState(lang === "sw" ? "sw" : "en");
   const template = templateFor(operator, language);
   const moveIn = application?.applicant?.moveInDate || todayIso();
@@ -414,6 +415,7 @@ export function CreateLeaseForm({ operator, lang, application, onCreated }) {
         </div>
       )}
 
+      <FeeNotice operator={operator} pricing={pricing} terms={terms} lang={lang} />
       {error && <div className="biz-error">{error}</div>}
       <div className="biz-actions">
         <button className="biz-btn primary block" disabled={busy}>{busy ? t(lang, "sending") : t(lang, "sendLease")}</button>
@@ -467,6 +469,7 @@ export function LeasePage({ lang, leaseId, user, isAdmin }) {
     declined: ["danger", "declinedBanner"],
     cancelled: ["danger", "cancelledBanner"],
     sent: isOperator ? ["warning", "waitingBanner"] : null,
+    pending_fee: isStudent ? ["warning", "pendingFeeStudentBanner"] : null,
   }[lease.status];
 
   return (
@@ -529,6 +532,7 @@ export function LeasePage({ lang, leaseId, user, isAdmin }) {
       </article>
 
       {lease.status === "signed" && <LeaseCharges lease={lease} user={user} lang={lang} isStudent={isStudent} />}
+      <ServiceFeeBox lease={lease} user={user} lang={lang} />
 
       <div className="biz-noprint">
         {isStudent && lease.status === "sent" && (
@@ -545,7 +549,7 @@ export function LeasePage({ lang, leaseId, user, isAdmin }) {
             </label>
             <div className="biz-actions">
               <button type="button" className="biz-btn primary" disabled={busy || !agreed || typedName.trim().length < 3} onClick={() => run(() => signLease(lease.id, typedName.trim(), lease.contentHash))}>
-                {busy && mode === "" ? t(lang, "signing") : `✍️ ${t(lang, "signButton")}`}
+                {busy && mode === "" ? t(lang, "signing") : Number(lease.serviceFee?.amount || 0) > 0 ? `✍️ ${t(lang, "signAndPayButton")}` : `✍️ ${t(lang, "signButton")}`}
               </button>
               <button type="button" className="biz-btn ghost" disabled={busy} onClick={() => setMode(mode === "decline" ? "" : "decline")}>{t(lang, "declineButton")}</button>
             </div>
@@ -560,7 +564,7 @@ export function LeasePage({ lang, leaseId, user, isAdmin }) {
           </div>
         )}
 
-        {isOperator && lease.status === "sent" && (
+        {isOperator && ["sent", "pending_fee"].includes(lease.status) && (
           <div className="biz-card">
             {mode === "cancel" ? (
               <>

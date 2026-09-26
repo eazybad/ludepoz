@@ -47,6 +47,7 @@ function callableError(err) {
 
 export function BizApplyBar({ db, functions, room, user, userName, userPhone, roomLabel, canAccess, onNeedAccess, requireAuth, isOffline }) {
   const [business, setBusiness] = useState(null); // { operatorId, businessName, ... }
+  const [serviceFeeOn, setServiceFeeOn] = useState(false);
   const [application, setApplication] = useState(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,6 +83,9 @@ export function BizApplyBar({ db, functions, room, user, userName, userPhone, ro
         const pub = await getDoc(doc(db, "bizPublic", operatorId));
         if (cancelled || !pub.exists() || pub.data()?.acceptingApplications === false) return;
         setBusiness({ operatorId, ...pub.data() });
+        // Kampasika's student service fee — say so up front, before applying.
+        const pricing = await getDoc(doc(db, "system", "bizPricing")).catch(() => null);
+        if (!cancelled) setServiceFeeOn(Boolean(pricing?.exists?.() && pricing.data()?.serviceFee?.enabled && Number(pricing.data()?.serviceFee?.percent) > 0));
       } catch (_) { /* not a Biz room, or offline — just don't show the bar */ }
     })();
     return () => { cancelled = true; };
@@ -157,6 +161,11 @@ export function BizApplyBar({ db, functions, room, user, userName, userPhone, ro
             <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
               Omba chumba hiki mtandaoni · Apply for this room online
             </div>
+            {serviceFeeOn && (
+              <div style={{ fontSize: "11.5px", color: "var(--text-secondary)", marginTop: "4px", lineHeight: 1.4 }}>
+                Kuomba ni bure. Ada ndogo ya huduma ya Kampasika inalipwa tu ukisaini mkataba — nafuu kuliko dalali. · Free to apply; a small Kampasika service fee applies only when you sign a lease.
+              </div>
+            )}
           </div>
         </div>
         {statusStyle && (
@@ -164,17 +173,27 @@ export function BizApplyBar({ db, functions, room, user, userName, userPhone, ro
             {statusStyle.label}
           </div>
         )}
-        {application?.lease && ["sent", "signed"].includes(application.lease.status) && (
-          <a
-            href={`/biz/lease/${application.lease.id}${application.lease.status === "signed" ? "#rent" : ""}`}
-            style={{ display: "block", marginTop: "10px", padding: "12px", borderRadius: "10px", textAlign: "center", textDecoration: "none", fontWeight: 800, fontSize: "14px", background: application.lease.status === "sent" ? "#0d9488" : "var(--surface-bg-alt)", color: application.lease.status === "sent" ? "#fff" : "var(--text-primary)", border: application.lease.status === "sent" ? "none" : "1px solid var(--border-color)" }}
-          >
-            {application.lease.status === "sent" ? "📄 Soma na saini mkataba · Read & sign lease" : "📄 Mkataba na kodi · Lease & rent payments"}
-          </a>
-        )}
+        {application?.lease && ["sent", "pending_fee", "signed"].includes(application.lease.status) && (() => {
+          const ls = application.lease.status;
+          const primary = ls !== "signed";
+          const label = ls === "sent"
+            ? "📄 Soma na saini mkataba · Read & sign lease"
+            : ls === "pending_fee"
+              ? "💳 Lipa ada ili mkataba uanze · Pay the service fee to activate your lease"
+              : "📄 Mkataba na kodi · Lease & rent payments";
+          const hash = ls === "signed" ? "#rent" : ls === "pending_fee" ? "#service-fee" : "";
+          return (
+            <a
+              href={`/biz/lease/${application.lease.id}${hash}`}
+              style={{ display: "block", marginTop: "10px", padding: "12px", borderRadius: "10px", textAlign: "center", textDecoration: "none", fontWeight: 800, fontSize: "14px", background: primary ? "#0d9488" : "var(--surface-bg-alt)", color: primary ? "#fff" : "var(--text-primary)", border: primary ? "none" : "1px solid var(--border-color)" }}
+            >
+              {label}
+            </a>
+          );
+        })()}
         {error && !open && <div style={{ color: "#ef4444", fontSize: "13px", marginTop: "8px" }}>{error}</div>}
         <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-          {application?.lease?.status === "signed" ? null : canApply ? (
+          {["signed", "pending_fee"].includes(application?.lease?.status) ? null : canApply ? (
             <button type="button" onClick={startApply} disabled={isOffline} style={{ flex: 1, padding: "13px", borderRadius: "10px", border: "none", background: isOffline ? "var(--border-color)" : "#0f1b2d", color: "#fff", fontSize: "15px", fontWeight: 700, cursor: isOffline ? "not-allowed" : "pointer" }}>
               {status ? "Omba tena · Apply again" : "📝 Omba · Apply"}
             </button>

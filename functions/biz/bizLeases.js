@@ -13,6 +13,12 @@
 //   bizDeclineLease  student declines (optional reason)
 //   bizCancelLease   operator withdraws a lease that isn't signed yet
 //
+// Kampasika's fees (bizBilling.js): when a service fee is on, the lease
+// carries the student's fee from the moment it's issued; after the student
+// signs it waits in "pending_fee" until the fee is paid, then activateLease()
+// makes it "signed" (charges, room, notifications). An owner placement fee,
+// if switched on, is created on activation; one long past due pauses new leases.
+//
 // Data: bizLeases/{leaseId}; the application gets a small mirror
 // (application.lease = { id, status }) so the student app can show it.
 
@@ -20,6 +26,7 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { createChargesForLease } = require("./bizRent");
+const { createPlacementInvoice, assertNoOverdueFees, loadPricing, serviceFeeFor, createServiceFeeInvoice } = require("./bizBilling");
 
 const BIZ_ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 const RENT_PERIODS = new Set(["month", "semester", "year"]);
@@ -132,9 +139,11 @@ exports.bizCreateLease = onCall(async (request) => {
     throw new HttpsError("permission-denied", "This application belongs to another business.");
   }
   if (app.status !== "approved") throw new HttpsError("failed-precondition", "Approve the application before creating a lease.");
-  if (app.lease && ["sent", "signed"].includes(app.lease.status)) {
+  if (app.lease && ["sent", "pending_fee", "signed"].includes(app.lease.status)) {
     throw new HttpsError("failed-precondition", "This student already has an active lease. Cancel it first to issue a new one.");
   }
+  // A Kampasika fee long past due pauses NEW leases (nothing else).
+  if (!BIZ_ADMIN_UIDS.has(uid)) await assertNoOverdueFees(app.operatorId);
 
   const operatorSnap = await db().collection("operators").doc(app.operatorId).get();
   const operator = operatorSnap.data() || {};
@@ -208,6 +217,11 @@ exports.bizCreateLease = onCall(async (request) => {
   const content = { reference, language, parties, room: { ...room, label: roomLabel }, terms, clauses: rendered };
   const contentHash = hashContent(content);
 
+  // The student's Kampasika service fee is fixed when the lease is issued,
+  // so both sides see the exact amount before signing.
+  const pricing = await loadPricing();
+  const serviceFee = serviceFeeFor(terms, pricing.serviceFee);
+
   await leaseRef.set({
     ...content,
     operatorId: app.operatorId,
@@ -216,6 +230,7 @@ exports.bizCreateLease = onCall(async (request) => {
     roomId: app.roomId || null,
     propertyId: app.propertyId || null,
     contentHash,
+    serviceFee: serviceFee || null,
     status: "sent",
     signatures: {
       landlord: { uid, name: parties.landlord.contactName || parties.landlord.businessName, issuedAt: new Date().toISOString() },
@@ -257,18 +272,57 @@ exports.bizSignLease = onCall(async (request) => {
     userAgent: String(raw.headers?.["user-agent"] || "").slice(0, 300),
   };
 
+  // With a service fee the signature is recorded now, and the lease turns
+  // "signed" (active) once the student pays the fee — see activateLease().
+  const needsFee = Number(lease.serviceFee?.amount || 0) > 0;
+  const status = needsFee ? "pending_fee" : "signed";
   await ref.update({
-    status: "signed",
+    // Without a fee the status stays "sent" for a moment and activateLease()
+    // below flips it to "signed" (it only activates sent / pending_fee leases).
+    ...(needsFee ? { status } : {}),
     "signatures.tenant": signature,
     signedAt: FieldValue().serverTimestamp(),
     history: FieldValue().arrayUnion({ status: "signed", by: uid, at: signature.signedAt }),
     updatedAt: FieldValue().serverTimestamp(),
   });
+
+  if (needsFee) {
+    const invoice = await createServiceFeeInvoice(ref.id, { ...lease, id: ref.id });
+    await mirrorOnApplication(lease.applicationId, ref.id, "pending_fee");
+    await notify(lease.operatorId, "Kampasika Biz · Lease signed",
+      `${lease.parties?.tenant?.name || "The student"} signed lease ${lease.reference}. It becomes active once they pay the Kampasika service fee.`,
+      { type: "biz_lease", leaseId: ref.id, link: `/biz/lease/${ref.id}` });
+    return { success: true, status, invoiceId: invoice?.id || `${ref.id}_service` };
+  }
+  await activateLease(ref.id);
+  return { success: true, status: "signed" };
+});
+
+// Makes a tenant-signed lease active: rent charges, room unavailable,
+// operator notified, placement fee (if that option is on). Runs once — the
+// status flip is transactional, so a callback and a "check status" arriving
+// together can't activate twice.
+async function activateLease(leaseId) {
+  const ref = db().collection("bizLeases").doc(clean(leaseId, 128));
+  const lease = await db().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    if (!data.signatures?.tenant || !["sent", "pending_fee"].includes(data.status)) return null;
+    tx.update(ref, {
+      status: "signed",
+      activatedAt: FieldValue().serverTimestamp(),
+      history: FieldValue().arrayUnion({ status: "active", by: "system", at: new Date().toISOString() }),
+      updatedAt: FieldValue().serverTimestamp(),
+    });
+    return { ...data, status: "signed" };
+  });
+  if (!lease) return false;
   await mirrorOnApplication(lease.applicationId, ref.id, "signed");
 
   // Step 4: the lease's rent schedule becomes charges, and the room stops
   // showing as available on Kampasika (the operator can relist it).
-  const chargeCount = await createChargesForLease(ref.id, { ...lease, status: "signed" }).catch(err => {
+  const chargeCount = await createChargesForLease(ref.id, lease).catch(err => {
     console.error("Could not create rent charges", ref.id, err);
     return 0;
   });
@@ -277,11 +331,16 @@ exports.bizSignLease = onCall(async (request) => {
   }
   await ref.update({ chargeCount }).catch(() => {});
 
-  await notify(lease.operatorId, "Kampasika Biz · Lease signed",
-    `${lease.parties?.tenant?.name || "The student"} signed lease ${lease.reference}.`,
+  // Optional owner placement fee (off unless the admin switched it on).
+  await createPlacementInvoice(ref.id, lease).catch(err => {
+    console.error("Could not create placement invoice", ref.id, err);
+  });
+
+  await notify(lease.operatorId, "Kampasika Biz · Lease active",
+    `Lease ${lease.reference} with ${lease.parties?.tenant?.name || "the student"} is active. Rent reminders start automatically.`,
     { type: "biz_lease", leaseId: ref.id, link: `/biz/lease/${ref.id}` });
-  return { success: true, status: "signed" };
-});
+  return true;
+}
 
 exports.bizDeclineLease = onCall(async (request) => {
   const uid = requireUid(request);
@@ -304,7 +363,7 @@ exports.bizDeclineLease = onCall(async (request) => {
 exports.bizCancelLease = onCall(async (request) => {
   const uid = requireUid(request);
   const { ref, lease } = await loadLeaseFor(uid, request.data?.leaseId, "operator");
-  if (lease.status !== "sent") throw new HttpsError("failed-precondition", "Only a lease that hasn't been signed yet can be cancelled.");
+  if (!["sent", "pending_fee"].includes(lease.status)) throw new HttpsError("failed-precondition", "Only a lease that isn't active yet can be cancelled.");
   const reason = clean(request.data?.reason, 500);
   await ref.update({
     status: "cancelled",
@@ -313,6 +372,13 @@ exports.bizCancelLease = onCall(async (request) => {
     updatedAt: FieldValue().serverTimestamp(),
   });
   await mirrorOnApplication(lease.applicationId, ref.id, "cancelled");
+  // An unpaid service fee for this lease is no longer owed.
+  const feeRef = db().collection("bizInvoices").doc(`${ref.id}_service`);
+  await feeRef.get().then(snap => (
+    snap.exists && snap.data()?.status === "due"
+      ? feeRef.update({ status: "cancelled", updatedAt: FieldValue().serverTimestamp() })
+      : null
+  )).catch(() => {});
   await notify(lease.studentUid, "Lease withdrawn",
     `${lease.parties?.landlord?.businessName || "The landlord"} withdrew lease ${lease.reference}.${reason ? ` ${reason}` : ""}`,
     { type: "biz_lease", leaseId: ref.id });
@@ -320,4 +386,5 @@ exports.bizCancelLease = onCall(async (request) => {
 });
 
 module.exports.renderText = renderText;
+module.exports.activateLease = activateLease;
 module.exports.hashContent = hashContent;

@@ -694,7 +694,7 @@ service cloud.firestore {
       }
       function touchesProtectedOperatorFields() {
         return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'ownerUid', 'review', 'pawapay', 'paymentMode', 'liveAt'
+          'ownerUid', 'review', 'pawapay', 'paymentMode', 'liveAt', 'billing'
         ]);
       }
       // The owner may only move their own status from draft/needs_changes to
@@ -711,7 +711,7 @@ service cloud.firestore {
       allow create: if isOperatorOwner()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.status == 'draft'
-        && !request.resource.data.keys().hasAny(['review', 'pawapay', 'paymentMode', 'liveAt']);
+        && !request.resource.data.keys().hasAny(['review', 'pawapay', 'paymentMode', 'liveAt', 'billing']);
       allow update: if isAdmin()
         || (
           isOperatorOwner()
@@ -777,7 +777,20 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Feature flags (App.js admin panel). Everyone reads; only the admin writes.
+    // Kampasika's own fees (bizBilling.js): the student's service fee and the
+    // optional owner placement fee. The payer, the operator and the admin
+    // read; only Cloud Functions write.
+    match /bizInvoices/{invoiceId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+          resource.data.operatorId == request.auth.uid
+          || resource.data.get('payerUid', '') == request.auth.uid
+        ));
+      allow write: if false;
+    }
+
+    // Feature flags (App.js admin panel) and Biz pricing (system/bizPricing).
+    // Everyone reads; only the admin writes.
     match /system/{docId} {
       allow read: if true;
       allow write: if isAdmin();

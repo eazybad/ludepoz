@@ -244,6 +244,11 @@ exports.bizPayCharge = bizRent.bizPayCharge;
 exports.bizRecordPayment = bizRent.bizRecordPayment;
 exports.bizWaiveCharge = bizRent.bizWaiveCharge;
 exports.bizRentReminders = bizRent.bizRentReminders;
+const bizBilling = require('./biz/bizBilling');
+exports.bizPayInvoice = bizBilling.bizPayInvoice;
+exports.bizRefreshPlatformDeposit = bizBilling.bizRefreshPlatformDeposit;
+exports.bizAdminWaiveInvoice = bizBilling.bizAdminWaiveInvoice;
+exports.bizFeeReminders = bizBilling.bizFeeReminders;
 
 // Fires ~60-90s after a member taps "Pay" from chat. Runs every minute,
 // picks up any paymentReminders doc whose dueAt has passed, and writes a
@@ -1708,6 +1713,21 @@ exports.azampayPaymentCallback = onRequest({ cors: false }, async (req, res) => 
 exports.pawapayCallback = onRequest({ cors: false, secrets: [PAWAPAY_API_TOKEN] }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  // Kampasika Biz fee payments (bizBilling.js) also land on this callback,
+  // because they use Kampasika's own pawaPay account. They're settled by
+  // asking pawaPay directly for the deposit's status, so the callback body
+  // is never trusted and this is safe before the signature check.
+  try {
+    if (await bizBilling.handlePlatformDepositCallback(req.body?.depositId)) {
+      res.status(200).json({ success: true });
+      return;
+    }
+  } catch (err) {
+    console.error("Biz fee callback failed", req.body?.depositId, err);
+    res.status(500).json({ success: false }); // pawaPay retries
     return;
   }
 

@@ -13,6 +13,7 @@
 //   /biz/lease-template    edit the lease template
 //   /biz/lease/<id>        one lease — opened by the operator AND the student
 //   /biz/rent              rent: occupancy, arrears, payments (step 4)
+//   /biz/fees              Kampasika placement fees the operator owes / paid
 //   /biz/admin             Kampasika admin: all businesses
 //   /biz/admin/<uid>       Kampasika admin: one business
 
@@ -39,6 +40,7 @@ import { applicationsUnlocked } from "./bizService";
 import { CreateLeaseForm, LeasePage, LeaseTemplateEditor, LeasesList, useOperatorLeases } from "./BizLeases";
 import { OperatorRent, useOperatorCharges } from "./BizRent";
 import { isOverdue } from "./bizService";
+import { FeesBanner, FeesPage, useOperatorInvoices, usePricing } from "./BizFees";
 
 function readLang() {
   try { return localStorage.getItem("kp-biz-lang") === "sw" ? "sw" : "en"; } catch (_) { return "en"; }
@@ -61,6 +63,7 @@ function parsePath(pathname) {
   if (parts[1] === "applications") return parts[2] ? { view: "applicationDetail", applicationId: parts[2] } : { view: "applications" };
   if (parts[1] === "leases") return { view: "leases" };
   if (parts[1] === "rent") return { view: "rent" };
+  if (parts[1] === "fees") return { view: "fees" };
   if (parts[1] === "lease-template") return { view: "leaseTemplate" };
   if (parts[1] === "lease" && parts[2]) return { view: "lease", leaseId: parts[2] };
   return { view: "home" };
@@ -161,7 +164,7 @@ export function Welcome({ lang, user }) {
   );
 }
 
-export function Home({ lang, operator, onNavigate, newApplications = 0 }) {
+export function Home({ lang, operator, onNavigate, newApplications = 0, feesDue = 0, showFees = false }) {
   const steps = computeSteps(operator);
   const pct = progressPercent(steps);
   const status = operator.status || "draft";
@@ -212,6 +215,17 @@ export function Home({ lang, operator, onNavigate, newApplications = 0 }) {
             </div>
           </div>
           {newApplications > 0 && <span className="biz-count">{newApplications}</span>}
+          <span className="biz-chevron">›</span>
+        </button>
+      )}
+
+      {showFees && (
+        <button type="button" className="biz-op-row" onClick={() => onNavigate("/biz/fees")}>
+          <div className="biz-op-main">
+            <div className="biz-op-name">💳 {t(lang, "homeFees")}</div>
+            <div className="biz-small">{t(lang, "homeFeesSub")}</div>
+          </div>
+          {feesDue > 0 && <span className="biz-count">{feesDue}</span>}
           <span className="biz-chevron">›</span>
         </button>
       )}
@@ -278,6 +292,10 @@ export default function BizApp() {
   const waitingLeases = (leases || []).filter(l => l.status === "sent").length;
   const charges = useOperatorCharges(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
   const overdueCharges = (charges || []).filter(c => isOverdue(c)).length;
+  const pricing = usePricing();
+  const invoices = useOperatorInvoices(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
+  const feesDue = (invoices || []).filter(i => i.status === "due").length;
+  const showFees = Boolean(pricing?.placementFee?.enabled) || (invoices || []).length > 0;
 
   useEffect(() => {
     // Kampasika Biz has its own title / description for search engines
@@ -360,6 +378,13 @@ export default function BizApp() {
     );
   } else if (route.view === "rent") {
     body = <OperatorRent operator={operator} lang={lang} charges={charges} leases={leases} />;
+  } else if (route.view === "fees") {
+    body = (
+      <>
+        <button type="button" className="biz-back" onClick={() => navigate("/biz")}>‹ {t(lang, "back")}</button>
+        <FeesPage operator={operator} lang={lang} invoices={invoices} pricing={pricing} />
+      </>
+    );
   } else if (route.view === "leases") {
     body = <LeasesList operator={operator} lang={lang} leases={leases} onNavigate={navigate} />;
   } else if (route.view === "leaseTemplate") {
@@ -376,7 +401,7 @@ export default function BizApp() {
         <button type="button" className="biz-back" onClick={() => navigate(`/biz/applications/${route.applicationId}`)}>‹ {t(lang, "back")}</button>
         {apps === null
           ? <Loading lang={lang} />
-          : <CreateLeaseForm key={application?.id || "none"} operator={operator} lang={lang} application={application} onCreated={id => navigate(`/biz/lease/${id}`)} />}
+          : <CreateLeaseForm key={application?.id || "none"} operator={operator} lang={lang} application={application} pricing={pricing} onCreated={id => navigate(`/biz/lease/${id}`)} />}
       </>
     );
   } else if (route.view === "step") {
@@ -388,7 +413,7 @@ export default function BizApp() {
       </>
     );
   } else {
-    body = <Home lang={lang} operator={operator} onNavigate={navigate} newApplications={newApplications} />;
+    body = <Home lang={lang} operator={operator} onNavigate={navigate} newApplications={newApplications} feesDue={feesDue} showFees={showFees} />;
   }
 
   const wide = route.view === "admin" || route.view === "adminDetail";
@@ -414,7 +439,12 @@ export default function BizApp() {
           </nav>
         </div>
       )}
-      <main className={`biz-shell ${wide ? "wide" : ""}`}>{body}</main>
+      <main className={`biz-shell ${wide ? "wide" : ""}`}>
+        {operator && !wide && route.view !== "fees" && route.view !== "lease" && (
+          <FeesBanner invoices={invoices} pricing={pricing} lang={lang} onOpen={() => navigate("/biz/fees")} />
+        )}
+        {body}
+      </main>
     </div>
   );
 }
