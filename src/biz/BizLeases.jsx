@@ -19,7 +19,7 @@ import { LeaseCharges } from "./BizRent";
 import { FeeNotice, ServiceFeeBox } from "./BizFees";
 
 const PERIODS = ["month", "semester", "year"];
-const LEASE_FILTERS = { sent: ["sent"], signed: ["signed"], closed: ["declined", "cancelled"] };
+const LEASE_FILTERS = { sent: ["sent", "pending_fee"], signed: ["signed"], closed: ["declined", "cancelled"] };
 const ROOM_TYPE_WORDS = {
   en: { single: "Single room", master: "Master room", apartment: "Apartment" },
   sw: { single: "Chumba kimoja", master: "Chumba cha master", apartment: "Nyumba" },

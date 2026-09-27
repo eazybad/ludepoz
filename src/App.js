@@ -6558,7 +6558,7 @@ if (loading) {
           marginBottom:'22px',
           textShadow:'0 14px 34px rgba(6,214,199,0.18)'
         }}>
-          Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
+          Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)'}}>pa</em>sika
         </div>
         <div style={{
           width:'138px',
@@ -7057,7 +7057,7 @@ return (
     null
   ) : (
     <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)'}}>
-      Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
+      Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)'}}>pa</em>sika
     </div>
   )}
 </div>
@@ -8009,7 +8009,7 @@ return (
               background:'var(--mint-tint)',
               flexShrink:0
             }}>
-              <span style={{fontSize:'24px',color:'var(--accent-teal-bright)'}}>+</span>
+              <span style={{fontSize:'24px',color:'var(--accent-teal-bright, #06d6c7)'}}>+</span>
             </div>
           )}
         </div>
@@ -8027,8 +8027,8 @@ return (
           background:'var(--mint-tint)',
           gap:'6px'
         }}>
-          <span style={{fontSize:'18px',color:'var(--accent-teal-bright)'}}>+</span>
-          <span style={{fontSize:'13px',color:'var(--accent-teal-bright)',fontWeight:'600'}}>Add more photos</span>
+          <span style={{fontSize:'18px',color:'var(--accent-teal-bright, #06d6c7)'}}>+</span>
+          <span style={{fontSize:'13px',color:'var(--accent-teal-bright, #06d6c7)',fontWeight:'600'}}>Add more photos</span>
         </div>
       )}
     </div>
@@ -8176,12 +8176,12 @@ return (
               </div>
               {singleThread ? (
                 <>
-                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
+                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               ) : (
                 <>
-                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
+                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',marginBottom:'4px',fontWeight:'500'}}>{personConvs.length} items {isExpanded ? "▲" : "▼"}</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
                 </>
               )}
@@ -8210,7 +8210,7 @@ return (
                     style={{flex:1,padding:'10px 16px 10px 60px',cursor:'pointer',minWidth:0}}
                   >
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}}>
-                      <div style={{fontSize:'12px',color:'var(--accent-teal-bright)',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
+                      <div style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',fontWeight:'700'}}>{conv.listingTitle} • {conv.listingPrice?.toLocaleString()} TSh</div>
                       {unread>0 && <div style={{width:'18px',height:'18px',borderRadius:'50%',background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{unread}</div>}
                     </div>
                     <div style={{fontSize:'12px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{conv.lastMessage||"No messages yet"}</div>
@@ -8991,7 +8991,7 @@ const bubbleRadius = '20px';
             <div style={{width:'100%',flex:1,overflowY:'auto',boxSizing:'border-box',padding:'44px 24px 56px',background:'var(--page-bg)',display:'flex',alignItems:'center'}}>
               <div style={{width:'100%',maxWidth:'420px',margin:'0 auto',textAlign:'center'}}>
                 <div style={{fontFamily:'serif',fontSize:'34px',fontWeight:'800',color:'var(--text-primary)',margin:'0 auto 14px',lineHeight:1,textAlign:'center'}}>
-                  Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika
+                  Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)'}}>pa</em>sika
                 </div>
                 <div style={{fontSize:'22px',fontWeight:'900',color:'var(--text-primary)',lineHeight:1.2,marginBottom:'12px'}}>
                   Campus groups, files, events, orders, and members in one place.
@@ -9081,7 +9081,7 @@ const bubbleRadius = '20px';
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{group.name}</div>
                       {group.desc && <div style={{fontSize:'12px',color:'#8a9bb0',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{group.desc}</div>}
-                      <div style={{fontSize:'11px',color:'var(--accent-teal-bright)',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
+                      <div style={{fontSize:'11px',color:'var(--accent-teal-bright, #06d6c7)',fontWeight:'600',marginTop:'3px'}}>Tap to view →</div>
                     </div>
                     {isGroupAdmin(group) && <span style={{fontSize:'10px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',padding:'3px 8px',borderRadius:'6px',fontWeight:'700',flexShrink:0}}>Admin</span>}
                   </button>
@@ -10124,7 +10124,7 @@ const bubbleRadius = '20px';
             <h2 style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'#fff',marginBottom:'6px'}}>🏠 Find a Room</h2>
             <p style={{color:'rgba(255,255,255,0.8)',fontSize:'13px',marginBottom:'14px',lineHeight:1.5}}>Browse rooms near campus — listed directly by landlords. No dalali fees.</p>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'var(--surface-bg)',color:'var(--accent-teal-bright)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
+              <button onClick={()=>{if(!user){requireAuth("listRoom",()=>setPage("createRoom"));return;}setPage("createRoom");}} style={{padding:'10px 16px',background:'var(--surface-bg)',color:'var(--accent-teal-bright, #06d6c7)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>+ List a Room</button>
               <button onClick={()=>openRoommateFinder()} style={{padding:'10px 16px',background:'rgba(255,255,255,0.2)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}}>🤝 Find Roommate</button>
             </div>
           </div>
@@ -10266,7 +10266,7 @@ const bubbleRadius = '20px';
                 <label htmlFor="room-photo" style={{display:'block',marginBottom:'12px',cursor:'pointer'}}>
                   {createRoomData.photoPreviews.length > 0 ? (
                     <div><img src={createRoomData.photoPreviews[0]} alt="" style={{width:'100%',height:'200px',objectFit:'cover',borderRadius:'12px',marginBottom:'6px'}}/>
-                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #06d6c7',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'var(--accent-teal-bright)'}}>+</span></div>}</div>
+                      <div style={{display:'flex',gap:'6px',overflowX:'auto'}}>{createRoomData.photoPreviews.slice(1).map((p,i)=><img key={i} src={p} alt="" style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',flexShrink:0}}/>)}{createRoomData.photoPreviews.length<5&&<div style={{width:'56px',height:'56px',border:'2px dashed #06d6c7',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'#f0f9ff',flexShrink:0}}><span style={{fontSize:'18px',color:'var(--accent-teal-bright, #06d6c7)'}}>+</span></div>}</div>
                     </div>
                   ) : (
                     <div style={{border:'2px dashed #e2e6ea',borderRadius:'12px',padding:'28px',textAlign:'center',background:'#f9fafb'}}>
@@ -10372,7 +10372,7 @@ const bubbleRadius = '20px';
                     ) : (
                       <div style={{border:'1.5px dashed #06d6c7',borderRadius:'10px',padding:'16px',textAlign:'center',background:'var(--mint-tint)'}}>
                         <div style={{fontSize:'24px',marginBottom:'4px'}}>🏠</div>
-                        <span style={{fontSize:'13px',color:'var(--accent-teal-bright)',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
+                        <span style={{fontSize:'13px',color:'var(--accent-teal-bright, #06d6c7)',fontWeight:'600'}}>Add outdoor photo — gate, compound, exterior</span>
                         <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'3px'}}>Helps students recognise the house from outside</div>
                       </div>
                     )}
@@ -10733,7 +10733,7 @@ const bubbleRadius = '20px';
                   <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
                   <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
                 </div>
-                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/mo</span></div>
+                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright, #06d6c7)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/mo</span></div>
               </div>
 
               {/* Outdoor / Indoor cards */}
@@ -10963,7 +10963,7 @@ const bubbleRadius = '20px';
                 </div>
                 {publicSellerStats && publicSellerStats.sold > 0 && (
                   <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:'18px',fontWeight:'700',color:'var(--accent-teal-bright)',lineHeight:1.1}}>{publicSellerStats.sold}</div>
+                    <div style={{fontSize:'18px',fontWeight:'700',color:'var(--accent-teal-bright, #06d6c7)',lineHeight:1.1}}>{publicSellerStats.sold}</div>
                     <div style={{fontSize:'11px',color:'#8a9bb0',marginTop:'2px'}}>Sold</div>
                   </div>
                 )}
@@ -11087,7 +11087,7 @@ const bubbleRadius = '20px';
                       <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700'}}>{item.price?.toLocaleString()} TSh</div>
                       <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
                         {item.condition && <span style={{fontSize:'11px',color:'#6b7280',background:'var(--surface-bg-alt)',padding:'2px 8px',borderRadius:'8px'}}>{item.condition}</span>}
-                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'var(--accent-teal-bright)',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
+                        <button onClick={()=>{requireAuth("message",()=>startConversation(item));}} style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>💬 Message</button>
                         <button onClick={()=>shareOnWhatsApp(item)} style={{fontSize:'12px',color:'var(--whatsapp-green)',cursor:'pointer',border:'none',background:'none',fontWeight:'600'}}>📲</button>
                       </div>
                     </div>
@@ -11135,7 +11135,7 @@ const bubbleRadius = '20px';
           <div style={{padding:'16px',textAlign:'center',fontSize:'12px',color:'#8a9bb0',lineHeight:'1.6'}}>
             <p>{publicSeller.name} is a student seller on Kampasika, the campus marketplace. Browse their listings, message them directly, or share their profile with friends.</p>
             <p style={{marginTop:'8px'}}>
-              <span style={{fontFamily:'serif',fontWeight:'700',color:'var(--text-primary)'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
+              <span style={{fontFamily:'serif',fontWeight:'700',color:'var(--text-primary)'}}>Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)'}}>pa</em>sika</span> — Trade, share & find your next deal on campus.
             </p>
           </div>
           </>
@@ -11169,7 +11169,7 @@ const bubbleRadius = '20px';
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'24px'}}>
                     {[
                       {label:'Users', data: adminStats.users, color:'#0d9488'},
-                      {label:'Search Alerts', data: adminStats.alerts, color:'var(--accent-teal-bright)'},
+                      {label:'Search Alerts', data: adminStats.alerts, color:'var(--accent-teal-bright, #06d6c7)'},
                       {label:'Listings (Goods)', data: adminStats.listings, color:'#0d9488'},
                       {label:'Services', data: adminStats.services, color:'#0d9488'},
                       {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
@@ -11621,7 +11621,7 @@ const bubbleRadius = '20px';
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
                 <div>
                   <div style={{fontFamily:'serif',fontSize:'18px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>
-                    Kam<em style={{color:'var(--accent-teal-bright)',fontStyle:'normal'}}>pa</em>sika
+                    Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)',fontStyle:'normal'}}>pa</em>sika
                   </div>
                   <p style={{fontSize:'12px',lineHeight:1.55,color:'var(--text-tertiary)',margin:'0 0 10px'}}>
                     Mtandao wa wanachuo kwa kuunda na kumanage vikundi, kukusanya michango na malipo, na kuunganisha jamii za chuo.
@@ -12398,7 +12398,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 
             <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
               {userName}
-              {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'var(--accent-teal-bright)'}}>✓</span>}
+              {isVerified && <span style={{marginLeft:'6px',fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)'}}>✓</span>}
             </div>
             <div style={{
               display:'inline-block',
@@ -12823,7 +12823,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           fontFamily:'serif',
           fontSize:'32px',
           fontWeight:'700',
-          color:'var(--accent-teal-bright)',
+          color:'var(--accent-teal-bright, #06d6c7)',
           marginBottom:'16px'
         }}>
           {viewingListing.price.toLocaleString()} TSh
@@ -13734,7 +13734,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'14px',marginBottom:'10px'}}>
               <div>
                 <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'900',color:'var(--text-primary)',lineHeight:1.1}}>
-                  {showAboutBanner ? <>Kam<em style={{color:'var(--accent-teal-bright)',fontStyle:'normal'}}>pa</em>sika</> : showVerifiedBanner ? 'Verification status' : 'Get verified'}
+                  {showAboutBanner ? <>Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)',fontStyle:'normal'}}>pa</em>sika</> : showVerifiedBanner ? 'Verification status' : 'Get verified'}
                 </div>
                 <p style={{fontSize:'13px',lineHeight:1.55,color:'#536173',margin:'8px 0 0'}}>
                   {showAboutBanner
@@ -13769,7 +13769,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
         <div style={{position:'fixed',inset:0,background:'var(--page-bg-outer)',zIndex:500,display:'flex',alignItems:'stretch',justifyContent:'center',overflowY:'auto'}}>
           <div style={{width:'100%',maxWidth:'440px',minHeight:'100dvh',padding:'42px 24px 28px',boxSizing:'border-box',display:'flex',flexDirection:'column',justifyContent:'center'}}>
             <div style={{position:'relative',marginBottom:'28px',textAlign:'center'}}>
-              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'var(--text-primary)',margin:0,textAlign:'center'}}>Kam<em style={{color:'var(--accent-teal-bright)'}}>pa</em>sika</h2>
+              <h2 style={{fontFamily:'serif',fontSize:'34px',lineHeight:1,fontWeight:'800',color:'var(--text-primary)',margin:0,textAlign:'center'}}>Kam<em style={{color:'var(--accent-teal-bright, #06d6c7)'}}>pa</em>sika</h2>
               <button aria-label="Close auth page" onClick={()=>{setShowAuthModal(false);setError("");}} style={{position:'absolute',right:0,top:'50%',transform:'translateY(-50%)',width:'36px',height:'36px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'50%',fontSize:'22px',lineHeight:1,cursor:'pointer',color:'var(--text-secondary)',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
             </div>
             {error && <div style={{background:'var(--danger-tint)',color:'var(--danger-dark)',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px'}}>{error}</div>}
@@ -13836,7 +13836,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <button onClick={handleSignup} disabled={loading || signupOtpBusy} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'600',cursor:(loading || signupOtpBusy)?'not-allowed':'pointer'}}>{loading||signupOtpBusy?"Creating...":"Create Account"}</button>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Already have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Already have an account? <span style={{color:'var(--accent-teal-bright, #06d6c7)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("login");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Log in</span></p>
               </>
             ):(
               <>
@@ -13856,17 +13856,17 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
                 <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
                 <div style={{marginBottom:'16px',position:'relative'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Password</label><input type={showPassword?"text":"password"} placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'12px 45px 12px 12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/><button onClick={()=>setShowPassword(!showPassword)} style={{position:'absolute',right:'12px',top:'34px',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}}>{showPassword?"👁":"👁‍🗨"}</button></div>
                 <button onClick={handlePasswordLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Logging in...":"Log In"}</button>
-                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
+                <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright, #06d6c7)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(false);setError("");}}>Use OTP instead</span></p>
                   </>
                 ) : (
                   <>
                     <p style={{fontSize:'14px',color:'var(--text-secondary)',marginBottom:'16px'}}>Welcome back to Kampasika</p>
                     <div style={{marginBottom:'12px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>Username or phone number</label><input type="text" placeholder="amina_juma or 0712345678" value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
                     <button onClick={handleLogin} disabled={loading} style={{width:'100%',padding:'14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'16px',fontWeight:'800',boxShadow:'0 4px 14px rgba(15,27,45,0.25)',cursor:loading?'not-allowed':'pointer'}}>{loading?"Sending code...":"Send OTP"}</button>
-                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
+                    <p style={{textAlign:'center',marginTop:'12px',fontSize:'13px',color:'var(--text-secondary)'}}><span style={{color:'var(--accent-teal-bright, #06d6c7)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setLoginUsePassword(true);setError("");}}>Use password instead</span></p>
                   </>
                 )}
-                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Don't have an account? <span style={{color:'var(--accent-teal-bright)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
+                <p style={{textAlign:'center',marginTop:'16px',fontSize:'13px',color:'var(--text-secondary)'}}>Don't have an account? <span style={{color:'var(--accent-teal-bright, #06d6c7)',cursor:'pointer',fontWeight:'600'}} onClick={()=>{setAuthMode("signup");setSignupAwaitingOtp(false);setLoginAwaitingOtp(false);setLoginUsePassword(false);setError("");}}>Sign up</span></p>
               </>
             )}
           </div>

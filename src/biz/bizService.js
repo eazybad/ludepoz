@@ -15,6 +15,11 @@ import {
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 import { db, functions, storage } from "./bizFirebase";
+import { DemoError, demoData, demoDeliver, isBizDemo } from "./bizDemo";
+
+// /biz/demo serves sample data from bizDemo.js; writes are refused politely.
+const DEMO = isBizDemo();
+const demoRefuse = () => Promise.reject(new DemoError());
 
 // ─── Constants ───
 
@@ -141,6 +146,7 @@ export function operatorDocRef(operatorId) {
 }
 
 export function subscribeOperator(operatorId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().operator, onData);
   return onSnapshot(
     operatorDocRef(operatorId),
     snap => onData(snap.exists() ? { id: snap.id, ...snap.data() } : null),
@@ -149,6 +155,7 @@ export function subscribeOperator(operatorId, onData, onError) {
 }
 
 export async function createOperator(user, { businessName, contactName, contactPhone, nearUni }) {
+  if (DEMO) return demoRefuse();
   const existing = await getDoc(operatorDocRef(user.uid));
   if (existing.exists()) return;
   await setDoc(operatorDocRef(user.uid), {
@@ -185,6 +192,7 @@ function cleanObject(obj) {
 }
 
 export function saveProfile(operatorId, profile) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     profile: cleanObject(profile),
     updatedAt: serverTimestamp(),
@@ -192,6 +200,7 @@ export function saveProfile(operatorId, profile) {
 }
 
 export function saveSettlement(operatorId, settlement) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     settlement: cleanObject(settlement),
     updatedAt: serverTimestamp(),
@@ -199,6 +208,7 @@ export function saveSettlement(operatorId, settlement) {
 }
 
 export function savePawapayApplication(operatorId, application) {
+  if (DEMO) return demoRefuse();
   const clean = cleanObject(application);
   if (!PAWAPAY_APPLICATION_STATUSES.includes(clean.status)) clean.status = "not_started";
   return updateDoc(operatorDocRef(operatorId), {
@@ -208,6 +218,7 @@ export function savePawapayApplication(operatorId, application) {
 }
 
 export function submitForReview(operatorId) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     status: "in_review",
     submittedAt: serverTimestamp(),
@@ -216,6 +227,7 @@ export function submitForReview(operatorId) {
 }
 
 export async function uploadDocument(operatorId, docType, file) {
+  if (DEMO) return demoRefuse();
   if (!file) throw new Error("No file chosen.");
   const okType = file.type === "application/pdf" || file.type.startsWith("image/");
   if (!okType) throw new Error("bad_type");
@@ -238,6 +250,7 @@ export async function uploadDocument(operatorId, docType, file) {
 }
 
 export function documentUrl(path) {
+  if (DEMO) return demoRefuse();
   return getDownloadURL(ref(storage, path));
 }
 
@@ -254,6 +267,7 @@ export function subscribeAllOperators(onData, onError) {
 // ─── Cloud Functions ───
 
 async function call(name, data) {
+  if (DEMO) return demoRefuse();
   const fn = httpsCallable(functions, name);
   const result = await fn(data);
   return result.data;
@@ -305,6 +319,7 @@ function millis(value) {
 
 // Sorted client-side (newest first) so no composite index is needed.
 export function subscribeOperatorApplications(operatorId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().apps, onData);
   return onSnapshot(
     query(collection(db, "bizApplications"), where("operatorId", "==", operatorId)),
     snap => onData(
@@ -317,6 +332,7 @@ export function subscribeOperatorApplications(operatorId, onData, onError) {
 }
 
 export function setAcceptingApplications(operatorId, accepting) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     "settings.acceptingApplications": Boolean(accepting),
     updatedAt: serverTimestamp(),
@@ -333,6 +349,7 @@ export function applicationTime(app) {
 // ─── Step 3: leases ───
 
 export function saveLeaseTemplate(operatorId, language, clauses) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     [`leaseTemplates.${language}`]: {
       clauses: clauses.map(c => ({ title: String(c.title || "").slice(0, 120), body: String(c.body || "").slice(0, 4000) })),
@@ -343,6 +360,7 @@ export function saveLeaseTemplate(operatorId, language, clauses) {
 }
 
 export function resetLeaseTemplate(operatorId, language) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     [`leaseTemplates.${language}`]: deleteField(),
     updatedAt: serverTimestamp(),
@@ -350,6 +368,7 @@ export function resetLeaseTemplate(operatorId, language) {
 }
 
 export function saveLeaseDefaults(operatorId, defaults) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     leaseDefaults: {
       rentPeriod: defaults.rentPeriod || "month",
@@ -363,6 +382,7 @@ export function saveLeaseDefaults(operatorId, defaults) {
 }
 
 export function subscribeOperatorLeases(operatorId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().leases, onData);
   return onSnapshot(
     query(collection(db, "bizLeases"), where("operatorId", "==", operatorId)),
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt))),
@@ -371,6 +391,7 @@ export function subscribeOperatorLeases(operatorId, onData, onError) {
 }
 
 export function subscribeLease(leaseId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().leases.find(l => l.id === leaseId) || null, onData);
   return onSnapshot(
     doc(db, "bizLeases", leaseId),
     snap => onData(snap.exists() ? { id: snap.id, ...snap.data() } : null),
@@ -386,6 +407,7 @@ export const cancelLease = (leaseId, reason) => call("bizCancelLease", { leaseId
 // ─── Step 4: rent ───
 
 export function subscribeOperatorCharges(operatorId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().charges, onData);
   return onSnapshot(
     query(collection(db, "bizCharges"), where("operatorId", "==", operatorId)),
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))),
@@ -395,6 +417,7 @@ export function subscribeOperatorCharges(operatorId, onData, onError) {
 
 // Charges for one lease, as either party (the rules need the party filter).
 export function subscribeLeaseCharges(leaseId, uid, role, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().charges.filter(c => c.leaseId === leaseId), onData);
   const partyField = role === "student" ? "studentUid" : "operatorId";
   return onSnapshot(
     query(collection(db, "bizCharges"), where("leaseId", "==", leaseId), where(partyField, "==", uid)),
@@ -404,15 +427,18 @@ export function subscribeLeaseCharges(leaseId, uid, role, onData, onError) {
 }
 
 export function subscribeDeposit(depositId, onData, onError) {
+  if (DEMO) return demoDeliver(null, onData);
   return onSnapshot(doc(db, "bizDeposits", depositId), snap => onData(snap.exists() ? { id: snap.id, ...snap.data() } : null), onError);
 }
 
 export async function getBizPublic(operatorId) {
+  if (DEMO) return { businessName: demoData().operator.profile.businessName, onlinePayments: "live" };
   const snap = await getDoc(doc(db, "bizPublic", operatorId));
   return snap.exists() ? snap.data() : null;
 }
 
 export function setSandboxRent(operatorId, on) {
+  if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     "settings.sandboxRent": Boolean(on),
     updatedAt: serverTimestamp(),
@@ -422,6 +448,7 @@ export function setSandboxRent(operatorId, on) {
 // Every room this operator owns: rooms they listed themselves plus rooms
 // under their properties (which managers may have listed).
 export async function loadOperatorRooms(operatorId) {
+  if (DEMO) return { properties: demoData().properties, rooms: demoData().rooms };
   const [propsSnap, ownRoomsSnap] = await Promise.all([
     getDocs(query(collection(db, "properties"), where("ownerId", "==", operatorId))),
     getDocs(query(collection(db, "rooms"), where("userId", "==", operatorId))),
@@ -491,10 +518,12 @@ export function normalizePricing(raw) {
 }
 
 export function subscribePricing(onData, onError) {
+  if (DEMO) return demoDeliver(() => normalizePricing(demoData().pricing), onData);
   return onSnapshot(doc(db, "system", "bizPricing"), snap => onData(normalizePricing(snap.exists() ? snap.data() : null)), onError);
 }
 
 export function savePricing(pricing) {
+  if (DEMO) return demoRefuse();
   const p = normalizePricing(pricing);
   return setDoc(doc(db, "system", "bizPricing"), { ...p, updatedAt: serverTimestamp() });
 }
@@ -563,6 +592,7 @@ export function serviceFeeFor(terms, cfg) {
 }
 
 export function subscribeInvoice(invoiceId, onData, onError) {
+  if (DEMO) return demoDeliver(null, onData);
   return onSnapshot(doc(db, "bizInvoices", invoiceId), snap => onData(snap.exists() ? { id: snap.id, ...snap.data() } : null), onError);
 }
 
@@ -572,6 +602,7 @@ export function freePlacementsLeft(operator, pricing) {
 }
 
 export function subscribeOperatorInvoices(operatorId, onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().invoices, onData);
   return onSnapshot(
     query(collection(db, "bizInvoices"), where("operatorId", "==", operatorId)),
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt))),
@@ -580,6 +611,7 @@ export function subscribeOperatorInvoices(operatorId, onData, onError) {
 }
 
 export function subscribeAllInvoices(onData, onError) {
+  if (DEMO) return demoDeliver(() => demoData().invoices, onData);
   return onSnapshot(
     collection(db, "bizInvoices"),
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt))),

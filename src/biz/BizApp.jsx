@@ -14,6 +14,9 @@
 //   /biz/lease/<id>        one lease — opened by the operator AND the student
 //   /biz/rent              rent: occupancy, arrears, payments (step 4)
 //   /biz/fees              Kampasika placement fees the operator owes / paid
+//   /biz/setup             onboarding checklist (the home page until documents are approved;
+//                          after that /biz shows the Overview dashboard)
+//   /biz/demo/...          the same app with sample data, no sign-in (bizDemo.js)
 //   /biz/admin             Kampasika admin: all businesses
 //   /biz/admin/<uid>       Kampasika admin: one business
 
@@ -41,6 +44,13 @@ import { CreateLeaseForm, LeasePage, LeaseTemplateEditor, LeasesList, useOperato
 import { OperatorRent, useOperatorCharges } from "./BizRent";
 import { isOverdue } from "./bizService";
 import { FeesBanner, FeesPage, useOperatorInvoices, usePricing } from "./BizFees";
+import { BizOverview } from "./BizDashboard";
+import { DEMO_OPERATOR_ID, isBizDemo } from "./bizDemo";
+
+const DEMO = isBizDemo();
+const BASE = DEMO ? "/biz/demo" : "/biz";
+// In the demo, every "/biz/..." link stays inside "/biz/demo/...".
+const toUrl = (path) => (DEMO ? path.replace(/^\/biz(?=\/|$)/, BASE) : path);
 
 function readLang() {
   try { return localStorage.getItem("kp-biz-lang") === "sw" ? "sw" : "en"; } catch (_) { return "en"; }
@@ -57,6 +67,7 @@ function readDark() {
 
 function parsePath(pathname) {
   const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean); // ["biz", ...]
+  if (parts[1] === "demo") parts.splice(1, 1);
   if (parts[1] === "step" && ONBOARDING_STEPS.includes(parts[2])) return { view: "step", stepId: parts[2] };
   if (parts[1] === "admin") return parts[2] ? { view: "adminDetail", operatorId: parts[2] } : { view: "admin" };
   if (parts[1] === "applications" && parts[2] && parts[3] === "lease") return { view: "createLease", applicationId: parts[2] };
@@ -64,6 +75,7 @@ function parsePath(pathname) {
   if (parts[1] === "leases") return { view: "leases" };
   if (parts[1] === "rent") return { view: "rent" };
   if (parts[1] === "fees") return { view: "fees" };
+  if (parts[1] === "setup") return { view: "setup" };
   if (parts[1] === "lease-template") return { view: "leaseTemplate" };
   if (parts[1] === "lease" && parts[2]) return { view: "lease", leaseId: parts[2] };
   return { view: "home" };
@@ -79,7 +91,8 @@ function Header({ lang, onToggleLang, isAdmin, onNavigate }) {
           <span className="biz-logo-badge">BIZ</span>
         </button>
         <span className="biz-header-spacer" />
-        {isAdmin && <button type="button" className="biz-header-btn" onClick={() => onNavigate("/biz/admin")}>Admin</button>}
+        {DEMO && <a className="biz-header-btn demo" href="/biz">{t(lang, "demoCta")}</a>}
+        {isAdmin && !DEMO && <button type="button" className="biz-header-btn" onClick={() => onNavigate("/biz/admin")}>Admin</button>}
         <button type="button" className="biz-header-btn" onClick={onToggleLang}>{t(lang, "language")}</button>
       </div>
     </header>
@@ -98,6 +111,7 @@ function SignIn({ lang }) {
         <p className="biz-muted" style={{ maxWidth: 420, margin: "0 auto" }}>{t(lang, "signInBody")}</p>
         <div className="biz-actions" style={{ justifyContent: "center" }}>
           <a className="biz-btn primary" href="/">{t(lang, "signInButton")}</a>
+          <a className="biz-btn ghost" href="/biz/demo">👀 {t(lang, "demoLink")}</a>
         </div>
       </div>
     </div>
@@ -141,6 +155,9 @@ export function Welcome({ lang, user }) {
       </div>
       <div className="biz-card">
         <ul className="biz-points">{t(lang, "welcomePoints").map(p => <li key={p}>{p}</li>)}</ul>
+        <div className="biz-actions">
+          <a className="biz-btn ghost small" href="/biz/demo">👀 {t(lang, "demoLink")}</a>
+        </div>
       </div>
       <form className="biz-card" onSubmit={start}>
         <label className="biz-field" style={{ marginTop: 0 }}>
@@ -281,7 +298,7 @@ export default function BizApp() {
   const [lang, setLang] = useState(readLang);
   const [dark] = useState(readDark);
   const [route, setRoute] = useState(() => parsePath(window.location.pathname));
-  const [user, setUser] = useState(undefined); // undefined = still checking
+  const [user, setUser] = useState(DEMO ? { uid: DEMO_OPERATOR_ID } : undefined); // undefined = still checking
   const [operator, setOperator] = useState(undefined);
   const [loadError, setLoadError] = useState("");
 
@@ -289,7 +306,7 @@ export default function BizApp() {
   const { apps, error: appsError } = useOperatorApplications(operator);
   const newApplications = (apps || []).filter(a => a.status === "submitted").length;
   const leases = useOperatorLeases(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
-  const waitingLeases = (leases || []).filter(l => l.status === "sent").length;
+  const waitingLeases = (leases || []).filter(l => ["sent", "pending_fee"].includes(l.status)).length;
   const charges = useOperatorCharges(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
   const overdueCharges = (charges || []).filter(c => isOverdue(c)).length;
   const pricing = usePricing();
@@ -307,6 +324,7 @@ export default function BizApp() {
     };
     setMeta('meta[name="description"]', "content", "For hostel and student-accommodation owners: get student applications from Kampasika, sign leases online and collect rent by mobile money straight into your own pawaPay account. Kiswahili and English.");
     setMeta('link[rel="canonical"]', "href", "https://kampasika.org/biz");
+    if (DEMO) return undefined;
     return onAuthStateChanged(auth, u => setUser(u || null));
   }, []);
 
@@ -328,8 +346,9 @@ export default function BizApp() {
   }, []);
 
   const navigate = useCallback((path) => {
-    if (window.location.pathname !== path) window.history.pushState({}, "", path);
-    setRoute(parsePath(path));
+    const url = toUrl(path);
+    if (window.location.pathname !== url) window.history.pushState({}, "", url);
+    setRoute(parsePath(url));
     window.scrollTo(0, 0);
   }, []);
 
@@ -408,8 +427,27 @@ export default function BizApp() {
     const Step = STEP_COMPONENTS[route.stepId];
     body = (
       <>
-        <button type="button" className="biz-back" onClick={() => navigate("/biz")}>‹ {t(lang, "back")}</button>
-        <Step operator={operator} lang={lang} onDone={() => navigate("/biz")} />
+        <button type="button" className="biz-back" onClick={() => navigate(applicationsUnlocked(operator) ? "/biz/setup" : "/biz")}>‹ {t(lang, "back")}</button>
+        <Step operator={operator} lang={lang} onDone={() => navigate(applicationsUnlocked(operator) ? "/biz/setup" : "/biz")} />
+      </>
+    );
+  } else if (route.view === "home" && applicationsUnlocked(operator)) {
+    body = (
+      <>
+        <BizOverview operator={operator} lang={lang} apps={apps} leases={leases} charges={charges} onNavigate={navigate} />
+        <div className="bd-more">
+          <button type="button" className="biz-op-row" onClick={() => navigate("/biz/setup")}>
+            <div className="biz-op-main"><div className="biz-op-name">⚙️ {t(lang, "navSetupFull")}</div><div className="biz-small">{t(lang, "dashSetupLinkSub")}</div></div>
+            <span className="biz-chevron">›</span>
+          </button>
+          {showFees && (
+            <button type="button" className="biz-op-row" onClick={() => navigate("/biz/fees")}>
+              <div className="biz-op-main"><div className="biz-op-name">💳 {t(lang, "homeFees")}</div><div className="biz-small">{t(lang, "homeFeesSub")}</div></div>
+              {feesDue > 0 && <span className="biz-count">{feesDue}</span>}
+              <span className="biz-chevron">›</span>
+            </button>
+          )}
+        </div>
       </>
     );
   } else {
@@ -417,34 +455,76 @@ export default function BizApp() {
   }
 
   const wide = route.view === "admin" || route.view === "adminDetail";
+  const withNav = Boolean(operator && applicationsUnlocked(operator) && !wide);
+  const navItems = withNav ? [
+    { id: "home", icon: "▦", label: t(lang, "navOverview"), path: "/biz", on: route.view === "home" },
+    { id: "applications", icon: "✎", label: t(lang, "navApplications"), path: "/biz/applications", on: ["applications", "applicationDetail", "createLease"].includes(route.view), count: newApplications },
+    { id: "leases", icon: "▤", label: t(lang, "navLeases"), path: "/biz/leases", on: ["leases", "leaseTemplate", "lease"].includes(route.view), count: waitingLeases, countTone: "warn" },
+    { id: "rent", icon: "◷", label: t(lang, "navRent"), path: "/biz/rent", on: route.view === "rent", count: overdueCharges },
+  ] : [];
+  const sideExtra = withNav ? [
+    ...(showFees ? [{ id: "fees", icon: "◈", label: t(lang, "homeFees"), path: "/biz/fees", on: route.view === "fees", count: feesDue }] : []),
+    { id: "setup", icon: "⚙", label: t(lang, "navSetupFull"), path: "/biz/setup", on: ["setup", "step"].includes(route.view) },
+  ] : [];
+
   return (
-    <div className={`biz-app ${dark ? "dark" : ""}`}>
+    <div className={`biz-app ${dark ? "dark" : ""} ${withNav ? "has-side" : ""}`}>
       <Header lang={lang} onToggleLang={toggleLang} isAdmin={isAdmin} onNavigate={navigate} />
-      {operator && applicationsUnlocked(operator) && !wide && (
-        <div style={{ padding: "0 16px" }}>
+      {DEMO && (
+        <div className="biz-demo-bar">
+          <span>👀 {t(lang, "demoBanner")}</span>
+          <a href="/biz">{t(lang, "demoCta")} ›</a>
+        </div>
+      )}
+      {withNav && (
+        <div className="biz-mobile-nav" style={{ padding: "0 16px" }}>
           <nav className="biz-nav">
-            <button type="button" className={["home", "step"].includes(route.view) ? "on" : ""} onClick={() => navigate("/biz")}>{t(lang, "navSetup")}</button>
-            <button type="button" className={["applications", "applicationDetail", "createLease"].includes(route.view) ? "on" : ""} onClick={() => navigate("/biz/applications")}>
-              {t(lang, "navApplications")}
-              {newApplications > 0 && <span className="biz-count">{newApplications}</span>}
-            </button>
-            <button type="button" className={["leases", "leaseTemplate", "lease"].includes(route.view) ? "on" : ""} onClick={() => navigate("/biz/leases")}>
-              {t(lang, "navLeases")}
-              {waitingLeases > 0 && <span className="biz-count" style={{ background: "#f59e0b" }}>{waitingLeases}</span>}
-            </button>
-            <button type="button" className={route.view === "rent" ? "on" : ""} onClick={() => navigate("/biz/rent")}>
-              {t(lang, "navRent")}
-              {overdueCharges > 0 && <span className="biz-count">{overdueCharges}</span>}
-            </button>
+            {navItems.map(n => (
+              <button key={n.id} type="button" className={n.on ? "on" : ""} onClick={() => navigate(n.path)}>
+                {n.label}
+                {n.count > 0 && <span className="biz-count" style={n.countTone === "warn" ? { background: "#f59e0b" } : undefined}>{n.count}</span>}
+              </button>
+            ))}
           </nav>
         </div>
       )}
-      <main className={`biz-shell ${wide ? "wide" : ""}`}>
-        {operator && !wide && route.view !== "fees" && route.view !== "lease" && (
-          <FeesBanner invoices={invoices} pricing={pricing} lang={lang} onOpen={() => navigate("/biz/fees")} />
+      <div className={withNav ? "biz-layout" : ""}>
+        {withNav && (
+          <aside className="biz-side">
+            <div className="biz-side-biz">
+              <div className="biz-side-avatar">{String(operator.profile?.businessName || "K").trim().charAt(0).toUpperCase()}</div>
+              <div style={{ minWidth: 0 }}>
+                <div className="biz-side-name">{operator.profile?.businessName}</div>
+                <span className={`biz-pill ${operator.status || "draft"}`}>{t(lang, `statusLabel.${operator.status || "draft"}`)}</span>
+              </div>
+            </div>
+            <nav className="biz-side-nav">
+              {navItems.map(n => (
+                <button key={n.id} type="button" className={n.on ? "on" : ""} onClick={() => navigate(n.path)}>
+                  <span className="biz-side-icon" aria-hidden="true">{n.icon}</span>
+                  <span className="biz-side-label">{n.label}</span>
+                  {n.count > 0 && <span className="biz-count" style={n.countTone === "warn" ? { background: "#f59e0b" } : undefined}>{n.count}</span>}
+                </button>
+              ))}
+              <div className="biz-side-sep" />
+              {sideExtra.map(n => (
+                <button key={n.id} type="button" className={n.on ? "on" : ""} onClick={() => navigate(n.path)}>
+                  <span className="biz-side-icon" aria-hidden="true">{n.icon}</span>
+                  <span className="biz-side-label">{n.label}</span>
+                  {n.count > 0 && <span className="biz-count">{n.count}</span>}
+                </button>
+              ))}
+            </nav>
+            <a className="biz-side-foot" href="/">← {t(lang, "openKampasika")}</a>
+          </aside>
         )}
-        {body}
-      </main>
+        <main className={`biz-shell ${wide ? "wide" : ""} ${withNav ? "biz-main" : ""} ${route.view === "home" && withNav ? "is-overview" : ""}`}>
+          {operator && !wide && route.view !== "fees" && route.view !== "lease" && (
+            <FeesBanner invoices={invoices} pricing={pricing} lang={lang} onOpen={() => navigate("/biz/fees")} />
+          )}
+          <div className="biz-page" key={`${route.view}-${route.applicationId || route.leaseId || route.stepId || ""}`}>{body}</div>
+        </main>
+      </div>
     </div>
   );
 }
