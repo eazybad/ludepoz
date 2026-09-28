@@ -47,6 +47,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "bizDeposits/d1"), { operatorId: "alice", createdBy: "bob", status: "pending" });
   await setDoc(doc(db, "bizPublic/alice"), { businessName: "A" });
   await setDoc(doc(db, "bizInvoices/L1_placement"), { operatorId: "alice", studentUid: "bob", status: "due", amount: 45000 });
+  await setDoc(doc(db, "contacts/room_R1"), { kind: "room", refId: "R1", ownerId: "alice", landlordName: "Alice", landlordPhone: "0712000000" });
   await setDoc(doc(db, "bizInvoices/L1_service"), { kind: "service_fee", operatorId: "alice", payerUid: "bob", studentUid: "bob", status: "due", amount: 45000 });
   await setDoc(doc(db, "system/bizPricing"), { placementFee: { enabled: true, type: "percent", amount: 50 } });
   // chats, groups, marketplace
@@ -233,6 +234,14 @@ await check("operator resets own placement counter", "deny", () => updateDoc(doc
 await check("anyone reads Biz pricing", "allow", () => getDoc(doc(fs(null), "system/bizPricing")));
 await check("operator changes Biz pricing", "deny", () => setDoc(doc(fs("alice"), "system/bizPricing"), { placementFee: { enabled: false } }));
 await check("admin changes Biz pricing", "allow", () => setDoc(doc(fs(ADMIN), "system/bizPricing"), { placementFee: { enabled: true, type: "fixed", amount: 20000 } }));
+
+await check("guest reads a room", "allow", () => getDocs(query(collection(fs(null), "rooms"))));
+await check("guest reads landlord phone", "deny", () => getDoc(doc(fs(null), "contacts/room_R1")));
+await check("student reads landlord phone", "deny", () => getDoc(doc(fs("bob"), "contacts/room_R1")));
+await check("owner reads own room contact", "allow", () => getDoc(doc(fs("alice"), "contacts/room_R1")));
+await check("owner creates own room contact", "allow", () => setDoc(doc(fs("alice"), "contacts/room_R2"), { kind: "room", refId: "R2", ownerId: "alice", landlordName: "A", landlordPhone: "0712" }));
+await check("create contact for someone else", "deny", () => setDoc(doc(fs("bob"), "contacts/room_R3"), { kind: "room", refId: "R3", ownerId: "alice", landlordName: "A", landlordPhone: "0712" }));
+await check("take over someone's contact", "deny", () => updateDoc(doc(fs("bob"), "contacts/room_R1"), { ownerId: "bob" }));
 
 // ── Storage ──
 await check("stranger downloads an ID photo", "deny", () => getBytes(ref(st("bob"), "verification/alice/id.jpg")));

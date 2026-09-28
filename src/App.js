@@ -2181,6 +2181,25 @@ useEffect(() => {
   // any account that predates sendKampasikaWelcome, or was otherwise missed.
   // Safe to click more than once — see backfillKampasikaWelcome in
   // index.js for why.
+  // One-time admin action: moves landlord phone numbers off the public
+  // rooms / properties into private contacts/ docs (functions/roomContacts.js).
+  const [movingPhones, setMovingPhones] = useState(false);
+  const [movePhonesResult, setMovePhonesResult] = useState(null);
+  const handleMoveLandlordPhones = async () => {
+    setMovingPhones(true);
+    setMovePhonesResult(null);
+    try {
+      const run = httpsCallable(functions, "adminMoveLandlordPhones");
+      const res = await run();
+      setMovePhonesResult(res.data);
+    } catch (err) {
+      console.error("Move phones failed:", err);
+      setError("Move phones failed: " + (err.message || String(err)));
+    } finally {
+      setMovingPhones(false);
+    }
+  };
+
   const handleBackfillKampasikaWelcome = async () => {
     setBackfillingWelcome(true);
     setBackfillResult(null);
@@ -2576,11 +2595,21 @@ useEffect(() => {
         const videoSnap = await uploadBytes(videoRef, createRoomData.videoFile);
         videoUrl = await getDownloadURL(videoSnap.ref);
       }
-      await addDoc(collection(db, "rooms"), {
+      // The landlord's phone is private (contacts/room_<id>, owner + admin
+      // only) — rooms are public, so it never goes on the room itself.
+      const newRoomRef = doc(collection(db, "rooms"));
+      await setDoc(doc(db, "contacts", `room_${newRoomRef.id}`), {
+        kind: "room",
+        refId: newRoomRef.id,
+        ownerId: user.uid,
+        landlordName: createRoomData.landlordName.trim(),
+        landlordPhone: createRoomData.landlordPhone.trim(),
+        createdAt: serverTimestamp(),
+      });
+      await setDoc(newRoomRef, {
         videoUrl,
         landlordVerified: roomUserVerificationStatus === "approved",
         landlordName: createRoomData.landlordName.trim(),
-        landlordPhone: createRoomData.landlordPhone.trim(),
         roomType: createRoomData.roomType,
         price: parsedRoomPrice,
         location: createRoomData.location.trim(),
@@ -3054,7 +3083,6 @@ const requestNotificationPermission = async (currentUser) => {
         name: createPropertyData.name.trim(),
         address: createPropertyData.address.trim(),
         landlordName: createPropertyData.landlordName.trim(),
-        landlordPhone: createPropertyData.landlordPhone.trim(),
         nearUni: createPropertyData.nearUni || "ARU",
         verified: false,
         ownerId: user.uid,
@@ -3063,6 +3091,14 @@ const requestNotificationPermission = async (currentUser) => {
       // Every property gets a team doc for its own owner too, so team
       // membership (including "who owns this") can be read from one
       // subcollection instead of needing a separate ownerId check everywhere.
+      await setDoc(doc(db, "contacts", `property_${propertyRef.id}`), {
+        kind: "property",
+        refId: propertyRef.id,
+        ownerId: user.uid,
+        landlordName: createPropertyData.landlordName.trim(),
+        landlordPhone: createPropertyData.landlordPhone.trim(),
+        createdAt: serverTimestamp(),
+      });
       await setDoc(doc(db, "properties", propertyRef.id, "team", user.uid), {
         uid: user.uid,
         propertyId: propertyRef.id,
@@ -3261,15 +3297,28 @@ const requestNotificationPermission = async (currentUser) => {
     if (!property || rows.length === 0) return;
     setUploading(true);
     try {
+      // The contact phone is private: from the property's contact doc (owner
+      // only), an older property that still has it, or the importer's own.
+      let contactPhone = property.landlordPhone || "";
+      try {
+        const contactSnap = await getDoc(doc(db, "contacts", `property_${property.id}`));
+        if (contactSnap.exists()) contactPhone = contactSnap.data().landlordPhone || contactPhone;
+      } catch (_) { /* managers can't read the owner's contact — fall back below */ }
+      contactPhone = contactPhone || userPhone || "";
       const chunks = [];
-      for (let i = 0; i < rows.length; i += 400) chunks.push(rows.slice(i, i + 400));
+      for (let i = 0; i < rows.length; i += 200) chunks.push(rows.slice(i, i + 200));
       for (const chunk of chunks) {
         const batch = writeBatch(db);
         chunk.forEach(row => {
           const roomRef = doc(collection(db, "rooms"));
+          if (contactPhone) {
+            batch.set(doc(db, "contacts", `room_${roomRef.id}`), {
+              kind: "room", refId: roomRef.id, ownerId: user.uid,
+              landlordName: property.landlordName || "", landlordPhone: contactPhone, createdAt: serverTimestamp(),
+            });
+          }
           batch.set(roomRef, {
             landlordName: property.landlordName,
-            landlordPhone: property.landlordPhone,
             roomType: row.roomType,
             price: row.price,
             location: property.address,
@@ -3312,7 +3361,7 @@ const requestNotificationPermission = async (currentUser) => {
   const handleDuplicateRoom = (room) => {
     setCreateRoomData({
       landlordName: room.landlordName || "",
-      landlordPhone: room.landlordPhone || "",
+      landlordPhone: room.landlordPhone || userPhone || "",
       roomType: room.roomType || "",
       price: room.price ? String(room.price) : "",
       location: room.location || "",
@@ -3336,7 +3385,7 @@ const requestNotificationPermission = async (currentUser) => {
     const property = myProperties.find(p => p.id === propertyId);
     setCreateRoomData({
       landlordName: property?.landlordName || "",
-      landlordPhone: property?.landlordPhone || "",
+      landlordPhone: property?.landlordPhone || userPhone || "",
       roomType: "", price: "", location: property?.address || "",
       lat: null, lng: null, nearUni: property?.nearUni || "ARU",
       desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null,
@@ -3585,7 +3634,7 @@ const requestNotificationPermission = async (currentUser) => {
 
   useEffect(() => {
     if (!viewingRoom) return;
-    setRoomIndoorPhotoIndex(viewingRoom.photos?.length > 1 ? 1 : 0);
+    setRoomIndoorPhotoIndex(0);
   }, [viewingRoom, showRoomIndoor]);
 
   useEffect(() => {
@@ -3599,13 +3648,38 @@ const requestNotificationPermission = async (currentUser) => {
   const openRoomDetail = (room) => {
     setViewingRoom(room);
     setShowRoomIndoor(false);
-    window.history.pushState({ page: "roomDetail" }, "", "/");
+    // Each room has its own shareable link (kampasika.org/room/<id>).
+    window.history.pushState({ page: "roomDetail" }, "", `/room/${room.id}`);
   };
 
-  const openRoomIndoorView = () => {
-    setShowRoomIndoor(true);
-    window.history.pushState({ page: "roomIndoor" }, "", "/");
+  // Share a room on WhatsApp with its own link (opens straight to the room,
+  // no account needed to look).
+  const shareRoomOnWhatsApp = (room) => {
+    const typeName = ROOM_TYPES.find(t=>t.id===room.roomType)?.name || "Room";
+    const msg = `${typeName} — TSh ${room.price?.toLocaleString?.() || room.price}/month\n📍 ${room.location || ""}${room.nearUni ? ` · near ${room.nearUni}` : ""}\n\nSee photos on Kampasika: https://kampasika.org/room/${room.id}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
   };
+
+  // Opening kampasika.org/room/<id> (a shared link) shows that room — for
+  // guests too, since rooms are public.
+  const openedRoomLinkRef = useRef(false);
+  useEffect(() => {
+    if (openedRoomLinkRef.current) return;
+    const match = window.location.pathname.match(/^\/room\/([A-Za-z0-9_-]{6,})\/?$/);
+    if (!match) return;
+    openedRoomLinkRef.current = true;
+    getDoc(doc(db, "rooms", match[1])).then(snap => {
+      if (!snap.exists()) { window.history.replaceState({}, "", "/"); return; }
+      const data = snap.data();
+      // Rooms list underneath (so Back goes there, not out of the app), then
+      // the room on top with its own link.
+      setPage("home");
+      setHomeTab("rooms");
+      setViewingRoom({ id: snap.id, ...data, createdAt: data.createdAt?.toDate?.() || null });
+      setShowRoomIndoor(false);
+      setTimeout(() => window.history.pushState({ page: "roomDetail" }, "", `/room/${snap.id}`), 60);
+    }).catch(() => { window.history.replaceState({}, "", "/"); });
+  }, [setPage]);
 
   const handleRoomBack = () => {
     window.history.back();
@@ -3672,6 +3746,7 @@ const startConversation = async (listing) => {
     if (!existing.empty) {
       const conv = { id: existing.docs[0].id, ...existing.docs[0].data() };
       setActiveConversation(conv);
+      setViewingRoom(null); setShowRoomIndoor(false); // close a room page so the chat shows
       setPage("chat");
       setSuccess("");
       markAsRead(conv.id);
@@ -3695,7 +3770,8 @@ const startConversation = async (listing) => {
     });
 
     setMessages([]);
-    setPage("chat");
+    setViewingRoom(null); setShowRoomIndoor(false); // close a room page so the chat shows
+      setPage("chat");
     setSuccess("");
   } catch (err) {
     console.error("Error starting conversation:", err);
@@ -9014,6 +9090,15 @@ const bubbleRadius = '20px';
                 >
                   Sign in
                 </button>
+                {ENABLE_ROOMS && (
+                  <button
+                    type="button"
+                    onClick={() => { setPage("home"); handleTabTap("rooms"); }}
+                    style={{width:'100%',padding:'14px',background:'transparent',color:'var(--text-primary)',border:'1px dashed var(--border-color)',borderRadius:'10px',fontSize:'15px',fontWeight:'800',cursor:'pointer'}}
+                  >
+                    🏠 Browse rooms — no account needed
+                  </button>
+                )}
                 </div>
                 <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5}}>
                   Joining a group? Open the invite link from your class rep, club leader, or group admin, then sign in to request access.
@@ -10391,7 +10476,7 @@ const bubbleRadius = '20px';
                           ...prev,
                           propertyId,
                           landlordName: property ? property.landlordName : prev.landlordName,
-                          landlordPhone: property ? property.landlordPhone : prev.landlordPhone,
+                          landlordPhone: property ? (property.landlordPhone || prev.landlordPhone || userPhone || "") : prev.landlordPhone,
                           location: property ? property.address : prev.location,
                           nearUni: property ? property.nearUni : prev.nearUni,
                         }));
@@ -10676,192 +10761,198 @@ const bubbleRadius = '20px';
       })()}
 
       {/* ============ ROOM DETAIL ============ */}
-      {ENABLE_ROOMS && viewingRoom && (
+      {ENABLE_ROOMS && viewingRoom && (() => {
+        const roomTypeInfo = ROOM_TYPES.find(t=>t.id===viewingRoom.roomType);
+        const photos = viewingRoom.photos && viewingRoom.photos.length ? viewingRoom.photos : (viewingRoom.photoUrl ? [viewingRoom.photoUrl] : []);
+        const photoIndex = Math.min(roomIndoorPhotoIndex, Math.max(0, photos.length - 1));
+        const landlordLabel = viewingRoom.listedByName || viewingRoom.landlordName || "Landlord";
+        const openFull = (i) => { if (!photos.length) return; setFullScreenImage(photos[i]); setFullScreenPhotos(photos); setFullScreenIndex(i); };
+        // Guests can see everything except the exact spot and contact:
+        // those need a (free) account, then verification if it's switched on.
+        const isGuest = !user;
+        const canSeeExact = !isGuest && roomUserCanAccessRooms;
+        const askToSignUp = () => { setAuthMode("signup"); setShowAuthModal(true); setError(""); };
+        const openMaps = () => {
+          if (isGuest) { askToSignUp(); return; }
+          if (!roomUserCanAccessRooms) { openRoomUserVerification("roomMap"); return; }
+          window.open(
+            viewingRoom.lat && viewingRoom.lng
+              ? `https://www.google.com/maps/search/?api=1&query=${viewingRoom.lat},${viewingRoom.lng}`
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}`,
+            '_blank'
+          );
+        };
+        const messageLandlord = () => {
+          if (isGuest) { askToSignUp(); return; }
+          if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}
+          if(guardOfflineDiscoverAction("Messaging"))return;
+          requireAuth("message",()=>startConversation({
+            id: viewingRoom.id,
+            title: `${roomTypeInfo?.name || 'Room'} — ${viewingRoom.location}`,
+            price: viewingRoom.price,
+            photoUrl: viewingRoom.photoUrl || viewingRoom.photos?.[0] || null,
+            propertyId: viewingRoom.propertyId || null,
+            userId: viewingRoom.userId || viewingRoom.listedBy,
+            userName: viewingRoom.listedByName || viewingRoom.landlordName,
+            userAvatar: viewingRoom.listedByAvatar || null,
+          }));
+        };
+        const cardStyle = {background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'16px',padding:'16px',margin:'12px 16px 0'};
+        return (
         <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
+          <div style={{maxWidth:'720px',margin:'0 auto',minHeight:'100%',display:'flex',flexDirection:'column'}}>
           {/* Header */}
           <div style={{background:'var(--surface-bg)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',borderBottom:'1px solid var(--border-color)',position:'sticky',top:0,zIndex:50}}>
-            <button onClick={handleRoomBack} style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none'}}>←</button>
-            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)'}}>{showRoomIndoor ? 'Indoor View' : 'Room Location'}</div>
+            <button onClick={handleRoomBack} aria-label="Back" style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'18px',border:'none',color:'var(--text-primary)'}}>←</button>
+            <div style={{fontFamily:'serif',fontSize:'20px',fontWeight:'700',color:'var(--text-primary)',flex:1}}>Room details</div>
+            <button type="button" onClick={()=>shareRoomOnWhatsApp(viewingRoom)} style={{padding:'8px 12px',borderRadius:'999px',background:'var(--surface-bg-alt)',border:'none',fontSize:'13px',fontWeight:'800',color:'var(--text-primary)',cursor:'pointer'}}>↗ Share</button>
           </div>
 
-          {!showRoomIndoor ? (
-            <>
-              {/* MAP — Google Maps embed via location text */}
-              <div style={{position:'relative',width:'100%',height:'340px',background:'var(--surface-bg-alt)',overflow:'hidden'}}>
-                <iframe
-                  title="Room location map"
-                  width="100%"
-                  height="340"
-                  style={{border:'none',display:'block',filter:roomUserCanAccessRooms?'none':'blur(3px)',opacity:roomUserCanAccessRooms?1:0.55}}
-                  loading="lazy"
-                  allowFullScreen
-                  src={roomUserCanAccessRooms && viewingRoom.lat && viewingRoom.lng
-                    ? `https://maps.google.com/maps?q=${viewingRoom.lat},${viewingRoom.lng}&t=m&z=17&ie=UTF8&iwloc=&output=embed`
-                    : `https://maps.google.com/maps?q=${encodeURIComponent(roomUserCanAccessRooms ? ((viewingRoom.location||'') + ', Dar es Salaam, Tanzania') : (viewingRoom.nearUni || 'Dar es Salaam, Tanzania'))}&t=m&z=${roomUserCanAccessRooms ? 16 : 12}&ie=UTF8&iwloc=&output=embed`
-                  }
-                />
-                {!roomUserCanAccessRooms && (
-                  <button type="button" onClick={()=>openRoomUserVerification("roomMap")} style={{position:'absolute',inset:'82px 24px auto 24px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'14px',padding:'14px',boxShadow:'0 10px 28px rgba(15,27,45,0.16)',color:'var(--text-primary)',fontSize:'14px',fontWeight:'900',cursor:'pointer'}}>
-                    Reserve / verify to unlock exact map
-                  </button>
-                )}
-                {/* Location label overlay */}
-                <div style={{position:'absolute',bottom:'12px',left:'12px',background:'rgba(15,27,45,0.85)',color:'#fff',borderRadius:'10px',padding:'6px 12px',fontSize:'13px',fontWeight:'600',backdropFilter:'blur(4px)'}}>
-                  📍 {viewingRoom.location}
-                </div>
-                {/* Open in Google Maps button */}
-                <button
-                  onClick={()=>{
-                    if (!roomUserCanAccessRooms) { openRoomUserVerification("roomMap"); return; }
-                    window.open(
-                      viewingRoom.lat && viewingRoom.lng
-                        ? `https://www.google.com/maps/search/?api=1&query=${viewingRoom.lat},${viewingRoom.lng}`
-                        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((viewingRoom.location||'') + ', Dar es Salaam, Tanzania')}`,
-                      '_blank'
-                    );
-                  }}
-                  style={{position:'absolute',top:'12px',right:'12px',background:'var(--surface-bg)',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:'var(--text-primary)',cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.15)',display:'flex',alignItems:'center',gap:'5px'}}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  {roomUserCanAccessRooms ? "Open in Maps" : "Reserve"}
-                </button>
-              </div>
-
-              {/* Room summary strip */}
-              <div style={{background:'var(--surface-bg)',padding:'14px 16px',borderBottom:'1px solid var(--border-color)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div>
-                  <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</div>
-                  <div style={{fontSize:'13px',color:'var(--text-secondary)',marginTop:'2px'}}>Near {viewingRoom.nearUni}</div>
-                </div>
-                <div style={{fontFamily:'serif',fontSize:'22px',fontWeight:'700',color:'var(--accent-teal-bright, #06d6c7)'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'13px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/mo</span></div>
-              </div>
-
-              {/* Outdoor / Indoor cards */}
-              <div style={{padding:'16px',display:'grid',gridTemplateColumns:viewingRoom.photos?.[0]?'1fr 1fr':'1fr',gap:'12px'}}>
-
-                {/* OUTDOOR card */}
-                {viewingRoom.photos?.[0] && (
-                <div style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'1px solid var(--border-color)',cursor:'default'}}>
-                    <img src={viewingRoom.photos[0]} alt="Outdoor" style={{width:'100%',height:'130px',objectFit:'cover'}} onClick={()=>{setFullScreenImage(viewingRoom.photos[0]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(0);}}/>
-                  <div style={{padding:'10px 12px'}}>
-                    <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>Outdoor</div>
-                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>Exterior view</div>
-                  </div>
-                </div>
-                )}
-
-                {/* INDOOR card — tappable */}
-                <div onClick={openRoomIndoorView} style={{background:'var(--surface-bg)',borderRadius:'16px',overflow:'hidden',border:'2px solid #06d6c7',cursor:'pointer',boxShadow:'0 4px 14px rgba(6,214,199,0.15)'}}>
-                  {viewingRoom.photos && viewingRoom.photos.length > 1 ? (
-                    <img src={viewingRoom.photos[1]} alt="Indoor" style={{width:'100%',height:'130px',objectFit:'cover'}}/>
-                  ) : (
-                    <div style={{width:'100%',height:'130px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'40px'}}>🛏</div>
-                  )}
-                  <div style={{padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                    <div>
-                      <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>Indoor</div>
-                      <div style={{fontSize:'11px',color:'#0d9488',fontWeight:'600'}}>Tap to view details →</div>
-                    </div>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06d6c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{height:'100px'}} />
-            </>
-          ) : (
-            /* ── INDOOR VIEW — full current detail ── */
-            <>
-              {viewingRoom.photos && viewingRoom.photos.length > 0 ? (
-                <div>
-                  <img
-                    src={viewingRoom.photos[Math.min(roomIndoorPhotoIndex, viewingRoom.photos.length - 1)]}
-                    alt=""
-                    onTouchStart={event => { roomPhotoTouchStartX.current = event.touches?.[0]?.clientX || null; }}
-                    onTouchEnd={event => {
-                      const startX = roomPhotoTouchStartX.current;
-                      const endX = event.changedTouches?.[0]?.clientX || null;
-                      roomPhotoTouchStartX.current = null;
-                      if (startX === null || endX === null || viewingRoom.photos.length <= 1) return;
-                      const diff = startX - endX;
-                      if (Math.abs(diff) < 35) return;
-                      setRoomIndoorPhotoIndex(index => diff > 0 ? Math.min(viewingRoom.photos.length - 1, index + 1) : Math.max(0, index - 1));
-                    }}
-                    onClick={()=>{const index=Math.min(roomIndoorPhotoIndex, viewingRoom.photos.length - 1);setFullScreenImage(viewingRoom.photos[index]);setFullScreenPhotos(viewingRoom.photos);setFullScreenIndex(index);}}
-                    style={{width:'100%',height:'280px',objectFit:'cover',cursor:'pointer',touchAction:'pan-y'}}
-                  />
-                  {viewingRoom.photos.length > 1 && (
-                    <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto'}}>
-                      {viewingRoom.photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>setRoomIndoorPhotoIndex(i)} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0,border:i===roomIndoorPhotoIndex?'2px solid #06d6c7':'2px solid transparent'}}/>)}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{width:'100%',height:'180px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
-              )}
-
-              <div style={{padding:'20px'}}>
-                <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'500'}}>{ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.icon} {ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name}</span>
-                <div style={{fontFamily:'serif',fontSize:'32px',fontWeight:'700',color:'#f59e0b',margin:'12px 0 4px'}}>{viewingRoom.price?.toLocaleString()} <span style={{fontSize:'16px',color:'var(--text-secondary)',fontFamily:'system-ui'}}>TSh/month</span></div>
-                {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, discoverRooms, "room")} />}
-                <div style={{fontSize:'16px',fontWeight:'600',marginBottom:'4px'}}>📍 {viewingRoom.location}</div>
-                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px'}}>Near {viewingRoom.nearUni}</div>
-
-                {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
-                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'16px'}}>
-                    {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'12px',background:'var(--surface-bg-alt)',padding:'6px 12px',borderRadius:'8px'}}>{am.icon} {am.label}</span>:null;})}
-                  </div>
-                )}
-
-                {viewingRoom.description && (
-                  <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-                    <h4 style={{fontSize:'14px',fontWeight:'600',marginBottom:'8px',color:'var(--text-secondary)'}}>Details</h4>
-                    <p style={{fontSize:'15px',lineHeight:1.7,color:'var(--text-secondary)',whiteSpace:'pre-wrap'}}>{viewingRoom.description}</p>
-                  </div>
-                )}
-
-                {!roomUserCanAccessRooms && (
-                  <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px'}}>
-                    <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'12px'}}>Complete Room User Verification to view contact information and map details.</div>
-                    <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Reserve / verify to view contact</button>
-                  </div>
-                )}
-              </div>
-
-              <BizApplyBar
-                db={db}
-                functions={functions}
-                room={viewingRoom}
-                user={user}
-                userName={userName}
-                userPhone={userPhone}
-                roomLabel={ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name || 'Room'}
-                canAccess={roomUserCanAccessRooms}
-                onNeedAccess={()=>openRoomUserVerification("roomContact")}
-                requireAuth={requireAuth}
-                isOffline={isOffline}
+          {/* Photos — swipe, tap for full screen */}
+          {photos.length > 0 ? (
+            <div style={{position:'relative',background:'#0f1b2d'}}>
+              <img
+                src={photos[photoIndex]}
+                alt={roomTypeInfo?.name || 'Room'}
+                onTouchStart={event => { roomPhotoTouchStartX.current = event.touches?.[0]?.clientX || null; }}
+                onTouchEnd={event => {
+                  const startX = roomPhotoTouchStartX.current;
+                  const endX = event.changedTouches?.[0]?.clientX || null;
+                  roomPhotoTouchStartX.current = null;
+                  if (startX === null || endX === null || photos.length <= 1) return;
+                  const diff = startX - endX;
+                  if (Math.abs(diff) < 35) return;
+                  setRoomIndoorPhotoIndex(index => diff > 0 ? Math.min(photos.length - 1, index + 1) : Math.max(0, index - 1));
+                }}
+                onClick={()=>openFull(photoIndex)}
+                style={{width:'100%',height:'min(62vw, 360px)',minHeight:'240px',objectFit:'cover',display:'block',cursor:'zoom-in',touchAction:'pan-y'}}
               />
-              <div style={{position:'sticky',bottom:0,background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'16px',paddingBottom:'calc(16px + env(safe-area-inset-bottom, 0px))',display:'flex',gap:'8px'}}>
-                <button onClick={()=>{
-                  if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}
-                  if(guardOfflineDiscoverAction("Messaging"))return;
-                  requireAuth("message",()=>startConversation({
-                    id: viewingRoom.id,
-                    title: `${ROOM_TYPES.find(t=>t.id===viewingRoom.roomType)?.name || 'Room'} — ${viewingRoom.location}`,
-                    price: viewingRoom.price,
-                    photoUrl: viewingRoom.photoUrl || viewingRoom.photos?.[0] || null,
-                    propertyId: viewingRoom.propertyId || null,
-                    userId: viewingRoom.userId || viewingRoom.listedBy,
-                    userName: viewingRoom.listedByName || viewingRoom.landlordName,
-                    userAvatar: viewingRoom.listedByAvatar || null,
-                  }));
-                }} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'var(--border-color)':'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "💬 Message" : "Reserve"}</button>
-                <button onClick={()=>{if(!roomUserCanAccessRooms){openRoomUserVerification("roomContact");return;}if(guardOfflineDiscoverAction("Calling"))return;window.open(`tel:${viewingRoom.landlordPhone}`);}} disabled={isOffline} style={{flex:1,padding:'16px',background:isOffline?'var(--border-color)':'#06d6c7',color:'#fff',border:'none',borderRadius:'10px',fontSize:'15px',fontWeight:'600',cursor:isOffline?'not-allowed':'pointer'}}>{roomUserCanAccessRooms ? "📞 Call" : "Verify"}</button>
-              </div>
-            </>
+              {photos.length > 1 && (
+                <>
+                  <button type="button" aria-label="Previous photo" onClick={()=>setRoomIndoorPhotoIndex(i=>Math.max(0,i-1))} disabled={photoIndex===0} style={{position:'absolute',left:'10px',top:'50%',transform:'translateY(-50%)',width:'34px',height:'34px',borderRadius:'50%',border:'none',background:'rgba(15,27,45,0.55)',color:'#fff',fontSize:'18px',cursor:'pointer',opacity:photoIndex===0?0.3:1}}>‹</button>
+                  <button type="button" aria-label="Next photo" onClick={()=>setRoomIndoorPhotoIndex(i=>Math.min(photos.length-1,i+1))} disabled={photoIndex===photos.length-1} style={{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',width:'34px',height:'34px',borderRadius:'50%',border:'none',background:'rgba(15,27,45,0.55)',color:'#fff',fontSize:'18px',cursor:'pointer',opacity:photoIndex===photos.length-1?0.3:1}}>›</button>
+                  <div style={{position:'absolute',bottom:'10px',right:'10px',background:'rgba(15,27,45,0.72)',color:'#fff',borderRadius:'999px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}}>{photoIndex + 1} / {photos.length}</div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div style={{width:'100%',height:'200px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
           )}
+          {photos.length > 1 && (
+            <div style={{display:'flex',gap:'6px',padding:'8px 16px',overflowX:'auto',background:'var(--surface-bg)'}}>
+              {photos.map((p,i)=><img key={i} src={p} alt="" onClick={()=>setRoomIndoorPhotoIndex(i)} style={{width:'56px',height:'56px',objectFit:'cover',borderRadius:'8px',cursor:'pointer',flexShrink:0,border:i===photoIndex?'2px solid #06d6c7':'2px solid transparent',opacity:i===photoIndex?1:0.75}}/>)}
+            </div>
+          )}
+
+          {/* Price, type, place */}
+          <div style={{background:'var(--surface-bg)',padding:'16px 16px 18px',borderBottom:'1px solid var(--border-color)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}>
+              <span style={{fontSize:'12px',background:'#e0f2fe',color:'#0369a1',padding:'4px 12px',borderRadius:'20px',fontWeight:'700'}}>{roomTypeInfo?.icon} {roomTypeInfo?.name || 'Room'}</span>
+              <span style={{fontSize:'12px',color:'var(--text-secondary)',fontWeight:'600'}}>🎓 Near {viewingRoom.nearUni}</span>
+            </div>
+            <div style={{fontFamily:'serif',fontSize:'30px',fontWeight:'800',color:'var(--text-primary)',margin:'12px 0 2px'}}>TSh {viewingRoom.price?.toLocaleString()} <span style={{fontSize:'15px',color:'var(--text-secondary)',fontFamily:'system-ui',fontWeight:'600'}}>/ month</span></div>
+            {SHOW_PRICE_SIGNAL && <PriceSignalBadge signal={computePriceSignal(viewingRoom, discoverRooms, "room")} />}
+            <button type="button" onClick={openMaps} style={{display:'flex',alignItems:'center',gap:'6px',background:'none',border:'none',padding:'6px 0 0',fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',cursor:'pointer',textAlign:'left'}}>📍 {viewingRoom.location}</button>
+          </div>
+
+          {/* Amenities */}
+          {viewingRoom.amenities && viewingRoom.amenities.length > 0 && (
+            <div style={cardStyle}>
+              <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'10px'}}>What's included</div>
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                {viewingRoom.amenities.map(a=>{const am=ROOM_AMENITIES.find(x=>x.id===a);return am?<span key={a} style={{fontSize:'13px',background:'var(--surface-bg-alt)',padding:'7px 12px',borderRadius:'10px',color:'var(--text-primary)'}}>{am.icon} {am.label}</span>:null;})}
+              </div>
+            </div>
+          )}
+
+          {/* Description */}
+          {viewingRoom.description && (
+            <div style={cardStyle}>
+              <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'8px'}}>About this room</div>
+              <p style={{fontSize:'15px',lineHeight:1.7,color:'var(--text-secondary)',whiteSpace:'pre-wrap',margin:0}}>{viewingRoom.description}</p>
+            </div>
+          )}
+
+          {/* Kampasika Biz: apply online / lease / rent */}
+          <div style={{marginTop:'12px'}}>
+            <BizApplyBar
+              db={db}
+              functions={functions}
+              room={viewingRoom}
+              user={user}
+              userName={userName}
+              userPhone={userPhone}
+              roomLabel={roomTypeInfo?.name || 'Room'}
+              canAccess={roomUserCanAccessRooms}
+              onNeedAccess={()=>openRoomUserVerification("roomContact")}
+              requireAuth={requireAuth}
+              isOffline={isOffline}
+            />
+          </div>
+
+          {/* Location */}
+          <div style={{...cardStyle,padding:0,overflow:'hidden',marginTop:0}}>
+            <div style={{padding:'14px 16px 10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}}>
+              <div style={{fontSize:'14px',fontWeight:'800',color:'var(--text-primary)'}}>Location</div>
+              <button type="button" onClick={openMaps} style={{background:'var(--surface-bg-alt)',border:'none',borderRadius:'10px',padding:'7px 12px',fontSize:'12px',fontWeight:'800',color:'var(--text-primary)',cursor:'pointer'}}>{canSeeExact ? "Open in Maps ↗" : isGuest ? "🔒 Sign up to see exact spot" : "🔒 Verify to see exact spot"}</button>
+            </div>
+            <div style={{position:'relative',height:'210px',background:'var(--surface-bg-alt)'}}>
+              <iframe
+                title="Room location map"
+                width="100%"
+                height="210"
+                style={{border:'none',display:'block',filter:canSeeExact?'none':'blur(3px)',opacity:canSeeExact?1:0.55}}
+                loading="lazy"
+                allowFullScreen
+                src={canSeeExact && viewingRoom.lat && viewingRoom.lng
+                  ? `https://maps.google.com/maps?q=${viewingRoom.lat},${viewingRoom.lng}&t=m&z=17&ie=UTF8&iwloc=&output=embed`
+                  : `https://maps.google.com/maps?q=${encodeURIComponent(canSeeExact ? ((viewingRoom.location||'') + ', Dar es Salaam, Tanzania') : (viewingRoom.nearUni || 'Dar es Salaam, Tanzania'))}&t=m&z=${canSeeExact ? 16 : 12}&ie=UTF8&iwloc=&output=embed`
+                }
+              />
+              <div style={{position:'absolute',bottom:'10px',left:'10px',background:'rgba(15,27,45,0.85)',color:'#fff',borderRadius:'10px',padding:'5px 11px',fontSize:'12.5px',fontWeight:'600'}}>📍 {viewingRoom.location}</div>
+            </div>
+          </div>
+
+          {/* Who's renting it */}
+          <div style={{...cardStyle,display:'flex',alignItems:'center',gap:'12px'}}>
+            <div style={{width:'44px',height:'44px',borderRadius:'50%',flexShrink:0,backgroundImage:viewingRoom.listedByAvatar?`url(${viewingRoom.listedByAvatar})`:'none',backgroundColor:viewingRoom.listedByAvatar?'transparent':'#06d6c7',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'800',color:'#0f1b2d'}}>{!viewingRoom.listedByAvatar && String(landlordLabel).split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{landlordLabel}</div>
+              <div style={{fontSize:'12.5px',color:'var(--text-secondary)'}}>Chat inside Kampasika — safer, and your messages stay on record.</div>
+            </div>
+          </div>
+
+          {isGuest && (
+            <div style={{...cardStyle,background:'var(--mint-tint, #f0fffe)',borderColor:'rgba(6,214,199,0.35)'}}>
+              <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'4px'}}>Like this room?</div>
+              <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'12px'}}>Create a free account to message the landlord, apply online and see the exact location.</div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button type="button" onClick={askToSignUp} style={{flex:1,padding:'12px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Create free account</button>
+                <button type="button" onClick={()=>{setAuthMode("login");setShowAuthModal(true);setError("");}} style={{padding:'12px 16px',background:'var(--surface-bg)',color:'var(--text-primary)',border:'1px solid var(--border-color)',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Sign in</button>
+              </div>
+            </div>
+          )}
+
+          {!isGuest && !roomUserCanAccessRooms && (
+            <div style={cardStyle}>
+              <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'12px'}}>Verify as a room user to message the landlord and see the exact location.</div>
+              <button type="button" onClick={()=>openRoomUserVerification("roomContact")} style={{width:'100%',padding:'12px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>Verify to continue</button>
+            </div>
+          )}
+
+          <div style={{flex:1,minHeight:'20px'}} />
+          {/* One clear action */}
+          <div style={{position:'sticky',bottom:0,marginTop:'16px',background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'12px 16px',paddingBottom:'calc(12px + env(safe-area-inset-bottom, 0px))',display:'flex',gap:'10px',alignItems:'center'}}>
+            <div style={{flex:'none'}}>
+              <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)'}}>TSh {viewingRoom.price?.toLocaleString()}</div>
+              <div style={{fontSize:'11.5px',color:'var(--text-secondary)'}}>per month</div>
+            </div>
+            <button onClick={messageLandlord} disabled={isOffline} style={{flex:1,padding:'15px',background:isOffline?'var(--border-color)':'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer'}}>{isGuest ? "💬 Sign up to message" : roomUserCanAccessRooms ? "💬 Message landlord" : "Verify to message"}</button>
+          </div>
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ============ ROOMMATE FINDER ============ */}
       {ENABLE_ROOMS && page==="roommates"&&(
@@ -11295,6 +11386,23 @@ const bubbleRadius = '20px';
                   {backfillResult && (
                     <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)'}}>
                       {backfillResult.totalUsers} accounts checked · {backfillResult.alreadyHadWelcome} already had it · <strong style={{color:'#0d9488'}}>{backfillResult.created} created</strong>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
+                    <div>
+                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Make landlord phones private</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>One-time: moves phone numbers off public rooms and properties. Safe to run more than once.</div>
+                    </div>
+                    <button onClick={handleMoveLandlordPhones} disabled={movingPhones} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:movingPhones?'not-allowed':'pointer',fontWeight:'700',background:'#0d9488',color:'#fff',flexShrink:0}}>
+                      {movingPhones ? 'Moving...' : 'Move phones'}
+                    </button>
+                  </div>
+                  {movePhonesResult && (
+                    <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)'}}>
+                      <strong style={{color:'#0d9488'}}>{movePhonesResult.rooms} rooms</strong> · <strong style={{color:'#0d9488'}}>{movePhonesResult.properties} properties</strong> cleaned
                     </div>
                   )}
                 </div>
@@ -14121,7 +14229,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
   border:'1px solid var(--nav-border)',
   borderRadius:'24px',
   boxShadow:'var(--nav-shadow), 0 0 32px 8px var(--page-bg)',
-  display:!user||keyboardOpen||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'flex',
+  display:keyboardOpen||groupSearchActive||viewingRoom||page==="create"||page==="chat"||page==="createService"||page==="createCollection"||page==="createRoom"||page==="createProperty"||page==="propertyTeam"||page==="propertyInbox"||page==="importRooms"||page==="groupDetail"?'none':'flex',
   alignItems:'center',
   justifyContent:'space-around',
   zIndex:1000,

@@ -10,6 +10,7 @@ import {
   isChargeOpen,
   isOverdue,
   loadOperatorRooms,
+  pendingClaim,
   progressPercent,
   todayIso,
 } from "./bizService";
@@ -168,12 +169,13 @@ export function BizOverview({ operator, lang, apps, leases, charges, onNavigate 
     const dueSoon = list.filter(c => isChargeOpen(c) && c.dueDate >= today && c.dueDate <= in7Iso);
 
     const newApps = (apps || []).filter(a => a.status === "submitted");
+    const claims = list.filter(c => pendingClaim(c)).map(c => ({ charge: c, claim: pendingClaim(c) }));
     const waiting = (leases || []).filter(l => ["sent", "pending_fee"].includes(l.status));
     return {
       payments, months, collected, collectedPrev, behind,
       overdueTotal: behind.reduce((s, b) => s + b.balance, 0),
       dueSoonTotal: dueSoon.reduce((s, c) => s + chargeBalance(c), 0), dueSoonCount: dueSoon.length,
-      newApps, waiting,
+      newApps, waiting, claims,
     };
   }, [charges, apps, leases, today]);
 
@@ -195,7 +197,7 @@ export function BizOverview({ operator, lang, apps, leases, charges, onNavigate 
   const setupPct = progressPercent(steps);
   const firstName = String(operator.profile?.contactName || "").split(" ")[0];
   const delta = data.collectedPrev ? Math.round(((data.collected - data.collectedPrev) / data.collectedPrev) * 100) : null;
-  const attentionCount = data.behind.length + data.newApps.length + data.waiting.length;
+  const attentionCount = data.claims.length + data.behind.length + data.newApps.length + data.waiting.length;
 
   return (
     <div className="bd">
@@ -288,6 +290,18 @@ export function BizOverview({ operator, lang, apps, leases, charges, onNavigate 
           </div>
           {attentionCount === 0 && <p className="biz-muted">✓ {t(lang, "dashAllClear")}</p>}
           <ul className="bd-list">
+            {data.claims.map(({ charge, claim }) => (
+              <li key={`c-${charge.id}`}>
+                <button type="button" onClick={() => onNavigate("/biz/rent")}>
+                  <span className="bd-dot good" aria-hidden="true">?</span>
+                  <span className="bd-list-main">
+                    <strong>{charge.tenantName}</strong>
+                    <span className="biz-small">{t(lang, "dashClaim", { code: claim.reference })}</span>
+                  </span>
+                  <span className="bd-list-end"><strong>{tzs(claim.amount)}</strong><span className="biz-pill charge-partial">{t(lang, "chargeFilters.confirm")}</span></span>
+                </button>
+              </li>
+            ))}
             {data.behind.map(b => (
               <li key={`o-${b.name}-${b.room}`}>
                 <button type="button" onClick={() => onNavigate("/biz/rent")}>

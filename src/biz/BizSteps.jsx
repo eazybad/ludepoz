@@ -18,6 +18,8 @@ import {
   saveProfile,
   savePawapayApplication,
   saveSettlement,
+  savePayTo,
+  PAY_TO_METHODS,
   uploadDocument,
 } from "./bizService";
 
@@ -130,14 +132,15 @@ export function ProfileStep({ operator, lang, onDone }) {
           </div>
         </div>
 
+        {form.businessType === "unregistered" && <div className="biz-banner info">{t(lang, "unregisteredHint")}</div>}
         <div className="biz-row">
           {needsBrela && (
             <Field label={t(lang, "brelaNumber")} lang={lang}>
               <input className="biz-input" value={form.brelaNumber} onChange={set("brelaNumber")} required maxLength={40} />
             </Field>
           )}
-          <Field label={t(lang, "tin")} lang={lang}>
-            <input className="biz-input" value={form.tin} onChange={set("tin")} required inputMode="numeric" maxLength={20} />
+          <Field label={t(lang, "tin")} optional={form.businessType === "unregistered"} lang={lang}>
+            <input className="biz-input" value={form.tin} onChange={set("tin")} required={form.businessType !== "unregistered"} inputMode="numeric" maxLength={20} />
           </Field>
         </div>
 
@@ -566,6 +569,61 @@ export function LiveStep({ operator, lang }) {
   );
 }
 
+// ─── Where students pay you directly (owner's own number) ───
+
+export function PayToStep({ operator, lang, onDone }) {
+  const [form, setForm] = useState(() => ({
+    method: "mobile_money", provider: "", number: "", name: operator.profile?.contactName || "", note: "",
+    ...(operator.payTo || {}),
+  }));
+  const [saver, run] = useSaver(lang);
+  const set = (key) => (e) => setForm(p => ({ ...p, [key]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (await run(() => savePayTo(operator.id, form))) onDone?.();
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <StepHeader lang={lang} stepId="payto" />
+      <div className="biz-card tint"><p className="biz-muted">{t(lang, "payToIntro")}</p></div>
+      <div className="biz-card">
+        <div className="biz-field" style={{ marginTop: 0 }}>
+          <span className="biz-label">{t(lang, "payToMethod")}</span>
+          <div className="biz-radio-group">
+            {PAY_TO_METHODS.map(m => (
+              <label key={m} className={`biz-radio ${form.method === m ? "on" : ""}`}>
+                <input type="radio" name="payToMethod" value={m} checked={form.method === m} onChange={set("method")} />
+                {t(lang, `payToMethods.${m}`)}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="biz-row">
+          <Field label={t(lang, form.method === "bank" ? "payToBank" : "payToNetwork")} lang={lang}>
+            <input className="biz-input" value={form.provider} onChange={set("provider")} required maxLength={60} placeholder={form.method === "bank" ? "CRDB, NMB…" : "M-Pesa, Airtel Money, Mixx…"} />
+          </Field>
+          <Field label={t(lang, form.method === "lipa" ? "payToLipa" : form.method === "bank" ? "payToAccount" : "payToPhone")} lang={lang}>
+            <input className="biz-input" value={form.number} onChange={set("number")} required maxLength={40} inputMode={form.method === "bank" ? "text" : "numeric"} />
+          </Field>
+        </div>
+        <Field label={t(lang, "payToName")} lang={lang} hint={t(lang, "payToNameHint")}>
+          <input className="biz-input" value={form.name} onChange={set("name")} required maxLength={80} />
+        </Field>
+        <Field label={t(lang, "payToNote")} optional lang={lang}>
+          <input className="biz-input" value={form.note} onChange={set("note")} maxLength={160} placeholder={t(lang, "payToNotePlaceholder")} />
+        </Field>
+        <p className="biz-small" style={{ marginTop: 12 }}>🔒 {t(lang, "payToPrivacy")}</p>
+      </div>
+      {saver.error && <div className="biz-error">{saver.error}</div>}
+      <div className="biz-actions">
+        <button className="biz-btn primary block" disabled={saver.busy}>{saver.busy ? t(lang, "saving") : t(lang, "save")}</button>
+      </div>
+    </form>
+  );
+}
+
 export const STEP_COMPONENTS = {
   profile: ProfileStep,
   documents: DocumentsStep,
@@ -574,4 +632,5 @@ export const STEP_COMPONENTS = {
   sandbox: SandboxStep,
   test: TestStep,
   live: LiveStep,
+  payto: PayToStep,
 };

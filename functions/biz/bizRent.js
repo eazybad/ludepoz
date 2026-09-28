@@ -12,11 +12,20 @@
 //   bizWaiveCharge        operator waives a charge
 //   bizRentReminders      daily 09:00 EAT reminders
 //
+// Direct payments (hostels without pawaPay, e.g. not registered yet): the
+// student pays the owner's own M-Pesa / Lipa / bank number (operators.payTo)
+// outside Kampasika, then reports it; the owner confirms and it's recorded.
+// Kampasika never touches this money.
+//   bizPayInstructions    student: where / how much to pay directly
+//   bizReportPayment      student: "I've paid" + transaction code
+//   bizReviewClaim        owner: confirm received / not received
+//
 // Online payment is available when the operator is live (production token),
 // or — for pilots — when they switched on sandbox test payments
 // (operators.settings.sandboxRent). Test payments are labelled as such.
 
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const pawapay = require("./bizPawapay");
@@ -281,6 +290,142 @@ exports.bizWaiveCharge = onCall(async (request) => {
     createdAt: FieldValue().serverTimestamp(),
   }).catch(() => {});
   return { success: true };
+});
+
+// ─── Direct payments to the owner's own number ───
+const PAY_TO_METHODS = new Set(["mobile_money", "lipa", "bank"]);
+
+function cleanPayTo(raw) {
+  if (!raw || !PAY_TO_METHODS.has(raw.method) || !clean(raw.number, 40)) return null;
+  return {
+    method: raw.method,
+    provider: clean(raw.provider, 60),
+    number: clean(raw.number, 40),
+    name: clean(raw.name, 80),
+    note: clean(raw.note, 160),
+  };
+}
+
+exports.bizPayInstructions = onCall(async (request) => {
+  const uid = requireUid(request);
+  const chargeId = clean(request.data?.chargeId, 200);
+  const { charge } = await loadCharge(chargeId);
+  if (charge.studentUid !== uid && charge.operatorId !== uid && !BIZ_ADMIN_UIDS.has(uid)) {
+    throw new HttpsError("permission-denied", "This isn't your charge.");
+  }
+  const opSnap = await db().collection("operators").doc(charge.operatorId).get();
+  const payTo = cleanPayTo(opSnap.data()?.payTo);
+  if (!payTo) return { available: false };
+  return {
+    available: true,
+    ...payTo,
+    amount: Number(charge.amount || 0) - Number(charge.amountPaid || 0),
+    reference: charge.leaseReference || chargeId,
+    businessName: charge.businessName || "",
+  };
+});
+
+exports.bizReportPayment = onCall(async (request) => {
+  const uid = requireUid(request);
+  const chargeId = clean(request.data?.chargeId, 200);
+  const ref = db().collection("bizCharges").doc(chargeId);
+  const reference = clean(request.data?.reference, 40);
+  const proofPath = clean(request.data?.proofPath, 300);
+  if (reference.length < 4 && !proofPath) throw new HttpsError("invalid-argument", "Enter the transaction code from your payment SMS, or attach a screenshot.");
+  const paidOn = /^\d{4}-\d{2}-\d{2}$/.test(String(request.data?.paidOn || "")) ? request.data.paidOn : todayEat();
+  if (paidOn > todayEat()) throw new HttpsError("invalid-argument", "The payment date can't be in the future.");
+
+  const claim = await db().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Charge not found.");
+    const charge = snap.data() || {};
+    if (charge.studentUid !== uid) throw new HttpsError("permission-denied", "This isn't your charge.");
+    if (!["due", "partial"].includes(charge.status)) throw new HttpsError("failed-precondition", "This charge is already settled.");
+    const claims = Array.isArray(charge.claims) ? charge.claims : [];
+    if (claims.some(c => c.status === "pending")) {
+      throw new HttpsError("failed-precondition", "You already reported a payment for this. Wait for the landlord to confirm it.");
+    }
+    const balance = Number(charge.amount || 0) - Number(charge.amountPaid || 0);
+    const amount = Math.round(Number(request.data?.amount));
+    if (!Number.isFinite(amount) || amount < 1 || amount > balance) {
+      throw new HttpsError("invalid-argument", `Enter an amount between TZS 1 and ${formatTzs(balance)}.`);
+    }
+    const method = PAY_TO_METHODS.has(request.data?.method) ? request.data.method : "mobile_money";
+    // A screenshot must be the tenant's own upload for this hostel (see storage.rules).
+    if (proofPath && !proofPath.startsWith(`biz/${charge.operatorId}/proofs/${uid}/`)) {
+      throw new HttpsError("invalid-argument", "That screenshot couldn't be attached. Please try again.");
+    }
+    const newClaim = { id: crypto.randomUUID(), amount, reference: reference || "", proofPath: proofPath || null, paidOn, method, status: "pending", by: uid, at: new Date().toISOString() };
+    tx.update(ref, { claims: [...claims, newClaim].slice(-20), pendingClaim: true, updatedAt: FieldValue().serverTimestamp() });
+    return { ...newClaim, charge };
+  });
+
+  await db().collection("notifications").add({
+    userId: claim.charge.operatorId,
+    title: "Kampasika Biz · Confirm a payment",
+    message: `${claim.charge.tenantName || "A tenant"} says they paid ${formatTzs(claim.amount)} for ${claim.charge.label}${reference ? ` (code ${reference})` : ""}${proofPath ? " and attached a screenshot" : ""}. Check your account and confirm.`,
+    type: "biz_rent",
+    chargeId,
+    link: "/biz/rent",
+    read: false,
+    createdAt: FieldValue().serverTimestamp(),
+  }).catch(() => {});
+  return { success: true, claimId: claim.id };
+});
+
+exports.bizReviewClaim = onCall(async (request) => {
+  const uid = requireUid(request);
+  const chargeId = clean(request.data?.chargeId, 200);
+  const claimId = clean(request.data?.claimId, 80);
+  const decision = request.data?.decision === "confirm" ? "confirm" : request.data?.decision === "reject" ? "reject" : "";
+  if (!decision) throw new HttpsError("invalid-argument", "Choose confirm or reject.");
+  const note = clean(request.data?.note, 300);
+  const ref = db().collection("bizCharges").doc(chargeId);
+
+  // Flip the claim out of "pending" first, atomically, so a double tap can't
+  // record the same payment twice.
+  const { claim, charge } = await db().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Charge not found.");
+    const data = snap.data() || {};
+    if (data.operatorId !== uid && !BIZ_ADMIN_UIDS.has(uid)) throw new HttpsError("permission-denied", "This charge belongs to another business.");
+    const claims = Array.isArray(data.claims) ? data.claims : [];
+    const found = claims.find(c => c.id === claimId);
+    if (!found || found.status !== "pending") throw new HttpsError("failed-precondition", "This payment report was already handled.");
+    const balance = Number(data.amount || 0) - Number(data.amountPaid || 0);
+    if (decision === "confirm" && found.amount > balance) {
+      throw new HttpsError("failed-precondition", `The balance is now ${formatTzs(balance)}. Record the payment by hand instead.`);
+    }
+    const next = claims.map(c => (c.id === claimId
+      ? { ...c, status: decision === "confirm" ? "confirmed" : "rejected", reviewedBy: uid, reviewedAt: new Date().toISOString(), note }
+      : c));
+    tx.update(ref, { claims: next, pendingClaim: next.some(c => c.status === "pending"), updatedAt: FieldValue().serverTimestamp() });
+    return { claim: found, charge: data };
+  });
+
+  if (decision === "confirm") {
+    await applyPaymentToCharge(chargeId, {
+      amount: claim.amount,
+      method: claim.method === "bank" ? "bank" : "mobile_money",
+      reference: claim.reference || "screenshot",
+      proofPath: claim.proofPath || null,
+      paidOn: claim.paidOn,
+      recordedBy: uid,
+      reportedBy: claim.by,
+      direct: true,
+    });
+  } else {
+    await db().collection("notifications").add({
+      userId: charge.studentUid,
+      title: "Payment not confirmed",
+      message: `${charge.businessName || "Your landlord"} didn't find your payment of ${formatTzs(claim.amount)}${claim.reference ? ` (code ${claim.reference})` : ""}.${note ? ` “${note}”` : ""} Check the details or talk to them.`,
+      type: "biz_rent",
+      chargeId,
+      read: false,
+      createdAt: FieldValue().serverTimestamp(),
+    }).catch(() => {});
+  }
+  return { success: true, decision };
 });
 
 // Daily 09:00 in Dar es Salaam: remind students 3 days before, on the day,

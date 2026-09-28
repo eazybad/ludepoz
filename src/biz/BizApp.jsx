@@ -27,7 +27,8 @@ import "./Biz.css";
 import { t } from "./bizCopy";
 import { auth, db, BIZ_ADMIN_UIDS } from "./bizFirebase";
 import {
-  ONBOARDING_STEPS,
+  ALL_STEP_IDS,
+  stepsFor,
   canSubmitForReview,
   computeSteps,
   createOperator,
@@ -42,10 +43,10 @@ import { ApplicationDetail, ApplicationsList, useOperatorApplications } from "./
 import { applicationsUnlocked } from "./bizService";
 import { CreateLeaseForm, LeasePage, LeaseTemplateEditor, LeasesList, useOperatorLeases } from "./BizLeases";
 import { OperatorRent, useOperatorCharges } from "./BizRent";
-import { isOverdue } from "./bizService";
+import { isOverdue, pendingClaim } from "./bizService";
 import { FeesBanner, FeesPage, useOperatorInvoices, usePricing } from "./BizFees";
 import { BizOverview } from "./BizDashboard";
-import { DEMO_OPERATOR_ID, isBizDemo } from "./bizDemo";
+import { DEMO_OPERATOR_ID, demoParam, isBizDemo } from "./bizDemo";
 
 const DEMO = isBizDemo();
 const BASE = DEMO ? "/biz/demo" : "/biz";
@@ -68,7 +69,7 @@ function readDark() {
 function parsePath(pathname) {
   const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean); // ["biz", ...]
   if (parts[1] === "demo") parts.splice(1, 1);
-  if (parts[1] === "step" && ONBOARDING_STEPS.includes(parts[2])) return { view: "step", stepId: parts[2] };
+  if (parts[1] === "step" && ALL_STEP_IDS.includes(parts[2])) return { view: "step", stepId: parts[2] };
   if (parts[1] === "admin") return parts[2] ? { view: "adminDetail", operatorId: parts[2] } : { view: "admin" };
   if (parts[1] === "applications" && parts[2] && parts[3] === "lease") return { view: "createLease", applicationId: parts[2] };
   if (parts[1] === "applications") return parts[2] ? { view: "applicationDetail", applicationId: parts[2] } : { view: "applications" };
@@ -201,7 +202,8 @@ export function Home({ lang, operator, onNavigate, newApplications = 0, feesDue 
   };
 
   // First step that still needs the operator — highlighted as "next".
-  const nextStep = ONBOARDING_STEPS.find(id => steps[id] === "todo");
+  const stepIds = stepsFor(operator);
+  const nextStep = stepIds.find(id => steps[id] === "todo");
 
   return (
     <>
@@ -214,7 +216,7 @@ export function Home({ lang, operator, onNavigate, newApplications = 0, feesDue 
         <p className="biz-muted">{t(lang, "progress", { percent: pct })} · {t(lang, "tagline")}</p>
       </div>
 
-      {status === "live" && <div className="biz-banner success">{t(lang, "liveBanner")}</div>}
+      {status === "live" && <div className="biz-banner success">{t(lang, operator.paymentMode === "direct" ? "liveBannerDirect" : "liveBanner")}</div>}
       {status === "suspended" && <div className="biz-banner danger">{t(lang, "suspendedBanner")}</div>}
       {status === "needs_changes" && (
         <div className="biz-banner danger">
@@ -250,7 +252,7 @@ export function Home({ lang, operator, onNavigate, newApplications = 0, feesDue 
       <div className="biz-card">
         <h2 className="biz-h2">{t(lang, "checklistTitle")}</h2>
         <ol className="biz-steps">
-          {ONBOARDING_STEPS.map((id, index) => {
+          {stepIds.map((id, index) => {
             const state = steps[id];
             return (
               <li key={id}>
@@ -298,7 +300,8 @@ export default function BizApp() {
   const [lang, setLang] = useState(readLang);
   const [dark] = useState(readDark);
   const [route, setRoute] = useState(() => parsePath(window.location.pathname));
-  const [user, setUser] = useState(DEMO ? { uid: DEMO_OPERATOR_ID } : undefined); // undefined = still checking
+  // Demo: the owner's view, or ?as=student for the tenant of the first lease.
+  const [user, setUser] = useState(DEMO ? { uid: demoParam("as") === "student" ? "demoS3" : DEMO_OPERATOR_ID } : undefined); // undefined = still checking
   const [operator, setOperator] = useState(undefined);
   const [loadError, setLoadError] = useState("");
 
@@ -308,7 +311,8 @@ export default function BizApp() {
   const leases = useOperatorLeases(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
   const waitingLeases = (leases || []).filter(l => ["sent", "pending_fee"].includes(l.status)).length;
   const charges = useOperatorCharges(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
-  const overdueCharges = (charges || []).filter(c => isOverdue(c)).length;
+  const claimsToConfirm = (charges || []).filter(c => pendingClaim(c)).length;
+  const overdueCharges = (charges || []).filter(c => isOverdue(c)).length + claimsToConfirm;
   const pricing = usePricing();
   const invoices = useOperatorInvoices(operator?.id, Boolean(operator && applicationsUnlocked(operator)));
   const feesDue = (invoices || []).filter(i => i.status === "due").length;
@@ -396,7 +400,7 @@ export default function BizApp() {
       </>
     );
   } else if (route.view === "rent") {
-    body = <OperatorRent operator={operator} lang={lang} charges={charges} leases={leases} />;
+    body = <OperatorRent operator={operator} lang={lang} charges={charges} leases={leases} onNavigate={navigate} />;
   } else if (route.view === "fees") {
     body = (
       <>

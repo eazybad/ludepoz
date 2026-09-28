@@ -332,6 +332,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Private landlord contact for a public room / property. Only the
+    // listing's owner and the admin can read it; the owner creates it with
+    // their own uid and can update it (never move it to someone else).
+    match /contacts/{contactId} {
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.ownerId == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.kind in ['room', 'property']
+        && contactId == request.resource.data.kind + '_' + request.resource.data.refId
+        && request.resource.data.landlordPhone is string
+        && request.resource.data.landlordPhone.size() <= 30;
+      allow update: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.refId == resource.data.refId
+        && request.resource.data.landlordPhone is string
+        && request.resource.data.landlordPhone.size() <= 30;
+      allow delete: if isAdmin()
+        || (request.auth != null && resource.data.ownerId == request.auth.uid);
+    }
+
     match /rooms/{roomId} {
       // A room's landlordVerified badge must always match the poster's
       // actual, admin-approved status — never a value the client claims on

@@ -15,7 +15,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 import { db, functions, storage } from "./bizFirebase";
-import { DemoError, demoData, demoDeliver, isBizDemo } from "./bizDemo";
+import { DemoError, demoData, demoDeliver, demoParam, isBizDemo } from "./bizDemo";
 
 // /biz/demo serves sample data from bizDemo.js; writes are refused politely.
 const DEMO = isBizDemo();
@@ -23,12 +23,14 @@ const demoRefuse = () => Promise.reject(new DemoError());
 
 // ─── Constants ───
 
-export const BUSINESS_TYPES = ["company", "sole_proprietor", "individual"];
+// "unregistered" = not registered yet: students pay the owner's own number
+// directly and the owner confirms (no pawaPay until they register).
+export const BUSINESS_TYPES = ["company", "sole_proprietor", "individual", "unregistered"];
 
 export const DOCUMENT_TYPES = [
   { id: "brela", requiredFor: ["company", "sole_proprietor"] },
   { id: "tin", requiredFor: ["company", "sole_proprietor", "individual"] },
-  { id: "ownerId", requiredFor: ["company", "sole_proprietor", "individual"] },
+  { id: "ownerId", requiredFor: ["company", "sole_proprietor", "individual", "unregistered"] },
   { id: "licence", requiredFor: [] },
 ];
 
@@ -44,6 +46,29 @@ export const TZ_PROVIDERS = [
 ];
 
 export const ONBOARDING_STEPS = ["profile", "documents", "settlement", "application", "sandbox", "test", "live"];
+// Hostels that aren't registered yet: no pawaPay steps; students pay the
+// owner's own number (payTo) and the owner confirms each payment.
+export const MANUAL_STEPS = ["profile", "documents", "payto"];
+export const ALL_STEP_IDS = [...ONBOARDING_STEPS, "payto"];
+
+export function isManualOperator(operator) {
+  return operator?.profile?.businessType === "unregistered";
+}
+
+export function stepsFor(operator) {
+  return isManualOperator(operator) ? MANUAL_STEPS : ONBOARDING_STEPS;
+}
+
+export const PAY_TO_METHODS = ["mobile_money", "lipa", "bank"];
+
+export function payToMissing(operator) {
+  const p = operator?.payTo || {};
+  const missing = [];
+  if (!PAY_TO_METHODS.includes(p.method)) missing.push("method");
+  if (!String(p.number || "").trim()) missing.push("number");
+  if (!String(p.name || "").trim()) missing.push("name");
+  return missing;
+}
 
 const MAX_DOC_BYTES = 10 * 1024 * 1024;
 
@@ -62,7 +87,9 @@ function filled(value) {
 export function profileMissing(operator) {
   const p = operator?.profile || {};
   const missing = [];
-  ["businessName", "businessType", "contactName", "contactPhone", "region", "area", "tin"].forEach(key => {
+  const keys = ["businessName", "businessType", "contactName", "contactPhone", "region", "area"];
+  if (p.businessType !== "unregistered") keys.push("tin");
+  keys.forEach(key => {
     if (!filled(p[key])) missing.push(key);
   });
   if (["company", "sole_proprietor"].includes(p.businessType) && !filled(p.brelaNumber)) {
@@ -102,6 +129,11 @@ export function computeSteps(operator) {
     ? "todo"
     : docsReview === "approved" ? "done" : "waiting";
 
+  if (isManualOperator(operator)) {
+    steps.payto = payToMissing(operator).length === 0 ? "done" : "todo";
+    return steps;
+  }
+
   steps.settlement = settlementMissing(operator).length === 0 ? "done" : "todo";
 
   const app = operator?.pawapayApplication?.status || "not_started";
@@ -121,7 +153,7 @@ export function computeSteps(operator) {
 }
 
 export function progressPercent(steps) {
-  const values = ONBOARDING_STEPS.map(id => steps[id]);
+  const values = Object.values(steps);
   const score = values.reduce((sum, s) => sum + (s === "done" ? 1 : s === "waiting" ? 0.5 : 0), 0);
   return Math.round((score / values.length) * 100);
 }
@@ -130,6 +162,11 @@ export function progressPercent(steps) {
 // checking the business while the operator waits on pawaPay.
 export function canSubmitForReview(operator) {
   if (!["draft", "needs_changes"].includes(operator?.status || "draft")) return false;
+  if (isManualOperator(operator)) {
+    return profileMissing(operator).length === 0
+      && documentsMissing(operator).length === 0
+      && payToMissing(operator).length === 0;
+  }
   return profileMissing(operator).length === 0
     && documentsMissing(operator).length === 0
     && settlementMissing(operator).length === 0;
@@ -195,6 +232,14 @@ export function saveProfile(operatorId, profile) {
   if (DEMO) return demoRefuse();
   return updateDoc(operatorDocRef(operatorId), {
     profile: cleanObject(profile),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function savePayTo(operatorId, payTo) {
+  if (DEMO) return demoRefuse();
+  return updateDoc(operatorDocRef(operatorId), {
+    payTo: cleanObject(payTo),
     updatedAt: serverTimestamp(),
   });
 }
@@ -432,7 +477,7 @@ export function subscribeDeposit(depositId, onData, onError) {
 }
 
 export async function getBizPublic(operatorId) {
-  if (DEMO) return { businessName: demoData().operator.profile.businessName, onlinePayments: "live" };
+  if (DEMO) return { businessName: demoData().operator.profile.businessName, onlinePayments: demoParam("pay") === "direct" ? "" : "live" };
   const snap = await getDoc(doc(db, "bizPublic", operatorId));
   return snap.exists() ? snap.data() : null;
 }
@@ -636,3 +681,44 @@ export function invoiceState(inv, graceDays = 14, today = todayIso()) {
 export const payInvoice = ({ invoiceId, phone, provider }) => call("bizPayInvoice", { invoiceId, phone, provider });
 export const refreshPlatformDeposit = (depositId) => call("bizRefreshPlatformDeposit", { depositId });
 export const adminWaiveInvoice = (invoiceId, note) => call("bizAdminWaiveInvoice", { invoiceId, note });
+
+// ─── Direct payments (owner's own number; owner confirms) ───
+export const payInstructions = (chargeId) => {
+  if (DEMO) {
+    const c = demoData().charges.find(x => x.id === chargeId);
+    return Promise.resolve({ available: true, ...demoData().operator.payTo, amount: c ? c.amount - c.amountPaid : 0, reference: c?.leaseReference || "" });
+  }
+  return call("bizPayInstructions", { chargeId });
+};
+export const reportPayment = ({ chargeId, amount, reference, paidOn, method, proofPath }) => call("bizReportPayment", { chargeId, amount, reference, paidOn, method, proofPath });
+
+// Screenshot for "I've paid": compressed on the phone, stored at
+// biz/{operatorId}/proofs/{studentUid}/… (only those two + admin can read it).
+export async function uploadPaymentProof(operatorId, studentUid, file) {
+  if (DEMO) return demoRefuse();
+  if (!file || !String(file.type || "").startsWith("image/")) throw new Error("Choose a photo or screenshot.");
+  let blob = file;
+  try {
+    const { compressImage, COMPRESSION_PRESETS } = await import("../imageCompression");
+    const out = await compressImage(file, COMPRESSION_PRESETS.receipt);
+    if (out?.file) blob = out.file;
+  } catch (_) { /* upload the original if compression fails */ }
+  const path = `biz/${operatorId}/proofs/${studentUid}/${Date.now()}.jpg`;
+  await uploadBytes(ref(storage, path), blob, { contentType: blob.type || "image/jpeg" });
+  return path;
+}
+
+export function proofUrl(path) {
+  if (DEMO) return demoRefuse();
+  return getDownloadURL(ref(storage, path));
+}
+export const reviewClaim = ({ chargeId, claimId, decision, note }) => call("bizReviewClaim", { chargeId, claimId, decision, note });
+
+export function pendingClaim(charge) {
+  return (charge?.claims || []).find(c => c.status === "pending") || null;
+}
+
+export function lastClaim(charge) {
+  const list = charge?.claims || [];
+  return list.length ? list[list.length - 1] : null;
+}

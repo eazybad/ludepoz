@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { t } from "./bizCopy";
 import {
-  ONBOARDING_STEPS,
+  stepsFor,
   adminReview,
   computeSteps,
   documentUrl,
@@ -138,7 +138,7 @@ export function BizAdminDetail({ lang, operatorId, onBack }) {
       <div className="biz-card">
         <h2 className="biz-h2">{t(lang, "checklistTitle")}</h2>
         <dl className="biz-kv">
-          {ONBOARDING_STEPS.map(id => (
+          {stepsFor(op).map(id => (
             <div key={id} style={{ display: "contents" }}>
               <dt>{t(lang, `steps.${id}.title`)}</dt>
               <dd><span className={`biz-step-state ${steps[id]}`}>{t(lang, `stepState.${steps[id]}`)}</span></dd>
@@ -188,6 +188,7 @@ export function BizAdminDetail({ lang, operatorId, onBack }) {
           <dt>Test</dt><dd>{op.pawapay?.testDeposit ? `${op.pawapay.testDeposit.status} · TZS ${op.pawapay.testDeposit.amount}` : "—"}</dd>
           <dt>Production</dt><dd>{op.pawapay?.production?.connected ? `✓ ${op.pawapay.production.companyName || ""} …${op.pawapay.production.tokenLast4 || ""}` : "—"}</dd>
           <dt>Payment mode</dt><dd>{op.paymentMode || "operator_own"}</dd>
+          <dt>{t(lang, "payToTitle")}</dt><dd>{op.payTo?.number ? `${t(lang, `payToMethods.${op.payTo.method}`)} · ${op.payTo.provider || ""} ${op.payTo.number} · ${op.payTo.name || ""}` : "—"}</dd>
         </dl>
       </div>
 

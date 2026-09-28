@@ -43,7 +43,7 @@ const BIZ_ADMIN_UIDS = new Set(["LTrwUHH6utQJGiw4lcsKflzXvPR2"]);
 // would just reconnect), so set it once and keep it.
 const BIZ_CREDENTIALS_KEY = defineSecret("BIZ_CREDENTIALS_KEY");
 
-const PAYMENT_MODES = { OPERATOR_OWN: "operator_own", KAMPASIKA_PLATFORM: "kampasika_platform" };
+const PAYMENT_MODES = { OPERATOR_OWN: "operator_own", DIRECT: "direct", KAMPASIKA_PLATFORM: "kampasika_platform" };
 const TEST_DEPOSIT_MAX_TZS = 5000;
 
 const FieldValue = () => admin.firestore.FieldValue;
@@ -149,7 +149,7 @@ async function recordDepositStatus(depositId, deposit, extra = {}) {
 // operators, the "kampasika_platform" branch goes here.
 async function createDepositForOperator({ operatorId, operator, environment, purpose, phone, provider, amount, customerMessage, createdBy, extraMetadata = [], beforeSend, record = {} }) {
   const mode = operator.paymentMode || PAYMENT_MODES.OPERATOR_OWN;
-  if (mode !== PAYMENT_MODES.OPERATOR_OWN) {
+  if (mode !== PAYMENT_MODES.OPERATOR_OWN && mode !== PAYMENT_MODES.DIRECT) {
     throw new HttpsError("failed-precondition", "Collecting through Kampasika's own account isn't switched on yet.");
   }
 
@@ -433,12 +433,18 @@ exports.bizAdminReview = onCall(async (request) => {
     if (operator.review?.documents !== "approved") {
       throw new HttpsError("failed-precondition", "Approve the documents first.");
     }
-    if (!operator.pawapay?.production?.connected) {
+    // Hostels that aren't registered yet go live on direct payments (students
+    // pay the owner's own number, the owner confirms) — no pawaPay needed.
+    const manual = operator.profile?.businessType === "unregistered";
+    if (!manual && !operator.pawapay?.production?.connected) {
       throw new HttpsError("failed-precondition", "The business hasn't connected a production pawaPay token yet.");
+    }
+    if (manual && !operator.payTo?.number) {
+      throw new HttpsError("failed-precondition", "The business hasn't added the number students pay into yet.");
     }
     update.status = "live";
     update.liveAt = FieldValue().serverTimestamp();
-    update.paymentMode = operator.paymentMode || PAYMENT_MODES.OPERATOR_OWN;
+    update.paymentMode = manual && !operator.pawapay?.production?.connected ? PAYMENT_MODES.DIRECT : (operator.paymentMode || PAYMENT_MODES.OPERATOR_OWN);
     update.review = { ...(operator.review || {}), live: "approved", ...stamp };
   } else if (action === "suspend") {
     update.status = "suspended";
@@ -454,7 +460,9 @@ exports.bizAdminReview = onCall(async (request) => {
   const messages = {
     approve_documents: "Your Kampasika Biz documents were approved.",
     request_changes: `Kampasika Biz needs a few changes to your business profile.${note ? ` ${note}` : ""}`,
-    set_live: "Your business is live on Kampasika Biz. You can now collect rent through your own pawaPay account.",
+    set_live: operator.profile?.businessType === "unregistered"
+      ? "Your business is live on Kampasika Biz. Students pay rent to your own number and you confirm each payment in Rent."
+      : "Your business is live on Kampasika Biz. You can now collect rent through your own pawaPay account.",
     suspend: `Your Kampasika Biz account has been paused.${note ? ` ${note}` : ""}`,
     reopen: "Your Kampasika Biz profile is back in review.",
   };

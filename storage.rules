@@ -95,6 +95,18 @@ service firebase.storage {
         );
     }
 
+    // ─── Kampasika Biz: payment screenshots a tenant attaches to "I've paid" ───
+    // Path carries both parties, so no database lookup is needed: the tenant
+    // uploads their own, the landlord of that hostel and the admin can read.
+    match /biz/{operatorId}/proofs/{studentUid}/{fileName} {
+      allow read: if signedIn()
+        && (request.auth.uid == operatorId || request.auth.uid == studentUid || request.auth.uid == 'LTrwUHH6utQJGiw4lcsKflzXvPR2');
+      allow write: if signedIn()
+        && request.auth.uid == studentUid
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // Catch-all for older paths. Storage, like Firestore, allows access if
     // ANY matching rule allows it, so this excludes biz/ explicitly —
     // otherwise operator documents would be publicly readable.

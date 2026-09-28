@@ -788,3 +788,23 @@ button.bd-kpi:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(
   .bd-kpi-label { font-size: 11.5px; }
   .bd-list-end .biz-pill { white-space: normal; text-align: right; max-width: 120px; }
 }
+
+/* ═══ Direct payments (owner's own number) ═══ */
+.biz-claim {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--warning-tint); border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 12px; padding: 10px 12px; margin: 0 0 12px;
+}
+.biz-claim-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.biz-direct { border-top: 1px dashed var(--border-color); padding: 12px 0 14px; }
+.biz-direct-box { background: var(--mint-tint); border: 1px solid var(--accent-teal-tint); border-radius: 12px; padding: 12px 14px; }
+.biz-direct-number { font-size: 22px; font-weight: 900; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.biz-pill.charge-confirm { background: #fef3c7; color: #92400e; }
+.biz-proof { display: flex; align-items: center; gap: 12px; }
+.biz-proof img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border-color); }
+.biz-proof-pick {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1.5px dashed var(--border-color); border-radius: 12px; padding: 14px;
+  font-size: 14px; font-weight: 700; color: var(--text-primary); cursor: pointer; background: var(--surface-bg);
+}
+.biz-proof-pick:hover { border-color: var(--accent-teal-bright); }

@@ -10,7 +10,14 @@ import {
   isOverdue,
   loadOperatorRooms,
   payCharge,
+  payInstructions,
+  pendingClaim,
+  lastClaim,
   recordPayment,
+  proofUrl,
+  reportPayment,
+  reviewClaim,
+  uploadPaymentProof,
   refreshDeposit,
   setSandboxRent,
   subscribeDeposit,
@@ -58,6 +65,8 @@ function ChargeRow({ charge, lang, today, manage }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const status = displayStatus(charge, today);
+  const claim = pendingClaim(charge);
+  const [rejectNote, setRejectNote] = useState("");
 
   const run = async (fn) => {
     setBusy(true);
@@ -78,6 +87,35 @@ function ChargeRow({ charge, lang, today, manage }) {
           <span className={`biz-pill charge-${status}`}>{t(lang, `chargeStatus.${status}`)}</span>
         </div>
       </button>
+
+      {manage && claim && (
+        <div className="biz-claim">
+          <div className="biz-claim-text">
+            <strong>📩 {t(lang, "claimTitle", { amount: tzs(claim.amount) })}</strong>
+            <span className="biz-small">{t(lang, "claimDetails", { code: claim.reference || "—", date: fmtDate(claim.paidOn, lang) })}</span>
+            {claim.proofPath && (
+              <button type="button" className="bd-link" style={{ padding: 0, textAlign: "left", marginTop: 2 }} onClick={async () => {
+                try { window.open(await proofUrl(claim.proofPath), "_blank", "noopener"); } catch (err) { setError(errorMessage(err, t(lang, "genericError"))); }
+              }}>📎 {t(lang, "proofView")}</button>
+            )}
+          </div>
+          {mode === "rejectClaim" ? (
+            <div style={{ width: "100%" }}>
+              <input className="biz-input" value={rejectNote} onChange={e => setRejectNote(e.target.value)} placeholder={t(lang, "claimRejectNote")} maxLength={300} />
+              <div className="biz-actions" style={{ marginTop: 8 }}>
+                <button type="button" className="biz-btn danger small" disabled={busy} onClick={() => run(() => reviewClaim({ chargeId: charge.id, claimId: claim.id, decision: "reject", note: rejectNote }))}>{t(lang, "claimReject")}</button>
+                <button type="button" className="biz-btn ghost small" onClick={() => setMode("")}>{t(lang, "cancel")}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="biz-actions" style={{ marginTop: 0 }}>
+              <button type="button" className="biz-btn primary small" disabled={busy} onClick={() => run(() => reviewClaim({ chargeId: charge.id, claimId: claim.id, decision: "confirm" }))}>✓ {t(lang, "claimConfirm")}</button>
+              <button type="button" className="biz-btn ghost small" disabled={busy} onClick={() => setMode("rejectClaim")}>{t(lang, "claimReject")}</button>
+            </div>
+          )}
+          {!open && error && <div className="biz-error">{error}</div>}
+        </div>
+      )}
 
       {open && (
         <div className="biz-charge-detail">
@@ -146,7 +184,7 @@ function ChargeRow({ charge, lang, today, manage }) {
 }
 
 // ─── Operator: Rent tab ───
-export function OperatorRent({ operator, lang, charges, leases }) {
+export function OperatorRent({ operator, lang, charges, leases, onNavigate }) {
   const [filter, setFilter] = useState("overdue");
   const [roomsData, setRoomsData] = useState(null);
   const [toggling, setToggling] = useState(false);
@@ -187,7 +225,14 @@ export function OperatorRent({ operator, lang, charges, leases }) {
       .map(g => ({ ...g, total: g.rooms.length, occupied: g.rooms.filter(r => occupiedRooms.has(r.id)).length }));
   }, [roomsData, leases, today, lang]);
 
+  const toConfirm = (charges || []).filter(c => pendingClaim(c)).length;
+  // Open on "To confirm" when students are waiting for the owner.
+  const [autoConfirm, setAutoConfirm] = useState(true);
+  useEffect(() => {
+    if (autoConfirm && toConfirm > 0) { setFilter("confirm"); setAutoConfirm(false); }
+  }, [autoConfirm, toConfirm]);
   const filtered = (charges || []).filter(c => {
+    if (filter === "confirm") return Boolean(pendingClaim(c));
     if (filter === "overdue") return isOverdue(c, today);
     if (filter === "soon") return isChargeOpen(c) && c.dueDate >= today && c.dueDate <= addDaysIso(today, 14);
     if (filter === "open") return isChargeOpen(c);
@@ -202,7 +247,13 @@ export function OperatorRent({ operator, lang, charges, leases }) {
   return (
     <>
       <h1 className="biz-h1">{t(lang, "rentTitle")}</h1>
-      <p className="biz-muted">{t(lang, "rentIntro")}</p>
+      <p className="biz-muted">{t(lang, operator.paymentMode === "direct" ? "rentIntroDirect" : "rentIntro")}</p>
+      {toConfirm > 0 && (
+        <button type="button" className="biz-banner warning" style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }} onClick={() => setFilter("confirm")}>
+          <strong>📩 {t(lang, "claimsBanner", { count: toConfirm })}</strong>
+          <div className="biz-small">{t(lang, "claimsBannerBody")} ›</div>
+        </button>
+      )}
 
       <div className="biz-tiles">
         <div className="biz-tile"><span>{t(lang, "tileCollected")}</span><strong>{tzs(stats.collected)}</strong></div>
@@ -227,8 +278,23 @@ export function OperatorRent({ operator, lang, charges, leases }) {
       </div>
 
       <div className="biz-card">
+        <h2 className="biz-h2">{t(lang, "payToTitle")}</h2>
+        {operator.payTo?.number ? (
+          <p className="biz-small">
+            <strong>{t(lang, `payToMethods.${operator.payTo.method}`)} · {operator.payTo.provider} {operator.payTo.number}</strong> · {operator.payTo.name}
+            <span style={{ display: "block", marginTop: 4 }}>{t(lang, "payToCardBody")}</span>
+          </p>
+        ) : <p className="biz-small">{t(lang, "payToCardEmpty")}</p>}
+        {onNavigate && (
+          <div className="biz-actions" style={{ marginTop: 10 }}>
+            <button type="button" className="biz-btn ghost small" onClick={() => onNavigate("/biz/step/payto")}>{operator.payTo?.number ? t(lang, "payToEdit") : t(lang, "payToAdd")}</button>
+          </div>
+        )}
+      </div>
+
+      <div className="biz-card">
         <h2 className="biz-h2">{t(lang, "onlinePayTitle")}</h2>
-        <p className="biz-small">{live ? t(lang, "onlinePayLive") : t(lang, "onlinePayOff")}</p>
+        <p className="biz-small">{live ? t(lang, "onlinePayLive") : operator.paymentMode === "direct" ? t(lang, "onlinePayDirect") : t(lang, "onlinePayOff")}</p>
         {canTest && (
           <label className="biz-check">
             <input type="checkbox" checked={sandboxOn} disabled={toggling} onChange={async () => { setToggling(true); try { await setSandboxRent(operator.id, !sandboxOn); } finally { setToggling(false); } }} />
@@ -238,8 +304,8 @@ export function OperatorRent({ operator, lang, charges, leases }) {
       </div>
 
       <div className="biz-tabs">
-        {["overdue", "soon", "open", "paid"].map(f => (
-          <button key={f} type="button" className={`biz-tab ${filter === f ? "on" : ""}`} onClick={() => setFilter(f)}>{t(lang, `chargeFilters.${f}`)}</button>
+        {[...(toConfirm > 0 ? ["confirm"] : []), "overdue", "soon", "open", "paid"].map(f => (
+          <button key={f} type="button" className={`biz-tab ${filter === f ? "on" : ""}`} onClick={() => setFilter(f)}>{t(lang, `chargeFilters.${f}`)}{f === "confirm" ? ` · ${toConfirm}` : ""}</button>
         ))}
       </div>
       {charges === null && <div className="biz-center"><div><div className="biz-spinner" />{t(lang, "loading")}</div></div>}
@@ -320,12 +386,106 @@ function PayForm({ charge, lang, mode, onClose }) {
   );
 }
 
+// ─── Student: pay the landlord directly, then report it ───
+function DirectPay({ charge, lang, info, onClose }) {
+  const today = todayIso();
+  const [form, setForm] = useState({ amount: String(chargeBalance(charge)), reference: "", paidOn: today });
+  const [proof, setProof] = useState(null); // { file, preview }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  useEffect(() => () => { if (proof?.preview) URL.revokeObjectURL(proof.preview); }, [proof]);
+
+  const pickProof = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError(t(lang, "proofNotImage")); return; }
+    setError("");
+    setProof({ file, preview: URL.createObjectURL(file) });
+  };
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (form.reference.trim().length < 4 && !proof) { setError(t(lang, "proofOrCode")); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const proofPath = proof ? await uploadPaymentProof(charge.operatorId, charge.studentUid, proof.file) : "";
+      await reportPayment({ chargeId: charge.id, amount: Number(form.amount), reference: form.reference.trim(), paidOn: form.paidOn, method: info?.method, proofPath });
+      setDone(true);
+    } catch (err) {
+      setError(errorMessage(err, t(lang, "genericError")));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) return <div className="biz-banner success">{t(lang, "reportDone")}</div>;
+  return (
+    <div className="biz-direct">
+      {info?.available ? (
+        <div className="biz-direct-box">
+          <div className="biz-label" style={{ marginBottom: 4 }}>{t(lang, "directPayTo")}</div>
+          <div className="biz-direct-number">{info.number}</div>
+          <div className="biz-small">{t(lang, `payToMethods.${info.method}`)} · {info.provider} · {info.name}</div>
+          <dl className="biz-kv" style={{ marginTop: 10 }}>
+            <dt>{t(lang, "amount")}</dt><dd><strong>{tzs(chargeBalance(charge))}</strong></dd>
+            <dt>{t(lang, "directReference")}</dt><dd>{info.reference}</dd>
+          </dl>
+          {info.note && <div className="biz-small" style={{ marginTop: 6 }}>{info.note}</div>}
+        </div>
+      ) : info && <div className="biz-banner info" style={{ marginTop: 0 }}>{t(lang, "directNoNumber")}</div>}
+      <form onSubmit={send}>
+        <div className="biz-label" style={{ marginTop: 12 }}>{t(lang, "reportTitle")}</div>
+        <div className="biz-row">
+          <label className="biz-field" style={{ marginTop: 6 }}><span className="biz-label">{t(lang, "reportCode")}</span>
+            <input className="biz-input" value={form.reference} onChange={e => setForm(p => ({ ...p, reference: e.target.value.toUpperCase() }))} placeholder="e.g. QK12AB34CD" maxLength={40} /></label>
+          <label className="biz-field" style={{ marginTop: 6 }}><span className="biz-label">{t(lang, "payAmount")}</span>
+            <input className="biz-input" inputMode="numeric" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value.replace(/[^\d]/g, "") }))} required /></label>
+        </div>
+        <label className="biz-field"><span className="biz-label">{t(lang, "paidOn")}</span>
+          <input className="biz-input" type="date" max={today} value={form.paidOn} onChange={e => setForm(p => ({ ...p, paidOn: e.target.value }))} /></label>
+        <div className="biz-field">
+          <span className="biz-label">{t(lang, "proofLabel")} <span className="opt">({t(lang, "optional")})</span></span>
+          {proof ? (
+            <div className="biz-proof">
+              <img src={proof.preview} alt="" />
+              <button type="button" className="biz-btn ghost small" onClick={() => setProof(null)}>{t(lang, "proofRemove")}</button>
+            </div>
+          ) : (
+            <label className="biz-proof-pick">
+              📎 {t(lang, "proofAttach")}
+              <input type="file" accept="image/*" onChange={pickProof} style={{ display: "none" }} />
+            </label>
+          )}
+          <span className="biz-small" style={{ display: "block", marginTop: 5 }}>{t(lang, "proofHint")}</span>
+        </div>
+        {error && <div className="biz-error">{error}</div>}
+        <div className="biz-actions">
+          <button className="biz-btn primary" disabled={busy}>{busy ? t(lang, "sending") : `✓ ${t(lang, "reportButton")}`}</button>
+          <button type="button" className="biz-btn ghost" onClick={onClose}>{t(lang, "cancel")}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─── On the lease page: the rent schedule (both parties; students can pay) ───
 export function LeaseCharges({ lease, user, lang, isStudent }) {
   const [charges, setCharges] = useState(null);
   const [mode, setMode] = useState(undefined); // "live" | "test" | "" once loaded
   const [paying, setPaying] = useState("");
+  const [direct, setDirect] = useState(null); // pay-to details, loaded on first use
   const today = todayIso();
+
+  const openDirect = async (charge) => {
+    setPaying(charge.id);
+    if (!direct) {
+      try { setDirect(await payInstructions(charge.id)); } catch (_) { setDirect({ available: false }); }
+    }
+  };
 
   useEffect(() => {
     if (!lease?.id || !user) return undefined;
@@ -354,10 +514,27 @@ export function LeaseCharges({ lease, user, lang, isStudent }) {
         <h2 className="biz-h2">{t(lang, "rentScheduleTitle")}</h2>
         <span className="biz-small">{t(lang, "totalDue")}: <strong>{tzs(outstanding)}</strong></span>
       </div>
-      {isStudent && mode === "" && <div className="biz-banner info">{t(lang, "payNotAvailable")}</div>}
+      {isStudent && mode === "" && <div className="biz-banner info">{t(lang, "payDirectIntro")}</div>}
       {charges.map(c => (
         <div key={c.id}>
           <ChargeRow charge={c} lang={lang} today={today} manage={false} />
+          {isChargeOpen(c) && pendingClaim(c) && (
+            <div className="biz-banner warning" style={{ marginTop: 0, marginBottom: 8 }}>
+              {isStudent ? t(lang, "claimWaitingStudent", { amount: tzs(pendingClaim(c).amount), code: pendingClaim(c).reference || t(lang, "proofShort") }) : t(lang, "claimWaitingOwner", { amount: tzs(pendingClaim(c).amount) })}
+            </div>
+          )}
+          {isStudent && isChargeOpen(c) && !pendingClaim(c) && lastClaim(c)?.status === "rejected" && (
+            <div className="biz-banner danger" style={{ marginTop: 0, marginBottom: 8 }}>
+              {t(lang, "claimRejectedStudent", { code: lastClaim(c).reference || t(lang, "proofShort") })}{lastClaim(c).note ? ` — “${lastClaim(c).note}”` : ""}
+            </div>
+          )}
+          {isStudent && mode === "" && isChargeOpen(c) && !pendingClaim(c) && (
+            paying === c.id
+              ? <DirectPay charge={c} lang={lang} info={direct} onClose={() => setPaying("")} />
+              : <div className="biz-actions" style={{ marginTop: 0, marginBottom: 8, justifyContent: "flex-end" }}>
+                  <button type="button" className="biz-btn primary small" onClick={() => openDirect(c)}>💵 {t(lang, "payDirectButton", { amount: tzs(chargeBalance(c)) })}</button>
+                </div>
+          )}
           {isStudent && mode && isChargeOpen(c) && (
             paying === c.id
               ? <PayForm charge={c} lang={lang} mode={mode} onClose={() => setPaying("")} />

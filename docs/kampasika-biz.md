@@ -177,6 +177,29 @@ creates charges):
 firebase deploy --only functions:bizPayCharge,functions:bizRecordPayment,functions:bizWaiveCharge,functions:bizRentReminders,functions:bizSignLease,functions:bizRefreshDeposit,functions:bizPawapayCallback,functions:bizSyncOperatorPublic
 ```
 
+## Hostels that aren't registered yet (direct payments)
+
+Many small hostels have no BRELA / TIN / pawaPay. They can still use all of Biz:
+
+- **Setup:** business type "Not registered yet — students pay me directly".
+  Only name, phone, area and the owner's ID are required (TIN optional), plus
+  step "Where students pay you" (`operators.payTo`: mobile money number, Lipa
+  number or bank account + the name students will see). Then submit for review.
+- **Go live:** the admin approves the documents and taps "Set live" — for these
+  hostels no pawaPay token is needed (`paymentMode: "direct"`).
+- **Paying:** on the lease the student sees "Pay TZS X directly" → the owner's
+  number, amount and reference (`bizPayInstructions`, only for the charge's
+  tenant). After paying from their own phone they tap "I've paid" with the
+  transaction code (`bizReportPayment` → `charge.claims`, one pending at a time).
+- **Confirming:** the owner gets a notification; Rent opens on "To confirm"
+  (also on the Overview). "Confirm received" records the payment on the charge
+  exactly once (`bizReviewClaim`); "Not received" tells the student why.
+- Cash is still recorded by the owner with "Record a payment".
+- Kampasika never touches this money. When the hostel registers later, it
+  connects pawaPay and online payments switch on — nothing else changes.
+
+Deploy: `firebase deploy --only functions:bizPayInstructions,functions:bizReportPayment,functions:bizReviewClaim,functions:bizAdminReview,functions:bizPayCharge`
+
 ## Kampasika's fees (revenue)
 
 The Tanzanian norm is that the tenant pays the finder (dalali), so owners

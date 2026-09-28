@@ -89,6 +89,7 @@ export function demoData() {
       testDeposit: { status: "paid" },
     },
     settings: { acceptingApplications: true },
+    payTo: { method: "lipa", provider: "M-Pesa", number: "000 000", name: "MWENGE STUDENT HOSTELS", note: "Use your room number as the reference." },
     billing: { placements: 0 },
   };
 
@@ -233,6 +234,14 @@ export function demoData() {
     });
   });
 
+  // One tenant reported paying directly and waits for the owner to confirm.
+  const claimed = charges.find(c => c.leaseId === "demoL3" && c.type === "rent" && c.status !== "paid" && c.dueDate < today)
+    || charges.find(c => c.type === "rent" && c.status !== "paid" && c.dueDate < today);
+  if (claimed) {
+    claimed.claims = [{ id: "demoClaim1", amount: claimed.amount - claimed.amountPaid, reference: "QK7H2M9P1X", paidOn: iso(daysFromToday(-1)), method: "lipa", status: "pending", by: claimed.studentUid, at: daysFromToday(-1).toISOString() }];
+    claimed.pendingClaim = true;
+  }
+
   cache = {
     operator,
     properties,
@@ -255,4 +264,9 @@ export function demoData() {
 export function demoDeliver(value, onData) {
   const timer = setTimeout(() => onData(typeof value === "function" ? value() : value), 120);
   return () => clearTimeout(timer);
+}
+
+// Demo-only switches for trying the student side: ?as=student&pay=direct
+export function demoParam(name) {
+  try { return new URLSearchParams(window.location.search).get(name); } catch (_) { return null; }
 }
