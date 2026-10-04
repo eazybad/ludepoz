@@ -12,7 +12,7 @@
 //   bizDecideApplication    operator (or admin) shortlists / approves / rejects.
 //
 // Data:
-//   bizPublic/{operatorId}        { businessName, area, nearUni, live, acceptingApplications }
+//   bizPublic/{operatorId}        { businessName, verified, area, nearUni, live, acceptingApplications }
 //                                 Public read; written only here.
 //   bizApplications/{appId}       one application. Readable by the student
 //                                 and the operator; written only here.
@@ -62,15 +62,14 @@ async function operatorIdForRoom(room) {
   return { operatorId: room.userId || room.listedBy || "", property: null };
 }
 
-// A business is shown to students once Kampasika has approved its
-// documents, as long as it isn't paused and hasn't switched applications off.
+// A business is shown to students as soon as it exists, unless Kampasika
+// paused it. "verified" = Kampasika checked its documents (optional badge).
 function publicRecordFor(operator) {
   if (!operator) return null;
-  const approved = operator.review?.documents === "approved";
-  const suspended = operator.status === "suspended";
-  if (!approved || suspended) return null;
+  if (operator.status === "suspended") return null;
   return {
     businessName: operator.profile?.businessName || "",
+    verified: operator.review?.documents === "approved",
     area: operator.profile?.area || "",
     region: operator.profile?.region || "",
     nearUni: operator.profile?.nearUni || "",

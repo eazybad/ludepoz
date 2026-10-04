@@ -9,7 +9,6 @@
 
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {
-  LANGUAGE_PROMPT,
   LANGUAGE_MATCHERS,
   WELCOME_MESSAGES_EN,
   WELCOME_MESSAGES_EN_ROOMS,
@@ -304,10 +303,11 @@ exports.sendDuePaymentReminders = onSchedule("every 1 minutes", async () => {
   return null;
 });
 
-// Fires once per new signup. Creates a real 1-on-1 conversation from the
-// official "Kampasika" account and sends the language-choice opener. The
-// rest of the welcome content is sent by onKampasikaWelcomeReply below,
-// once the person actually replies with their choice.
+// Fires once per new signup. Creates the 1-on-1 conversation with the
+// official "Kampasika" account but sends NO message — nothing unread, no
+// push the moment someone joins. The app shows the language-choice opener
+// when the chat is opened (localWelcome). The rest of the welcome is sent by
+// onKampasikaWelcomeReply below, once the person replies with their choice.
 exports.sendKampasikaWelcome = onDocumentCreated("users/{uid}", async (event) => {
   const uid = event.params.uid;
   if (uid === KAMPASIKA_OFFICIAL_UID) return null; // never message the bot account itself
@@ -316,7 +316,6 @@ exports.sendKampasikaWelcome = onDocumentCreated("users/{uid}", async (event) =>
   const userData = event.data?.data() || {};
   const conversationId = `kampasika_welcome_${uid}`;
   const convRef = db.collection("conversations").doc(conversationId);
-  const msgRef = convRef.collection("messages").doc();
 
   const batch = db.batch();
   batch.set(convRef, {
@@ -329,18 +328,11 @@ exports.sendKampasikaWelcome = onDocumentCreated("users/{uid}", async (event) =>
     sellerName: "Kampasika",
     sellerAvatar: null,
     welcomeStage: "awaiting_language",
-    lastMessage: LANGUAGE_PROMPT,
+    localWelcome: true,
+    lastMessage: "",
     lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
-    buyerUnread: 1,
+    buyerUnread: 0,
     sellerUnread: 0,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  batch.set(msgRef, {
-    senderId: KAMPASIKA_OFFICIAL_UID,
-    senderName: "Kampasika",
-    text: LANGUAGE_PROMPT,
-    status: "sent",
-    readBy: [KAMPASIKA_OFFICIAL_UID],
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
@@ -1924,7 +1916,7 @@ exports.backfillKampasikaWelcome = onCall(async (request) => {
     chunk.forEach(uid => {
       const userData = userDocsById.get(uid) || {};
       const convRef = db.collection("conversations").doc(`kampasika_welcome_${uid}`);
-      const msgRef = convRef.collection("messages").doc();
+      // Same as sendKampasikaWelcome: no message, the app shows the opener.
       batch.set(convRef, {
         source: "system",
         listingId: null,
@@ -1935,18 +1927,11 @@ exports.backfillKampasikaWelcome = onCall(async (request) => {
         sellerName: "Kampasika",
         sellerAvatar: null,
         welcomeStage: "awaiting_language",
-        lastMessage: LANGUAGE_PROMPT,
+        localWelcome: true,
+        lastMessage: "",
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
-        buyerUnread: 1,
+        buyerUnread: 0,
         sellerUnread: 0,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      batch.set(msgRef, {
-        senderId: KAMPASIKA_OFFICIAL_UID,
-        senderName: "Kampasika",
-        text: LANGUAGE_PROMPT,
-        status: "sent",
-        readBy: [KAMPASIKA_OFFICIAL_UID],
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     });

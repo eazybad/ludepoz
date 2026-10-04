@@ -5,6 +5,7 @@ import {
   adminReview,
   computeSteps,
   documentUrl,
+  documentsState,
   errorMessage,
   progressPercent,
   requiredDocumentTypes,
@@ -13,7 +14,8 @@ import {
 import { ConnectPanel } from "./BizSteps";
 import { AdminFees } from "./BizFees";
 
-const FILTERS = ["all", "in_review", "needs_changes", "draft", "live", "suspended"];
+// "verify" = owners who asked for the Verified badge and are waiting.
+const FILTERS = ["verify", "in_review", "all", "draft", "live", "suspended"];
 
 function formatDate(value) {
   const date = value?.toDate ? value.toDate() : value ? new Date(value) : null;
@@ -24,17 +26,21 @@ function formatDate(value) {
 export function BizAdminList({ lang, onOpen }) {
   const [operators, setOperators] = useState(null);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState("in_review");
+  const [filter, setFilter] = useState("verify");
 
   useEffect(() => subscribeAllOperators(setOperators, err => setError(errorMessage(err, t(lang, "genericError")))), [lang]);
 
   const counts = useMemo(() => {
     const c = { all: operators?.length || 0 };
-    (operators || []).forEach(op => { c[op.status || "draft"] = (c[op.status || "draft"] || 0) + 1; });
+    (operators || []).forEach(op => {
+      c[op.status || "draft"] = (c[op.status || "draft"] || 0) + 1;
+      if (documentsState(op) === "waiting") c.verify = (c.verify || 0) + 1;
+    });
     return c;
   }, [operators]);
 
-  const shown = (operators || []).filter(op => filter === "all" || (op.status || "draft") === filter);
+  const shown = (operators || []).filter(op => filter === "all"
+    || (filter === "verify" ? documentsState(op) === "waiting" : (op.status || "draft") === filter));
 
   return (
     <>
@@ -42,7 +48,7 @@ export function BizAdminList({ lang, onOpen }) {
       <div className="biz-tabs">
         {FILTERS.map(f => (
           <button key={f} type="button" className={`biz-tab ${filter === f ? "on" : ""}`} onClick={() => setFilter(f)}>
-            {f === "all" ? t(lang, "adminFilterAll") : t(lang, `statusLabel.${f}`)} · {counts[f] || 0}
+            {f === "all" ? t(lang, "adminFilterAll") : f === "verify" ? t(lang, "adminFilterVerify") : t(lang, `statusLabel.${f}`)} · {counts[f] || 0}
           </button>
         ))}
       </div>
@@ -136,7 +142,12 @@ export function BizAdminDetail({ lang, operatorId, onBack }) {
       </div>
 
       <div className="biz-card">
-        <h2 className="biz-h2">{t(lang, "checklistTitle")}</h2>
+        <h2 className="biz-h2">{t(lang, "verifyTitle")}</h2>
+        <p className="biz-small"><span className={`biz-step-state ${documentsState(op) === "done" ? "done" : documentsState(op) === "waiting" ? "waiting" : "todo"}`}>{t(lang, `verifyState.${documentsState(op)}`)}</span></p>
+      </div>
+
+      <div className="biz-card">
+        <h2 className="biz-h2">{t(lang, "onlineTitle")}</h2>
         <dl className="biz-kv">
           {stepsFor(op).map(id => (
             <div key={id} style={{ display: "contents" }}>

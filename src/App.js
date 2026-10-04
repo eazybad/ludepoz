@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, onAuthStateChanged, signOut, updatePassword } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -90,6 +90,21 @@ const ROOM_NEARBY_UNIVERSITIES = [
 // Kampasika" assistant that now continues in the same conversation once
 // the scripted welcome sequence finishes.
 const KAMPASIKA_BOT_UID = "kampasika_official";
+// Shown inside the Kampasika chat when it's opened — new accounts no longer
+// get this sent as a real message (no "1 unread" / push the moment they
+// join). Same text as LANGUAGE_PROMPT in functions/welcomeMessages.js.
+// "Today", "Yesterday", or "Mon, 3 Oct" — the date label above a day's messages.
+function chatDayKey(date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+function formatChatDay(date) {
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  if (chatDayKey(date) === chatDayKey(today)) return "Today";
+  if (chatDayKey(date) === chatDayKey(yesterday)) return "Yesterday";
+  return date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}) });
+}
+const KAMPASIKA_WELCOME_TEXT = "Welcome to Kampasika \ud83c\udf89\nKaribu Kampasika!\n\nWhich language do you prefer? Reply with \"English\" or \"Swahili\".\nUnapendelea lugha gani? Jibu na \"English\" au \"Swahili\".";
 
 const ENABLE_PHONE_VERIFICATION = false;
 const USERNAME_AUTH_DOMAIN = "kampasika.local";
@@ -1057,6 +1072,9 @@ useEffect(() => {
 
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  // Which conversation's messages have arrived at least once (so the chat
+  // doesn't flash its empty state / local welcome while loading).
+  const [messagesLoadedFor, setMessagesLoadedFor] = useState("");
   const [messageSearchQ, setMessageSearchQ] = useState("");
   const [messageFilterMode, setMessageFilterMode] = useState("all");
   const [expandedPersonUid, setExpandedPersonUid] = useState("");
@@ -3681,6 +3699,17 @@ const requestNotificationPermission = async (currentUser) => {
     }).catch(() => { window.history.replaceState({}, "", "/"); });
   }, [setPage]);
 
+  // kampasika.org/?list=property (the "List your rooms" button in Kampasika
+  // Biz) opens the add-property form once the owner is signed in.
+  const listLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (listLinkHandledRef.current || !user) return;
+    if (new URLSearchParams(window.location.search).get("list") !== "property") return;
+    listLinkHandledRef.current = true;
+    window.history.replaceState({}, "", "/");
+    setPage("createProperty");
+  }, [user, setPage]);
+
   const handleRoomBack = () => {
     window.history.back();
   };
@@ -3835,12 +3864,16 @@ const startConversation = async (listing) => {
     }
   };
 
- const sendMessage = async () => {
-    if (!messageText.trim() || !activeConversation) return;
+ // override: a quick-reply button (e.g. "English" in the Kampasika chat)
+ // sends that text instead of what's typed in the box.
+ const sendMessage = async (override) => {
+    const quick = typeof override === "string";
+    const raw = quick ? override : messageText;
+    if (!raw.trim() || !activeConversation) return;
     
-    const text = messageText.trim();
+    const text = raw.trim();
     const tempId = 'temp_' + Date.now();
-    setMessageText(""); // Clear immediately
+    if (!quick) setMessageText(""); // Clear immediately
     
     // Optimistic: show message instantly before server confirms
     setMessages(prev => [...prev, {
@@ -3922,7 +3955,7 @@ createdAt: serverTimestamp()
       console.error("Error sending message:", err);
       // Remove optimistic message on failure
       setMessages(prev => prev.filter(m => m.id !== tempId));
-      setMessageText(text); // Restore text
+      if (!quick) setMessageText(text); // Restore text
       setError("Failed to send. Check your connection.");
     }
   };
@@ -5022,6 +5055,7 @@ useEffect(() => {
       ...d.data()
     }));
     setMessages(msgs);
+    setMessagesLoadedFor(activeConversation.id);
     
     // Auto mark as read whenever new messages arrive while chat is open
     if (page === "chat" && user) {
@@ -8252,8 +8286,8 @@ return (
               </div>
               {singleThread ? (
                 <>
-                  <div style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',marginBottom:'4px',fontWeight:'500'}}>{topConv.listingTitle} • {topConv.listingPrice?.toLocaleString()} TSh</div>
-                  <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||"No messages yet"}</div>
+                  {(topConv.listingTitle || topConv.sellerId === KAMPASIKA_BOT_UID) && <div style={{fontSize:'12px',color:'var(--accent-teal-bright, #06d6c7)',marginBottom:'4px',fontWeight:'500'}}>{topConv.sellerId === KAMPASIKA_BOT_UID ? "Official assistant" : `${topConv.listingTitle}${topConv.listingPrice ? ` • ${topConv.listingPrice.toLocaleString()} TSh` : ""}`}</div>}
+                  <div style={{fontSize:'13px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topConv.lastMessage||(topConv.sellerId === KAMPASIKA_BOT_UID ? "Say hi 👋 Ask me anything about Kampasika" : "No messages yet")}</div>
                 </>
               ) : (
                 <>
@@ -8310,7 +8344,7 @@ return (
         </div>
       )}
 
-     {page==="chat"&&activeConversation&&(
+     {page==="chat"&&activeConversation&&user&&(
   <div style={{
     position:'fixed',
     top:'max(6px, env(safe-area-inset-top))',
@@ -8326,98 +8360,77 @@ return (
   }}>
     
     {/* Chat Header - FIXED, never moves */}
-    <div style={{
-      background:'var(--surface-bg)',
-      padding:'12px 16px 20px',
-      borderRadius:'0 0 26px 26px',
-      boxShadow:'0 10px 18px -12px rgba(15,27,45,0.22)',
-      display:'flex',
-      alignItems:'center',
-      gap:'12px',
-      flexShrink:0,
-      position:'relative',
-      zIndex:1
-    }}>
-      <button 
-        onClick={() => {
-  setActiveConversation(null);
-  setMessages([]);
-  setPageRaw("communities");
-  pageHistory.current = pageHistory.current.filter(p => p !== "chat");
-  if (pageHistory.current[pageHistory.current.length - 1] !== "communities") {
-    pageHistory.current.push("communities");
-  }
-  window.history.replaceState({ page: "communities" }, "", "/");
-}}
-        style={{
-          width:'36px',
-          height:'36px',
-          borderRadius:'50%',
-          background:'var(--surface-bg-alt)',
-          color:'var(--text-primary)',
+    {(() => {
+      const isBot = activeConversation.sellerId === KAMPASIKA_BOT_UID || activeConversation.buyerId === KAMPASIKA_BOT_UID;
+      const otherUser = user.uid === activeConversation.buyerId
+        ? {name: activeConversation.sellerName || "", avatar: activeConversation.sellerAvatar}
+        : {name: activeConversation.buyerName || "", avatar: activeConversation.buyerAvatar};
+      const initials = String(otherUser.name || "?").trim().split(/\s+/).slice(0, 2).map(n => n[0]).join("").toUpperCase() || "?";
+      const subtitle = isBot
+        ? "Official assistant · replies instantly"
+        : [activeConversation.listingTitle, activeConversation.listingPrice ? `${Number(activeConversation.listingPrice).toLocaleString()} TSh` : ""].filter(Boolean).join(" · ");
+      const closeChat = () => {
+        setActiveConversation(null);
+        setMessages([]);
+        setPageRaw("communities");
+        pageHistory.current = pageHistory.current.filter(p => p !== "chat");
+        if (pageHistory.current[pageHistory.current.length - 1] !== "communities") {
+          pageHistory.current.push("communities");
+        }
+        window.history.replaceState({ page: "communities" }, "", "/");
+      };
+      return (
+        <div style={{
+          background:'var(--surface-bg)',
+          padding:'10px 14px 10px 10px',
+          borderBottom:'1px solid var(--border-color)',
+          boxShadow:'0 6px 16px -14px rgba(15,27,45,0.45)',
           display:'flex',
           alignItems:'center',
-          justifyContent:'center',
-          cursor:'pointer',
-          fontSize:'18px',
-          border:'none',
-          flexShrink:0
-        }}
-      >
-        ←
-      </button>
-      
-      {(() => {
-        const otherUser = user.uid === activeConversation.buyerId ? 
-          {name: activeConversation.sellerName, avatar: activeConversation.sellerAvatar} : 
-          {name: activeConversation.buyerName, avatar: activeConversation.buyerAvatar};
-        
-        return (
-          <>
-            <div style={{
-              width:'40px',
-              height:'40px',
-              borderRadius:'50%',
-             backgroundImage:otherUser.avatar?`url(${otherUser.avatar})`:'none',
-              backgroundColor:!otherUser.avatar?'#06d6c7':'transparent',
-              backgroundSize:'cover',
-              backgroundPosition:'center',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              color:'#fff',
-              fontWeight:'700',
-              boxSizing:'border-box',
-              fontSize:'16px',
-              flexShrink:0
-            }}>
-              {!otherUser.avatar && otherUser.name.split(" ").map(n=>n[0]).join("")}
-            </div>
-            <div style={{flex:1,minWidth:0}}>
+          gap:'10px',
+          flexShrink:0,
+          position:'relative',
+          zIndex:1
+        }}>
+          <button
+            type="button"
+            aria-label="Back"
+            onClick={closeChat}
+            style={{width:'38px',height:'38px',borderRadius:'50%',background:'transparent',color:'var(--text-primary)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',border:'none',flexShrink:0,padding:0}}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style={{position:'relative',flexShrink:0}}>
+            {isBot ? (
+              <div style={{width:'42px',height:'42px',borderRadius:'50%',background:'#0f1b2d',boxShadow:'0 0 0 1.5px rgba(6,214,199,0.55)',color:'#06d6c7',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'serif',fontStyle:'italic',fontWeight:'800',fontSize:'20px'}}>K</div>
+            ) : (
               <div style={{
-                fontSize:'15px',
-                fontWeight:'600',
-                color:'var(--text-primary)',
-                overflow:'hidden',
-                textOverflow:'ellipsis',
-                whiteSpace:'nowrap'
+                width:'42px',height:'42px',borderRadius:'50%',
+                backgroundImage:otherUser.avatar?`url(${otherUser.avatar})`:'linear-gradient(135deg,#0d9488,#06d6c7)',
+                backgroundSize:'cover',backgroundPosition:'center',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                color:'#fff',fontWeight:'800',fontSize:'15px'
               }}>
-                {otherUser.name}
+                {!otherUser.avatar && initials}
               </div>
-              <div style={{
-                fontSize:'11px',
-                color:'var(--text-secondary)',
-                overflow:'hidden',
-                textOverflow:'ellipsis',
-                whiteSpace:'nowrap'
-              }}>
-                {activeConversation.listingTitle}
-              </div>
+            )}
+            {isBot && (
+              <span aria-hidden="true" style={{position:'absolute',right:'-2px',bottom:'-2px',width:'16px',height:'16px',borderRadius:'50%',background:'#06d6c7',color:'#0f1b2d',fontSize:'10px',fontWeight:'900',display:'flex',alignItems:'center',justifyContent:'center',border:'2px solid var(--surface-bg)'}}>✓</span>
+            )}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',lineHeight:1.25,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              {otherUser.name || "Chat"}
             </div>
-          </>
-        );
-      })()}
-    </div>
+            {subtitle && (
+              <div style={{fontSize:'12px',color:isBot?'#0d9488':'var(--text-secondary)',fontWeight:isBot?'600':'500',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {subtitle}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })()}
 
     {/* Room status banner — this toggle is the action a landlord/caretaker
         actually repeats over a room's life (list once, then flip vacant/
@@ -8451,13 +8464,42 @@ return (
   flex:1,
   overflowY:'auto',
   overflowX:'hidden',
-  padding:'14px 12px',
+  padding:'18px 12px 14px',
   display:'flex',
   flexDirection:'column',
   background:'var(--page-bg)',
 }}
     >
-      {messages.length === 0 && (
+      {(() => {
+        // Kampasika chat: the welcome is shown here when it's opened instead
+        // of being sent on signup (conversation.localWelcome). It stays at
+        // the top after the person replies.
+        const isBotChat = activeConversation.sellerId === KAMPASIKA_BOT_UID || activeConversation.buyerId === KAMPASIKA_BOT_UID;
+        if (!isBotChat || messagesLoadedFor !== activeConversation.id) return null;
+        if (!activeConversation.localWelcome && messages.length > 0) return null;
+        const created = activeConversation.createdAt?.toDate ? activeConversation.createdAt.toDate() : null;
+        return (
+          <>
+            <div style={{alignSelf:'center',fontSize:'11.5px',fontWeight:'700',color:'var(--text-secondary)',background:'var(--surface-bg)',border:'1px solid var(--border-color)',padding:'4px 12px',borderRadius:'999px',margin:'0 0 12px'}}>
+              {created ? formatChatDay(created) : "Today"}
+            </div>
+            <div style={{display:'flex',justifyContent:'flex-start',marginBottom:'10px'}}>
+              <div style={{maxWidth:'78%',background:'var(--surface-bg)',color:'var(--text-primary)',padding:'8px 12px',borderRadius:'20px',fontSize:'14.5px',lineHeight:'1.45',boxShadow:'0 1px 2px rgba(0,0,0,0.06)'}}>
+                <div style={{fontSize:'12px',fontWeight:'700',marginBottom:'2px',color:'#0d9488'}}>Kampasika</div>
+                <div style={{wordBreak:'break-word',whiteSpace:'pre-wrap'}}>{KAMPASIKA_WELCOME_TEXT}</div>
+                {messages.length === 0 && (
+                  <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
+                    {["English", "Swahili"].map(choice => (
+                      <button key={choice} type="button" onClick={() => sendMessage(choice)} style={{flex:1,padding:'8px 10px',borderRadius:'12px',border:'1.5px solid #0d9488',background:'transparent',color:'#0d9488',fontWeight:'800',fontSize:'13px',cursor:'pointer'}}>{choice}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
+      {messages.length === 0 && messagesLoadedFor === activeConversation.id && !(activeConversation.sellerId === KAMPASIKA_BOT_UID || activeConversation.buyerId === KAMPASIKA_BOT_UID) && (
         <div style={{
           textAlign:'center',
           padding:'40px 16px',
@@ -8499,8 +8541,24 @@ const groupedWithNext = nextMsg && nextMsg.senderId === msg.senderId && (toMilli
 // matches the pill-shaped bubble style requested, rather than the more
 // common "flat corner on the tail side" chat bubble shape.
 const bubbleRadius = '20px';
+// Date label above the first message of each day (the local Kampasika
+// welcome already shows its own label for the day it was opened).
+const msgDate = sentAt ? new Date(sentAt) : (msg._pending ? new Date() : null);
+const isBotChat = activeConversation.sellerId === KAMPASIKA_BOT_UID || activeConversation.buyerId === KAMPASIKA_BOT_UID;
+const welcomeShown = isBotChat && activeConversation.localWelcome;
+const welcomeDate = activeConversation.createdAt?.toDate ? activeConversation.createdAt.toDate() : new Date();
+const prevDate = i > 0
+  ? (toMillis(prevMsg.createdAt) ? new Date(toMillis(prevMsg.createdAt)) : null)
+  : (welcomeShown ? welcomeDate : null);
+const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msgDate));
         return (
-          <div key={msg.id} style={{
+          <Fragment key={msg.id}>
+          {showDay && (
+            <div style={{alignSelf:'center',fontSize:'11.5px',fontWeight:'700',color:'var(--text-secondary)',background:'var(--surface-bg)',border:'1px solid var(--border-color)',padding:'4px 12px',borderRadius:'999px',margin: i === 0 && !welcomeShown ? '0 0 12px' : '8px 0 12px'}}>
+              {formatChatDay(msgDate)}
+            </div>
+          )}
+          <div style={{
             display:'flex',
             justifyContent:isMine?'flex-end':'flex-start',
             marginBottom: groupedWithNext ? '2px' : '10px'
@@ -8532,7 +8590,7 @@ const bubbleRadius = '20px';
                   }}
                 />
               )}
-              {msg.text && <div style={{wordBreak:'break-word'}}>{msg.text}</div>}
+              {msg.text && <div style={{wordBreak:'break-word',whiteSpace:'pre-wrap'}}>{msg.text}</div>}
               {msg.senderId === KAMPASIKA_BOT_UID && typeof msg.videoUrl === 'string' && msg.videoUrl.startsWith('https://kampasika.org/media/') && (
                 <video
                   src={msg.videoUrl}
@@ -8567,6 +8625,7 @@ const bubbleRadius = '20px';
               )}
             </div>
           </div>
+          </Fragment>
         );
       })}
     </div>
@@ -14281,4 +14340,4 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 );
 }
 
-export default App;
+export default App;

@@ -225,6 +225,7 @@ export function OperatorRent({ operator, lang, charges, leases, onNavigate }) {
       .map(g => ({ ...g, total: g.rooms.length, occupied: g.rooms.filter(r => occupiedRooms.has(r.id)).length }));
   }, [roomsData, leases, today, lang]);
 
+  const live = operator.status === "live" && operator.pawapay?.production?.connected;
   const toConfirm = (charges || []).filter(c => pendingClaim(c)).length;
   // Open on "To confirm" when students are waiting for the owner.
   const [autoConfirm, setAutoConfirm] = useState(true);
@@ -240,14 +241,16 @@ export function OperatorRent({ operator, lang, charges, leases, onNavigate }) {
   });
   if (filter === "paid") filtered.reverse();
 
-  const live = operator.status === "live" && operator.pawapay?.production?.connected;
   const canTest = !live && operator.pawapay?.sandbox?.connected;
   const sandboxOn = operator.settings?.sandboxRent === true;
 
   return (
     <>
-      <h1 className="biz-h1">{t(lang, "rentTitle")}</h1>
-      <p className="biz-muted">{t(lang, operator.paymentMode === "direct" ? "rentIntroDirect" : "rentIntro")}</p>
+      <div className="stmt-head">
+        <h1 className="biz-h1">{t(lang, "rentTitle")}</h1>
+        {onNavigate && <button type="button" className="biz-btn ghost small" onClick={() => onNavigate("/biz/statement")}>≡ {t(lang, "stmtTitle")}</button>}
+      </div>
+      <p className="biz-muted">{t(lang, live ? "rentIntro" : "rentIntroDirect")}</p>
       {toConfirm > 0 && (
         <button type="button" className="biz-banner warning" style={{ width: "100%", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }} onClick={() => setFilter("confirm")}>
           <strong>📩 {t(lang, "claimsBanner", { count: toConfirm })}</strong>
@@ -294,7 +297,12 @@ export function OperatorRent({ operator, lang, charges, leases, onNavigate }) {
 
       <div className="biz-card">
         <h2 className="biz-h2">{t(lang, "onlinePayTitle")}</h2>
-        <p className="biz-small">{live ? t(lang, "onlinePayLive") : operator.paymentMode === "direct" ? t(lang, "onlinePayDirect") : t(lang, "onlinePayOff")}</p>
+        <p className="biz-small">{live ? t(lang, "onlinePayLive") : t(lang, "onlinePayDirect")}</p>
+        {!live && onNavigate && (
+          <div className="biz-actions" style={{ marginTop: 8 }}>
+            <button type="button" className="biz-btn ghost small" onClick={() => onNavigate("/biz/setup")}>{t(lang, "onlineSetupLink")}</button>
+          </div>
+        )}
         {canTest && (
           <label className="biz-check">
             <input type="checkbox" checked={sandboxOn} disabled={toggling} onChange={async () => { setToggling(true); try { await setSandboxRent(operator.id, !sandboxOn); } finally { setToggling(false); } }} />

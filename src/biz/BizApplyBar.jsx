@@ -1,6 +1,7 @@
 // "Apply for this room" — shown on a room in the student app when the
-// room's landlord runs their hostel on Kampasika Biz (Kampasika has approved
-// their documents and they're accepting applications).
+// room's landlord runs their hostel on Kampasika Biz and is accepting
+// applications. "Verified" only when Kampasika checked their documents
+// (older bizPublic records have no field and were all checked).
 //
 // Lives in the main bundle, so it must NOT import ./bizFirebase: App.js
 // sets Firestore up with its own options, and touching Firestore before that
@@ -156,11 +157,19 @@ export function BizApplyBar({ db, functions, room, user, userName, userPhone, ro
           <span style={{ width: "34px", height: "34px", borderRadius: "10px", background: "#0f1b2d", color: "#06d6c7", display: "grid", placeItems: "center", fontWeight: 900, flex: "none" }}>K</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--text-primary)" }}>
-              {business.businessName || "Verified hostel"} <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "999px", background: "#ccfbf1", color: "#0f766e", verticalAlign: "middle" }}>BIZ ✓</span>
+              {business.businessName || "Hostel"}{" "}
+              {business.verified !== false
+                ? <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "999px", background: "#ccfbf1", color: "#0f766e", verticalAlign: "middle" }}>✓ Verified</span>
+                : <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "999px", background: "var(--surface-bg-alt)", color: "var(--text-secondary)", verticalAlign: "middle" }}>BIZ</span>}
             </div>
             <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
               Omba chumba hiki mtandaoni · Apply for this room online
             </div>
+            {business.verified === false && (
+              <div style={{ fontSize: "11.5px", color: "#b45309", marginTop: "4px", lineHeight: 1.4 }}>
+                Kampasika bado haijathibitisha nyaraka za mwenye hosteli hii — tembelea chumba kabla ya kulipa. · Not yet verified by Kampasika — visit the room before you pay.
+              </div>
+            )}
             {serviceFeeOn && (
               <div style={{ fontSize: "11.5px", color: "var(--text-secondary)", marginTop: "4px", lineHeight: 1.4 }}>
                 Kuomba ni bure. Ada ndogo ya huduma ya Kampasika inalipwa tu ukisaini mkataba — nafuu kuliko dalali. · Free to apply; a small Kampasika service fee applies only when you sign a lease.

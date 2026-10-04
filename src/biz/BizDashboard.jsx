@@ -6,14 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import { t } from "./bizCopy";
 import {
   chargeBalance,
-  computeSteps,
   isChargeOpen,
   isOverdue,
   loadOperatorRooms,
   pendingClaim,
-  progressPercent,
   todayIso,
 } from "./bizService";
+import { isBizDemo } from "./bizDemo";
 
 const tzs = (n) => `TZS ${Math.round(Number(n || 0)).toLocaleString("en-US")}`;
 
@@ -193,8 +192,10 @@ export function BizOverview({ operator, lang, apps, leases, charges, onNavigate 
     return { rows, total, occupied: occ, pct: total ? Math.round((occ / total) * 100) : 0 };
   }, [roomsData, leases, today, lang]);
 
-  const steps = computeSteps(operator);
-  const setupPct = progressPercent(steps);
+  const hasPayTo = Boolean(String(operator.payTo?.number || "").trim());
+  const hasRooms = Boolean(roomsData && roomsData.rooms.length > 0);
+  // Until the basics are in place (and never in the demo).
+  const showStart = !isBizDemo() && roomsData !== null && (!hasPayTo || !hasRooms);
   const firstName = String(operator.profile?.contactName || "").split(" ")[0];
   const delta = data.collectedPrev ? Math.round(((data.collected - data.collectedPrev) / data.collectedPrev) * 100) : null;
   const attentionCount = data.claims.length + data.behind.length + data.newApps.length + data.waiting.length;
@@ -213,16 +214,40 @@ export function BizOverview({ operator, lang, apps, leases, charges, onNavigate 
         </div>
       </div>
 
-      {operator.status !== "live" && (
-        <button type="button" className="bd-setup" onClick={() => onNavigate("/biz/setup")}>
-          <div style={{ flex: 1 }}>
-            <strong>{t(lang, "dashSetupTitle")}</strong>
-            <div className="biz-small">{t(lang, "dashSetupBody")}</div>
-            <span className="bd-meter" style={{ marginTop: 8 }}><span style={{ width: `${setupPct}%` }} /></span>
-          </div>
-          <span className="bd-setup-pct">{setupPct}%</span>
-          <span className="biz-chevron">›</span>
-        </button>
+      {showStart && (
+        <section className="biz-card bd-start">
+          <h2 className="biz-h2">🚀 {t(lang, "startTitle")}</h2>
+          <p className="biz-small">{t(lang, "startBody")}</p>
+          <ol>
+            <li className="done">
+              <span className="bd-start-dot">✓</span>
+              <span className="bd-start-text">{t(lang, "startCreated")}</span>
+            </li>
+            <li className={hasPayTo ? "done" : ""}>
+              <span className="bd-start-dot">{hasPayTo ? "✓" : 2}</span>
+              <span className="bd-start-text">
+                {t(lang, "startPayTo")}
+                {!hasPayTo && <span className="biz-small">{t(lang, "startPayToSub")}</span>}
+                {!hasPayTo && <button type="button" className="biz-btn primary small" onClick={() => onNavigate("/biz/step/payto")}>{t(lang, "payToAdd")}</button>}
+              </span>
+            </li>
+            <li className={hasRooms ? "done" : ""}>
+              <span className="bd-start-dot">{hasRooms ? "✓" : 3}</span>
+              <span className="bd-start-text">
+                {t(lang, "startRooms")}
+                {!hasRooms && <span className="biz-small">{t(lang, "startRoomsSub")}</span>}
+                {!hasRooms && <a className="biz-btn ghost small" href="/?list=property">{t(lang, "startRoomsBtn")}</a>}
+              </span>
+            </li>
+            <li>
+              <span className="bd-start-dot">4</span>
+              <span className="bd-start-text">
+                {t(lang, "startShare")}
+                <span className="biz-small">{t(lang, "startShareSub")}</span>
+              </span>
+            </li>
+          </ol>
+        </section>
       )}
 
       <div className="bd-kpis">

@@ -424,15 +424,15 @@ exports.bizAdminReview = onCall(async (request) => {
   const stamp = { reviewedBy: uid, reviewedAt: FieldValue().serverTimestamp(), note };
   const update = { updatedAt: FieldValue().serverTimestamp() };
 
+  // Documents only earn the optional "Verified" badge — the business is
+  // already open, so these never change its status.
   if (action === "approve_documents") {
     update.review = { ...(operator.review || {}), documents: "approved", ...stamp };
   } else if (action === "request_changes") {
     update.review = { ...(operator.review || {}), documents: "changes_requested", ...stamp };
-    update.status = "needs_changes";
   } else if (action === "set_live") {
-    if (operator.review?.documents !== "approved") {
-      throw new HttpsError("failed-precondition", "Approve the documents first.");
-    }
+    // Online payments: the owner's own pawaPay account did its own business
+    // checks; Kampasika just switches it on.
     // Hostels that aren't registered yet go live on direct payments (students
     // pay the owner's own number, the owner confirms) — no pawaPay needed.
     const manual = operator.profile?.businessType === "unregistered";
@@ -458,8 +458,8 @@ exports.bizAdminReview = onCall(async (request) => {
 
   // Same in-app notifications collection the verification flow uses.
   const messages = {
-    approve_documents: "Your Kampasika Biz documents were approved.",
-    request_changes: `Kampasika Biz needs a few changes to your business profile.${note ? ` ${note}` : ""}`,
+    approve_documents: "Your documents were checked — your rooms now show the Verified badge on Kampasika.",
+    request_changes: `Kampasika couldn't verify your documents yet.${note ? ` ${note}` : ""}`,
     set_live: operator.profile?.businessType === "unregistered"
       ? "Your business is live on Kampasika Biz. Students pay rent to your own number and you confirm each payment in Rent."
       : "Your business is live on Kampasika Biz. You can now collect rent through your own pawaPay account.",

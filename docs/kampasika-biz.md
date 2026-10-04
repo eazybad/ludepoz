@@ -200,6 +200,18 @@ Many small hostels have no BRELA / TIN / pawaPay. They can still use all of Biz:
 
 Deploy: `firebase deploy --only functions:bizPayInstructions,functions:bizReportPayment,functions:bizReviewClaim,functions:bizAdminReview,functions:bizPayCharge`
 
+## Open to everyone (October 2026)
+
+A business is **open the moment it's created** — no documents, no admin approval:
+
+- `/biz` welcome form: business name, contact, "is it registered?", area, and (optional) the number students pay into (`payTo`). Then straight to the Overview, which shows a **Get started** card until the payment number and at least one room exist ("List rooms" opens `kampasika.org/?list=property`).
+- `bizPublic/{uid}` is written for every non-suspended operator (`publicRecordFor`), so students can apply right away. It now carries `verified` (documents approved).
+- **Verified badge (optional):** the owner uploads documents and taps "Ask Kampasika to verify" (`operators.verifyRequestedAt`). Admin → filter **Verify requests** → Approve documents. Approving / requesting changes never changes the business status. Rooms then show "✓ Verified"; unverified ones show a "visit the room before you pay" note.
+- **Online payments (optional):** the old pawaPay checklist (profile → settlement → application → sandbox → test → live), registered businesses only. `set_live` no longer needs approved documents.
+- **Statement** (`/biz/statement`): every payment received, filter by month, Print, Export CSV. Built from `bizCharges.payments`; labelled Paid online / Confirmed by you / Recorded by you.
+- `/biz/setup` is now **Settings**: business, payment number, Verified badge, online payments.
+- Terms: new "How Rent Payments Work" section (Kampasika never receives or holds rent). Privacy policy lists the Biz data.
+
 ## Kampasika's fees (revenue)
 
 The Tanzanian norm is that the tenant pays the finder (dalali), so owners

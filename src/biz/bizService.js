@@ -45,18 +45,36 @@ export const TZ_PROVIDERS = [
   { provider: "HALOTEL_TZA", displayName: "HaloPesa" },
 ];
 
-export const ONBOARDING_STEPS = ["profile", "documents", "settlement", "application", "sandbox", "test", "live"];
-// Hostels that aren't registered yet: no pawaPay steps; students pay the
-// owner's own number (payTo) and the owner confirms each payment.
-export const MANUAL_STEPS = ["profile", "documents", "payto"];
-export const ALL_STEP_IDS = [...ONBOARDING_STEPS, "payto"];
+// Kampasika Biz is open the moment an owner creates their business: they can
+// take applications, sign leases and record rent straight away. Students pay
+// the owner directly (payTo) and the owner confirms — Kampasika never holds
+// the money. Everything below is optional:
+//   documents → a "Verified" badge on their rooms (Kampasika checks them)
+//   ONLINE_STEPS → automatic online rent payments (registered businesses)
+export const ONLINE_STEPS = ["profile", "settlement", "application", "sandbox", "test", "live"];
+export const ONBOARDING_STEPS = ONLINE_STEPS;
+export const ALL_STEP_IDS = [...ONLINE_STEPS, "documents", "payto"];
 
+// Not registered yet (no BRELA / TIN): direct payments only.
 export function isManualOperator(operator) {
   return operator?.profile?.businessType === "unregistered";
 }
 
-export function stepsFor(operator) {
-  return isManualOperator(operator) ? MANUAL_STEPS : ONBOARDING_STEPS;
+export function stepsFor() {
+  return ONLINE_STEPS;
+}
+
+// Open for business (applications, leases, rent) unless Kampasika paused it.
+export function isOpen(operator) {
+  return Boolean(operator) && operator.status !== "suspended";
+}
+
+export function isVerified(operator) {
+  return operator?.review?.documents === "approved";
+}
+
+export function onlinePaymentsLive(operator) {
+  return operator?.status === "live" && Boolean(operator?.pawapay?.production?.connected);
 }
 
 export const PAY_TO_METHODS = ["mobile_money", "lipa", "bank"];
@@ -123,17 +141,6 @@ export function computeSteps(operator) {
   const steps = {};
   steps.profile = profileMissing(operator).length === 0 ? "done" : "todo";
 
-  const docsUploaded = documentsMissing(operator).length === 0;
-  const docsReview = operator?.review?.documents;
-  steps.documents = !docsUploaded || docsReview === "changes_requested"
-    ? "todo"
-    : docsReview === "approved" ? "done" : "waiting";
-
-  if (isManualOperator(operator)) {
-    steps.payto = payToMissing(operator).length === 0 ? "done" : "todo";
-    return steps;
-  }
-
   steps.settlement = settlementMissing(operator).length === 0 ? "done" : "todo";
 
   const app = operator?.pawapayApplication?.status || "not_started";
@@ -152,23 +159,34 @@ export function computeSteps(operator) {
   return steps;
 }
 
+// Optional extras, outside the online-payments checklist.
+export function payToState(operator) {
+  return payToMissing(operator).length === 0 ? "done" : "todo";
+}
+
+// done | waiting (asked, Kampasika hasn't answered) | changes | ready (all
+// uploaded, not asked yet) | todo (documents missing).
+export function documentsState(operator) {
+  const review = operator?.review || {};
+  if (review.documents === "approved") return "done";
+  const asked = millis(operator?.verifyRequestedAt);
+  if (asked && asked > millis(review.reviewedAt)) return "waiting";
+  if (review.documents === "changes_requested") return "changes";
+  return documentsMissing(operator).length === 0 ? "ready" : "todo";
+}
+
 export function progressPercent(steps) {
   const values = Object.values(steps);
   const score = values.reduce((sum, s) => sum + (s === "done" ? 1 : s === "waiting" ? 0.5 : 0), 0);
   return Math.round((score / values.length) * 100);
 }
 
-// Profile, documents and settlement are enough for Kampasika to start
+// Online payments: profile and settlement are enough for Kampasika to start
 // checking the business while the operator waits on pawaPay.
 export function canSubmitForReview(operator) {
   if (!["draft", "needs_changes"].includes(operator?.status || "draft")) return false;
-  if (isManualOperator(operator)) {
-    return profileMissing(operator).length === 0
-      && documentsMissing(operator).length === 0
-      && payToMissing(operator).length === 0;
-  }
+  if (isManualOperator(operator)) return false;
   return profileMissing(operator).length === 0
-    && documentsMissing(operator).length === 0
     && settlementMissing(operator).length === 0;
 }
 
@@ -191,23 +209,25 @@ export function subscribeOperator(operatorId, onData, onError) {
   );
 }
 
-export async function createOperator(user, { businessName, contactName, contactPhone, nearUni }) {
+export async function createOperator(user, { businessName, contactName, contactPhone, nearUni, area, businessType, payTo }) {
   if (DEMO) return demoRefuse();
   const existing = await getDoc(operatorDocRef(user.uid));
   if (existing.exists()) return;
+  const cleanPayTo = payTo && String(payTo.number || "").trim() ? cleanObject(payTo) : null;
   await setDoc(operatorDocRef(user.uid), {
+    ...(cleanPayTo ? { payTo: cleanPayTo } : {}),
     ownerUid: user.uid,
     status: "draft",
     profile: {
       businessName: String(businessName || "").trim(),
-      businessType: "",
+      businessType: BUSINESS_TYPES.includes(businessType) ? businessType : "",
       brelaNumber: "",
       tin: "",
       contactName: String(contactName || "").trim(),
       contactPhone: String(contactPhone || "").trim(),
       contactEmail: "",
       region: "Dar es Salaam",
-      area: "",
+      area: String(area || "").trim(),
       nearUni: nearUni || "ARU",
       propertyCount: "",
       bedCount: "",
@@ -294,6 +314,15 @@ export async function uploadDocument(operatorId, docType, file) {
   return path;
 }
 
+// "Please check my documents" — the owner asks for the Verified badge.
+export function requestVerification(operatorId) {
+  if (DEMO) return demoRefuse();
+  return updateDoc(operatorDocRef(operatorId), {
+    verifyRequestedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export function documentUrl(path) {
   if (DEMO) return demoRefuse();
   return getDownloadURL(ref(storage, path));
@@ -349,10 +378,10 @@ export const APPLICATION_FILTERS = {
   closed: ["rejected", "withdrawn"],
 };
 
-// Students can see a business (and apply) once Kampasika approved its
-// documents — mirrors publicRecordFor() in functions/biz/bizApplications.js.
+// Students can apply as soon as the business exists (unless paused) —
+// mirrors publicRecordFor() in functions/biz/bizApplications.js.
 export function applicationsUnlocked(operator) {
-  return operator?.review?.documents === "approved" && operator?.status !== "suspended";
+  return isOpen(operator);
 }
 
 function millis(value) {
