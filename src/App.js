@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithCustomToken, onAuthStateChanged, signOut, updatePassword } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, collectionGroup, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, orderBy, limit, setDoc, getDoc, onSnapshot, increment, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -1023,6 +1023,8 @@ useEffect(() => {
 
   const [roomFilterMaxPrice, setRoomFilterMaxPrice] = useState("");
   const [viewingRoom, setViewingRoom] = useState(null);
+  // Which contact button on the room page is fetching the landlord's number.
+  const [roomContactLoading, setRoomContactLoading] = useState(null);
   const viewingRoomRef = useRef(null);
   const showRoomIndoorRef = useRef(false);
   // eslint-disable-next-line no-unused-vars
@@ -1138,6 +1140,8 @@ useEffect(() => {
   const [adminStats, setAdminStats] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminFilter, setAdminFilter] = useState("inbox"); // "inbox" | "routed" | "fulfilled" | "all"
+  const [adminTab, setAdminTab] = useState("overview"); // "overview" | "contacts" | "verify" | "demand" | "settings"
+  const [adminContactTaps, setAdminContactTaps] = useState([]); // newest first, from contactTaps/
   // Verification queue state
   const [adminVerifications, setAdminVerifications] = useState([]);
   const [verificationFilter, setVerificationFilter] = useState("pending"); // "pending" | "approved" | "rejected"
@@ -1499,6 +1503,20 @@ useEffect(() => {
       }));
       verifs.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
       setAdminVerifications(verifs);
+
+      // WhatsApp / Call taps on rooms (written by the getRoomContact function).
+      // Separate try: if the rules aren't deployed yet, the rest still loads.
+      try {
+        const tapSnap = await getDocs(query(collection(db, "contactTaps"), orderBy("createdAt", "desc"), limit(1000)));
+        setAdminContactTaps(tapSnap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+          createdAt: d.data().createdAt?.toDate?.() || null,
+        })));
+      } catch (tapErr) {
+        console.error("Contact taps load failed:", tapErr);
+        setAdminContactTaps([]);
+      }
     } catch (err) {
       console.error("Admin load failed:", err);
       setError("Imeshindwa kupakia data ya admin.");
@@ -10856,6 +10874,39 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
             userAvatar: viewingRoom.listedByAvatar || null,
           }));
         };
+        // WhatsApp / Call: the number is private (contacts/), so it is fetched
+        // from the getRoomContact function only when a signed-in user taps.
+        // The function also logs the tap for the admin dashboard.
+        const contactLandlordDirect = async (channel) => {
+          if (isGuest) { askToSignUp(); return; }
+          if (!roomUserCanAccessRooms) { openRoomUserVerification("roomContact"); return; }
+          if (guardOfflineDiscoverAction(channel === "call" ? "Calling" : "WhatsApp")) return;
+          if (roomContactLoading) return;
+          const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+          // Desktop: open the tab now (before the await) so popup blockers allow it.
+          const pendingTab = channel === "whatsapp" && !isMobile ? window.open("", "_blank") : null;
+          setRoomContactLoading(channel);
+          try {
+            const run = httpsCallable(functions, "getRoomContact");
+            const res = await run({ roomId: viewingRoom.id, channel });
+            const phone = res.data?.phone;
+            if (!phone) throw new Error("No phone number for this room.");
+            if (channel === "call") {
+              window.location.href = `tel:+${phone}`;
+            } else {
+              const label = `${roomTypeInfo?.name || 'Room'} — ${viewingRoom.location || ''}`;
+              const msg = `Habari! Nimeona chumba chako kwenye Kampasika: ${label}, TSh ${viewingRoom.price?.toLocaleString()} kwa mwezi. Bado kinapatikana?`;
+              const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+              if (pendingTab) pendingTab.location.href = url; else window.location.href = url;
+            }
+          } catch (err) {
+            if (pendingTab) pendingTab.close();
+            console.error("Room contact failed:", err);
+            setError(err?.message || "Couldn't get the landlord's number. Try messaging instead.");
+          } finally {
+            setRoomContactLoading(null);
+          }
+        };
         const cardStyle = {background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'16px',padding:'16px',margin:'12px 16px 0'};
         return (
         <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
@@ -10977,7 +11028,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
             <div style={{width:'44px',height:'44px',borderRadius:'50%',flexShrink:0,backgroundImage:viewingRoom.listedByAvatar?`url(${viewingRoom.listedByAvatar})`:'none',backgroundColor:viewingRoom.listedByAvatar?'transparent':'#06d6c7',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'800',color:'#0f1b2d'}}>{!viewingRoom.listedByAvatar && String(landlordLabel).split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{landlordLabel}</div>
-              <div style={{fontSize:'12.5px',color:'var(--text-secondary)'}}>Chat inside Kampasika — safer, and your messages stay on record.</div>
+              <div style={{fontSize:'12.5px',color:'var(--text-secondary)'}}>WhatsApp, call or chat. Chats inside Kampasika stay on record if anything goes wrong.</div>
             </div>
           </div>
 
@@ -11000,13 +11051,23 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
           )}
 
           <div style={{flex:1,minHeight:'20px'}} />
-          {/* One clear action */}
-          <div style={{position:'sticky',bottom:0,marginTop:'16px',background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'12px 16px',paddingBottom:'calc(12px + env(safe-area-inset-bottom, 0px))',display:'flex',gap:'10px',alignItems:'center'}}>
-            <div style={{flex:'none'}}>
-              <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)'}}>TSh {viewingRoom.price?.toLocaleString()}</div>
-              <div style={{fontSize:'11.5px',color:'var(--text-secondary)'}}>per month</div>
+          {/* Contact bar: WhatsApp, Call, or in-app chat */}
+          <div style={{position:'sticky',bottom:0,marginTop:'16px',background:'var(--surface-bg)',borderTop:'1px solid var(--border-color)',padding:'10px 16px',paddingBottom:'calc(12px + env(safe-area-inset-bottom, 0px))'}}>
+            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'8px',marginBottom:'8px'}}>
+              <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)'}}>TSh {viewingRoom.price?.toLocaleString()} <span style={{fontSize:'12px',fontWeight:'600',color:'var(--text-secondary)'}}>/ month</span></div>
+              {(isGuest || !roomUserCanAccessRooms) && <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{isGuest ? "Sign up free to contact" : "Verify to contact"}</div>}
             </div>
-            <button onClick={messageLandlord} disabled={isOffline} style={{flex:1,padding:'15px',background:isOffline?'var(--border-color)':'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer'}}>{isGuest ? "💬 Sign up to message" : roomUserCanAccessRooms ? "💬 Message landlord" : "Verify to message"}</button>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(0, 1fr))',gap:'8px'}}>
+              <button type="button" onClick={()=>contactLandlordDirect("whatsapp")} disabled={isOffline || !!roomContactLoading} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',opacity:roomContactLoading && roomContactLoading!=="whatsapp"?0.6:1}}>
+                <WhatsAppIcon size={18} />{roomContactLoading==="whatsapp" ? "Opening…" : "WhatsApp"}
+              </button>
+              <button type="button" onClick={()=>contactLandlordDirect("call")} disabled={isOffline || !!roomContactLoading} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'var(--accent-navy, #0f1b2d)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',opacity:roomContactLoading && roomContactLoading!=="call"?0.6:1}}>
+                📞 {roomContactLoading==="call" ? "Opening…" : "Call"}
+              </button>
+              <button type="button" onClick={messageLandlord} disabled={isOffline} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer'}}>
+                💬 Chat
+              </button>
+            </div>
           </div>
           </div>
         </div>
@@ -11306,361 +11367,459 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
               </div>
             ) : (
               <>
-                {/* Header */}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px',marginTop:'12px'}}>
-                  <h1 style={{fontSize:'22px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>Admin Dashboard</h1>
-                  <button onClick={loadAdminData} disabled={adminLoading} style={{padding:'8px 14px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'600',cursor:adminLoading?'wait':'pointer'}}>
-                    {adminLoading ? '...' : '↻ Refresh'}
-                  </button>
-                </div>
-
-                {/* Six numbers (no charts) */}
-                {adminStats && (
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'24px'}}>
-                    {[
-                      {label:'Users', data: adminStats.users, color:'#0d9488'},
-                      {label:'Search Alerts', data: adminStats.alerts, color:'var(--accent-teal-bright, #06d6c7)'},
-                      {label:'Listings (Goods)', data: adminStats.listings, color:'#0d9488'},
-                      {label:'Services', data: adminStats.services, color:'#0d9488'},
-                      {label:'Rooms', data: adminStats.rooms, color:'#ef4444'},
-                    ].map(stat => (
-                      <div key={stat.label} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'14px',border:'1px solid var(--border-color)'}}>
-                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>{stat.label}</div>
-                        <div style={{fontSize:'24px',fontWeight:'700',color: stat.color}}>{stat.data.total}</div>
-                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'2px'}}>+{stat.data.thisWeek} this week</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-               
-                <div style={{
-  background:'var(--surface-bg)',
-  padding:'16px',
-  borderRadius:'12px',
-  marginBottom:'16px',
-  border:'1px solid var(--border-color)'
-}}>
-  <div style={{
-    display:'flex',
-    justifyContent:'space-between',
-    alignItems:'center'
-  }}>
-    
-    <div>
-      <div style={{
-        fontSize:'16px',
-        fontWeight:'700',
-        marginBottom:'4px'
-      }}>
-        🏠 Rooms Feature
-      </div>
-
-      <div style={{
-        fontSize:'13px',
-        color:'var(--text-secondary)'
-      }}>
-        Fixed ON while Rooms is under active development — this switch is disabled for now
-      </div>
-    </div>
-
-    <button
-      onClick={toggleRoomsFeature}
-      disabled
-      title="Disabled while Rooms is under active development"
-      style={{
-        padding:'10px 16px',
-        border:'none',
-        borderRadius:'10px',
-        cursor:'not-allowed',
-        fontWeight:'700',
-        opacity:0.5,
-        background:'#10b981',
-        color:'#fff'
-      }}
-    >
-      ON
-    </button>
-</div>
-</div>
-
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Goods</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Show or hide goods listings in public Discover</div>
-                    </div>
-                    <button onClick={toggleDiscoverGoodsFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_GOODS?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
-                      {ENABLE_DISCOVER_GOODS ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Discover Services</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Show or hide services in public Discover</div>
-                    </div>
-                    <button onClick={toggleDiscoverServicesFeature} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:ENABLE_DISCOVER_SERVICES?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
-                      {ENABLE_DISCOVER_SERVICES ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Identity Verification</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Require verified accounts before using main app features</div>
-                    </div>
-                    <button onClick={toggleIdentityVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_IDENTITY_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
-                      {REQUIRE_IDENTITY_VERIFICATION ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Room User Verification</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>Require profile photo and ID before room posting, contacts, and maps</div>
-                    </div>
-                    <button onClick={toggleRoomUserVerificationRequirement} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:'pointer',fontWeight:'700',background:REQUIRE_ROOM_USER_VERIFICATION?'#10b981':'#ef4444',color:'#fff',flexShrink:0}}>
-                      {REQUIRE_ROOM_USER_VERIFICATION ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Kampasika Assistant Backfill</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>One-time: creates the assistant conversation for accounts that predate it. Safe to run more than once.</div>
-                    </div>
-                    <button onClick={handleBackfillKampasikaWelcome} disabled={backfillingWelcome} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:backfillingWelcome?'not-allowed':'pointer',fontWeight:'700',background:'#0d9488',color:'#fff',flexShrink:0}}>
-                      {backfillingWelcome ? 'Running...' : 'Run backfill'}
-                    </button>
-                  </div>
-                  {backfillResult && (
-                    <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)'}}>
-                      {backfillResult.totalUsers} accounts checked · {backfillResult.alreadyHadWelcome} already had it · <strong style={{color:'#0d9488'}}>{backfillResult.created} created</strong>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{background:'var(--surface-bg)',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'1px solid var(--border-color)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px'}}>
-                    <div>
-                      <div style={{fontSize:'16px',fontWeight:'700',marginBottom:'4px'}}>Make landlord phones private</div>
-                      <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>One-time: moves phone numbers off public rooms and properties. Safe to run more than once.</div>
-                    </div>
-                    <button onClick={handleMoveLandlordPhones} disabled={movingPhones} style={{padding:'10px 16px',border:'none',borderRadius:'10px',cursor:movingPhones?'not-allowed':'pointer',fontWeight:'700',background:'#0d9488',color:'#fff',flexShrink:0}}>
-                      {movingPhones ? 'Moving...' : 'Move phones'}
-                    </button>
-                  </div>
-                  {movePhonesResult && (
-                    <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)'}}>
-                      <strong style={{color:'#0d9488'}}>{movePhonesResult.rooms} rooms</strong> · <strong style={{color:'#0d9488'}}>{movePhonesResult.properties} properties</strong> cleaned
-                    </div>
-                  )}
-                </div>
-
-                {/* ─── VERIFICATION QUEUE ─── */}
-                <div style={{marginBottom:'24px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-                    <h2 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>
-                      Verification Queue
-                      {adminVerifications.filter(v => v.status === "pending").length > 0 && (
-                        <span style={{marginLeft:'8px',padding:'2px 8px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',fontSize:'11px',fontWeight:'700',borderRadius:'10px'}}>
-                          {adminVerifications.filter(v => v.status === "pending").length} pending
-                        </span>
-                      )}
-                    </h2>
-                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>ID submissions to review</div>
-                  </div>
-
-                  {/* Filter chips */}
-                  <div style={{display:'flex',gap:'6px',marginBottom:'12px',overflowX:'auto'}}>
-                    {[
-                      {id:'pending',label:'Pending'},
-                      {id:'approved',label:'Approved'},
-                      {id:'rejected',label:'Rejected'},
-                    ].map(f => (
-                      <button key={f.id} onClick={()=>setVerificationFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:verificationFilter===f.id?'#0f1b2d':'var(--surface-bg)',color:verificationFilter===f.id?'#fff':'var(--text-secondary)',border:verificationFilter===f.id?'none':'1px solid var(--border-color)',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Queue */}
-                  {(() => {
-                    const filtered = adminVerifications.filter(v => v.status === verificationFilter);
-                    if (filtered.length === 0) {
-                      return <div style={{textAlign:'center',padding:'24px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna {verificationFilter}</div>;
-                    }
-                    return (
-                      <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-                        {filtered.map(req => {
-                          const isStudent = req.accountType !== "provider";
-                          const idType = isStudent ? "🎓 Student ID" : "🪪 NIDA";
-                          return (
-                            <div key={req.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)'}}>
-                              <div style={{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'8px'}}>
-                                {/* ID photo */}
-                                {(req.idUrl || req.studentIdUrl) && (
-                                  <img
-                                    src={req.idUrl || req.studentIdUrl}
-                                    alt="ID"
-                                    onClick={() => setViewingIdPhoto(req.idUrl || req.studentIdUrl)}
-                                    style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'8px',flexShrink:0,cursor:'pointer',border:'1px solid var(--border-color)'}}
-                                  />
-                                )}
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}}>
-                                    <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#ccfbf1',color:isStudent?'#1e40af':'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
-                                    <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
-                                  </div>
-                                  <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
-                                    {req.userName || 'Unknown'}
-                                  </div>
-                                  <div style={{fontSize:'11px',color:'var(--text-secondary)',lineHeight:1.5}}>
-                                    Account ID: {req.email}<br/>
-                                    {req.phone && <>Phone: {req.phone}<br/></>}
-                                    {req.nameOnId && <>Jina kwenye ID: <b>{req.nameOnId}</b><br/></>}
-                                    {req.nidaNumber && <>NIDA: <span style={{fontFamily:'monospace'}}>{req.nidaNumber}</span><br/></>}
-                                    {isStudent && req.universityName && <>Chuo: {req.universityName}<br/></>}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Status / Actions */}
-                              {req.status === "pending" && (
-                                rejectingId === req.id ? (
-                                  // Reject reason picker
-                                  <div style={{background:'#fef2f2',borderRadius:'10px',padding:'10px',marginTop:'8px'}}>
-                                    <div style={{fontSize:'11px',fontWeight:'600',color:'var(--danger-dark)',marginBottom:'8px'}}>Sababu ya kukataa:</div>
-                                    <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
-                                      {[
-                                        {id:'blurry',label:'Picha haijawa wazi'},
-                                        {id:'mismatched_name',label:'Jina halilingani'},
-                                        {id:'fake_id',label:'Kitambulisho si halisi'},
-                                        {id:'wrong_type',label:'Aina mbaya ya ID'},
-                                        {id:'expired',label:'Imeisha muda'},
-                                      ].map(r => (
-                                        <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{padding:'8px 10px',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'6px',fontSize:'12px',color:'var(--danger-dark)',cursor:'pointer',textAlign:'left'}}>
-                                          {r.label}
-                                        </button>
-                                      ))}
-                                    </div>
-                                    <button onClick={()=>setRejectingId(null)} style={{marginTop:'8px',padding:'6px 12px',background:'transparent',border:'none',fontSize:'11px',color:'var(--text-secondary)',cursor:'pointer'}}>Ghairi</button>
-                                  </div>
-                                ) : (
-                                  <div style={{display:'flex',gap:'6px'}}>
-                                    <button onClick={()=>approveVerification(req)} style={{flex:1,padding:'8px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
-                                    <button onClick={()=>setRejectingId(req.id)} style={{flex:1,padding:'8px',background:'var(--surface-bg)',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
-                                  </div>
-                                )
-                              )}
-                              {req.status === "approved" && (
-                                <div style={{padding:'6px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✓ Approved {req.reviewedAt ? req.reviewedAt.toLocaleDateString() : ''}</div>
-                              )}
-                              {req.status === "rejected" && (
-                                <div style={{padding:'6px 10px',background:'var(--danger-tint)',color:'var(--danger-dark)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✗ Rejected ({req.rejectionReason || 'no reason'})</div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Demand Inbox header */}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
-                  <h2 style={{fontSize:'16px',fontWeight:'700',color:'var(--text-primary)',margin:0}}>Demand Inbox</h2>
-                  <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>Search queries that need supply matching</div>
-                </div>
-
-                {/* Filter chips */}
-                <div style={{display:'flex',gap:'6px',marginBottom:'14px',overflowX:'auto'}}>
-                  {[
-                    {id:'inbox',label:'New'},
-                    {id:'routed',label:'Routed'},
-                    {id:'fulfilled',label:'Fulfilled'},
-                    {id:'all',label:'All'},
-                  ].map(f => (
-                    <button key={f.id} onClick={()=>setAdminFilter(f.id)} style={{flexShrink:0,padding:'6px 14px',background:adminFilter===f.id?'#0f1b2d':'var(--surface-bg)',color:adminFilter===f.id?'#fff':'var(--text-secondary)',border:adminFilter===f.id?'none':'1px solid var(--border-color)',borderRadius:'18px',fontSize:'12px',fontWeight:'600',cursor:'pointer',whiteSpace:'nowrap'}}>
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Alerts list */}
                 {(() => {
-                  const filtered = adminAlerts.filter(a => {
-                    if (adminFilter === 'inbox') return !a.routedAt && !a.fulfilledAt;
-                    if (adminFilter === 'routed') return a.routedAt && !a.fulfilledAt;
-                    if (adminFilter === 'fulfilled') return a.fulfilledAt;
-                    return true;
+                  // ─── Shared look for the admin screens (built for one-handed phone use) ───
+                  const card = {background:'var(--surface-bg)',borderRadius:'16px',padding:'16px',border:'1px solid var(--border-color)',marginBottom:'12px'};
+                  const sectionTitle = {fontSize:'13px',fontWeight:'800',color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'0.6px',margin:'20px 4px 10px'};
+                  const bigBtn = (bg, color='#fff', extra={}) => ({width:'100%',minHeight:'48px',padding:'12px 16px',background:bg,color,border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'800',cursor:'pointer',...extra});
+
+                  // ─── Contact taps (WhatsApp / Call on rooms) ───
+                  const DAY = 24 * 60 * 60 * 1000;
+                  const now = new Date();
+                  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                  const weekStart = todayStart - 6 * DAY; // last 7 days including today
+                  const lastWeekStart = weekStart - 7 * DAY;
+                  const tapTime = (t) => t.createdAt ? t.createdAt.getTime() : 0;
+                  const tapsThisWeek = adminContactTaps.filter(t => tapTime(t) >= weekStart);
+                  const tapsLastWeek = adminContactTaps.filter(t => tapTime(t) >= lastWeekStart && tapTime(t) < weekStart);
+                  const studentsThisWeek = new Set(tapsThisWeek.map(t => t.userId)).size;
+                  const waThisWeek = tapsThisWeek.filter(t => t.channel === "whatsapp").length;
+                  const callThisWeek = tapsThisWeek.filter(t => t.channel === "call").length;
+                  const tapsToday = adminContactTaps.filter(t => tapTime(t) >= todayStart).length;
+                  const weekDelta = tapsThisWeek.length - tapsLastWeek.length;
+                  const days = Array.from({length: 7}, (_, i) => {
+                    const start = weekStart + i * DAY;
+                    const count = adminContactTaps.filter(t => tapTime(t) >= start && tapTime(t) < start + DAY).length;
+                    return { label: new Date(start).toLocaleDateString('en', {weekday:'short'}), count, isToday: i === 6 };
                   });
-                  if (adminLoading) {
-                    return <div style={{textAlign:'center',padding:'40px',color:'var(--text-secondary)'}}>Inapakia...</div>;
-                  }
-                  if (filtered.length === 0) {
-                    return <div style={{textAlign:'center',padding:'30px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna alerts katika {adminFilter}</div>;
-                  }
-                  return (
-                    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-                      {filtered.map(alert => {
-                        const kindColors = {
-                          listing: {bg:'#ccfbf1',color:'var(--accent-teal-dark)'},
-                          service: {bg:'#ede9fe',color:'#5b21b6'},
-                          room: {bg:'#dbeafe',color:'#1e40af'},
-                          collection: {bg:'#fce7f3',color:'#9f1239'},
-                        };
-                        const k = kindColors[alert.kind] || {bg:'#f3f4f6',color:'#374151'};
-                        return (
-                          <div key={alert.id} style={{background:'var(--surface-bg)',borderRadius:'12px',padding:'12px',border:'1px solid var(--border-color)'}}>
-                            {/* Top row: kind badge + date */}
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
-                              <span style={{display:'inline-block',padding:'3px 10px',background:k.bg,color:k.color,fontSize:'10px',fontWeight:'700',borderRadius:'10px',textTransform:'uppercase',letterSpacing:'0.3px'}}>{alert.kind}</span>
-                              <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{alert.createdAt ? alert.createdAt.toLocaleString() : '—'}</span>
-                            </div>
-                            {/* Query */}
-                            <div style={{fontSize:'14px',fontWeight:'600',color:'var(--text-primary)',marginBottom:'6px',lineHeight:1.4}}>
-                              "{alert.query}"
-                            </div>
-                            {/* User info */}
-                            <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'10px',lineHeight:1.5}}>
-                              <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no account ID'}</div>
-                              {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0d9488',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
-                            </div>
-                            {/* Status + actions */}
-                            <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                              {alert.fulfilledAt ? (
-                                <span style={{padding:'5px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
-                              ) : alert.routedAt ? (
-                                <>
-                                  <span style={{padding:'5px 10px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
-                                  <button onClick={()=>markAlertFulfilled(alert)} style={{padding:'5px 10px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
-                                </>
-                              ) : (
-                                <button onClick={()=>markAlertRouted(alert)} style={{padding:'5px 10px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                  const maxDay = Math.max(1, ...days.map(d => d.count));
+                  const monthStart = todayStart - 29 * DAY;
+                  const roomTotals = {};
+                  adminContactTaps.filter(t => tapTime(t) >= monthStart).forEach(t => {
+                    const r = roomTotals[t.roomId] || (roomTotals[t.roomId] = { roomId: t.roomId, title: t.roomTitle || 'Room', landlord: t.landlordName || '', whatsapp: 0, call: 0, students: new Set() });
+                    if (t.channel === "call") r.call += 1; else r.whatsapp += 1;
+                    r.students.add(t.userId);
+                  });
+                  const topRooms = Object.values(roomTotals).sort((a, b) => (b.whatsapp + b.call) - (a.whatsapp + a.call)).slice(0, 10);
+                  const timeAgo = (d) => {
+                    if (!d) return '—';
+                    const mins = Math.round((Date.now() - d.getTime()) / 60000);
+                    if (mins < 1) return 'just now';
+                    if (mins < 60) return `${mins}m ago`;
+                    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+                    return d.toLocaleDateString('en', {day:'numeric', month:'short'});
+                  };
+
+                  const pendingVerifs = adminVerifications.filter(v => v.status === "pending").length;
+                  const newDemand = adminAlerts.filter(a => !a.routedAt && !a.fulfilledAt).length;
+
+                  const tabs = [
+                    {id:'overview', icon:'📊', label:'Overview'},
+                    {id:'contacts', icon:'📞', label:'Contacts', badge: tapsToday},
+                    {id:'verify', icon:'🪪', label:'Verify', badge: pendingVerifs},
+                    {id:'demand', icon:'📥', label:'Demand', badge: newDemand},
+                    {id:'settings', icon:'⚙️', label:'Settings'},
+                  ];
+
+                  // A setting row with a real on/off switch. Called as a function
+                  // (not <SettingRow/>) so React doesn't remount it each render.
+                  const settingRow = ({ title, desc, on, onToggle, locked }) => (
+                    <div key={title} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 0',borderTop:'1px solid var(--border-color)'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>{title}</div>
+                        <div style={{fontSize:'12.5px',color:'var(--text-secondary)',lineHeight:1.45,marginTop:'2px'}}>{desc}</div>
+                      </div>
+                      <button type="button" role="switch" aria-checked={on} aria-label={title} onClick={locked ? undefined : onToggle} disabled={locked}
+                        style={{flexShrink:0,width:'56px',height:'32px',borderRadius:'999px',border:'none',padding:'3px',background:on?'#0d9488':'#cbd5e1',cursor:locked?'not-allowed':'pointer',opacity:locked?0.55:1,display:'flex',justifyContent:on?'flex-end':'flex-start',transition:'background 0.15s'}}>
+                        <span style={{width:'26px',height:'26px',borderRadius:'50%',background:'#fff',boxShadow:'0 1px 3px rgba(0,0,0,0.25)'}} />
+                      </button>
                     </div>
                   );
-                })()}
 
-                {/* Footer */}
-                <div style={{textAlign:'center',padding:'30px 0 10px',color:'var(--text-secondary)',fontSize:'11px'}}>
-                  Use this inbox to drive your WhatsApp Channel demand broadcasts.<br/>
-                  Mark <b>Routed</b> after broadcasting. Mark <b>Fulfilled</b> when student is matched.
-                </div>
+                  return (
+                    <>
+                      {/* Header */}
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',margin:'12px 0 14px'}}>
+                        <div>
+                          <h1 style={{fontSize:'22px',fontWeight:'800',color:'var(--text-primary)',margin:0}}>Admin</h1>
+                          <div style={{fontSize:'12.5px',color:'var(--text-secondary)',marginTop:'2px'}}>Kampasika control room</div>
+                        </div>
+                        <button onClick={loadAdminData} disabled={adminLoading} aria-label="Refresh admin data" style={{minHeight:'44px',padding:'10px 16px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'700',cursor:adminLoading?'not-allowed':'pointer',opacity:adminLoading?0.6:1}}>
+                          {adminLoading ? 'Loading…' : '↻ Refresh'}
+                        </button>
+                      </div>
+
+                      {/* Tabs: sticky so they stay under your thumb while scrolling */}
+                      <div style={{position:'sticky',top:0,zIndex:20,background:'var(--page-bg)',padding:'6px 0 10px',margin:'0 -4px'}}>
+                        <div role="tablist" style={{display:'grid',gridTemplateColumns:'repeat(5, minmax(0, 1fr))',gap:'6px',background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'16px',padding:'6px'}}>
+                          {tabs.map(t => {
+                            const active = adminTab === t.id;
+                            return (
+                              <button key={t.id} type="button" role="tab" aria-selected={active} onClick={()=>setAdminTab(t.id)}
+                                style={{position:'relative',minHeight:'56px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'3px',padding:'6px 2px',border:'none',borderRadius:'12px',background:active?'var(--accent-navy, #0f1b2d)':'transparent',color:active?'#fff':'var(--text-secondary)',cursor:'pointer'}}>
+                                <span style={{fontSize:'18px',lineHeight:1}}>{t.icon}</span>
+                                <span style={{fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}}>{t.label}</span>
+                                {t.badge > 0 && (
+                                  <span style={{position:'absolute',top:'4px',right:'6px',minWidth:'18px',height:'18px',padding:'0 5px',borderRadius:'999px',background:'#ef4444',color:'#fff',fontSize:'10.5px',fontWeight:'800',display:'flex',alignItems:'center',justifyContent:'center',boxSizing:'border-box'}}>{t.badge > 99 ? '99+' : t.badge}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* ═══ OVERVIEW ═══ */}
+                      {adminTab === 'overview' && (
+                        <>
+                          <button type="button" onClick={()=>setAdminTab('contacts')} style={{...card,width:'100%',textAlign:'left',cursor:'pointer',background:'var(--accent-navy, #0f1b2d)',color:'#fff',border:'none',display:'block'}}>
+                            <div style={{fontSize:'12px',fontWeight:'700',opacity:0.8,textTransform:'uppercase',letterSpacing:'0.6px'}}>Landlord contacts · last 7 days</div>
+                            <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginTop:'6px'}}>
+                              <div style={{fontSize:'40px',fontWeight:'800',lineHeight:1}}>{tapsThisWeek.length}</div>
+                              <div style={{fontSize:'13px',fontWeight:'700',color:weekDelta>=0?'#5eead4':'#fca5a5'}}>{weekDelta>=0?'▲':'▼'} {Math.abs(weekDelta)} vs last week</div>
+                            </div>
+                            <div style={{fontSize:'13px',opacity:0.85,marginTop:'6px'}}>{studentsThisWeek} students · {waThisWeek} WhatsApp · {callThisWeek} calls — tap for details</div>
+                          </button>
+
+                          {(pendingVerifs > 0 || newDemand > 0) && (
+                            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}}>
+                              <button type="button" onClick={()=>setAdminTab('verify')} style={{...card,marginBottom:0,textAlign:'left',cursor:'pointer',minHeight:'72px'}}>
+                                <div style={{fontSize:'24px',fontWeight:'800',color:pendingVerifs?'#ef4444':'var(--text-primary)'}}>{pendingVerifs}</div>
+                                <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-secondary)'}}>IDs to review →</div>
+                              </button>
+                              <button type="button" onClick={()=>setAdminTab('demand')} style={{...card,marginBottom:0,textAlign:'left',cursor:'pointer',minHeight:'72px'}}>
+                                <div style={{fontSize:'24px',fontWeight:'800',color:newDemand?'#0d9488':'var(--text-primary)'}}>{newDemand}</div>
+                                <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-secondary)'}}>New demand →</div>
+                              </button>
+                            </div>
+                          )}
+
+                          <div style={sectionTitle}>Totals</div>
+                          {adminStats ? (
+                            <div style={{display:'grid',gridTemplateColumns:'repeat(2, minmax(0, 1fr))',gap:'10px'}}>
+                              {[
+                                {label:'Rooms', icon:'🏠', data: adminStats.rooms},
+                                {label:'Users', icon:'👤', data: adminStats.users},
+                                {label:'Search alerts', icon:'🔔', data: adminStats.alerts},
+                                {label:'Goods', icon:'🛍️', data: adminStats.listings},
+                                {label:'Services', icon:'🛠️', data: adminStats.services},
+                              ].map(stat => (
+                                <div key={stat.label} style={{...card,marginBottom:0,padding:'14px'}}>
+                                  <div style={{fontSize:'12.5px',fontWeight:'700',color:'var(--text-secondary)'}}>{stat.icon} {stat.label}</div>
+                                  <div style={{fontSize:'26px',fontWeight:'800',color:'var(--text-primary)',marginTop:'4px'}}>{stat.data.total}</div>
+                                  <div style={{fontSize:'12px',color:stat.data.thisWeek?'#0d9488':'var(--text-secondary)',fontWeight:'600'}}>+{stat.data.thisWeek} this week</div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{...card,textAlign:'center',color:'var(--text-secondary)'}}>{adminLoading ? 'Inapakia…' : 'Tap Refresh to load.'}</div>
+                          )}
+                        </>
+                      )}
+
+                      {/* ═══ CONTACTS (WhatsApp / Call taps on rooms) ═══ */}
+                      {adminTab === 'contacts' && (
+                        <>
+                          <div style={card}>
+                            <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-secondary)'}}>Students who contacted a landlord · last 7 days</div>
+                            <div style={{display:'flex',alignItems:'baseline',gap:'10px',marginTop:'6px'}}>
+                              <div style={{fontSize:'38px',fontWeight:'800',color:'var(--text-primary)',lineHeight:1}}>{studentsThisWeek}</div>
+                              <div style={{fontSize:'13px',color:'var(--text-secondary)'}}>from {tapsThisWeek.length} taps</div>
+                            </div>
+                            <div style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(0, 1fr))',gap:'8px',marginTop:'14px'}}>
+                              {[
+                                {label:'WhatsApp', value: waThisWeek, color:'#16a34a'},
+                                {label:'Calls', value: callThisWeek, color:'var(--text-primary)'},
+                                {label:'vs last week', value: `${weekDelta>=0?'+':'−'}${Math.abs(weekDelta)}`, color: weekDelta>=0?'#0d9488':'#ef4444'},
+                              ].map(m => (
+                                <div key={m.label} style={{background:'var(--surface-bg-alt)',borderRadius:'12px',padding:'10px'}}>
+                                  <div style={{fontSize:'20px',fontWeight:'800',color:m.color}}>{m.value}</div>
+                                  <div style={{fontSize:'11.5px',fontWeight:'600',color:'var(--text-secondary)'}}>{m.label}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Taps per day */}
+                            <div aria-label="Taps per day, last 7 days" style={{display:'grid',gridTemplateColumns:'repeat(7, minmax(0, 1fr))',gap:'6px',alignItems:'end',height:'110px',marginTop:'18px'}}>
+                              {days.map(d => (
+                                <div key={d.label} style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%',gap:'4px'}}>
+                                  <div style={{fontSize:'11px',fontWeight:'700',color:'var(--text-primary)'}}>{d.count || ''}</div>
+                                  <div style={{width:'100%',maxWidth:'28px',height:`${Math.max(4, (d.count / maxDay) * 70)}px`,borderRadius:'6px 6px 2px 2px',background:d.isToday?'#0d9488':'#99f6e4'}} />
+                                  <div style={{fontSize:'10.5px',color:d.isToday?'var(--text-primary)':'var(--text-secondary)',fontWeight:d.isToday?'800':'600'}}>{d.isToday ? 'Today' : d.label}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={sectionTitle}>Most contacted rooms · 30 days</div>
+                          {topRooms.length === 0 ? (
+                            <div style={{...card,textAlign:'center',color:'var(--text-secondary)',fontSize:'13.5px',lineHeight:1.5}}>
+                              No WhatsApp or Call taps yet. They appear here as soon as students tap those buttons on a room.
+                            </div>
+                          ) : (
+                            <div style={{...card,padding:'4px 16px'}}>
+                              {topRooms.map((r, i) => (
+                                <div key={r.roomId} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 0',borderTop:i?'1px solid var(--border-color)':'none'}}>
+                                  <div style={{width:'28px',height:'28px',flexShrink:0,borderRadius:'50%',background:'var(--surface-bg-alt)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:'800',color:'var(--text-secondary)'}}>{i + 1}</div>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:'14px',fontWeight:'700',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title}</div>
+                                    <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{r.landlord ? `${r.landlord} · ` : ''}{r.students.size} student{r.students.size === 1 ? '' : 's'}</div>
+                                  </div>
+                                  <div style={{textAlign:'right',flexShrink:0}}>
+                                    <div style={{fontSize:'18px',fontWeight:'800',color:'var(--text-primary)'}}>{r.whatsapp + r.call}</div>
+                                    <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>{r.whatsapp} WA · {r.call} call</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div style={sectionTitle}>Latest taps</div>
+                          {adminContactTaps.length === 0 ? (
+                            <div style={{...card,textAlign:'center',color:'var(--text-secondary)',fontSize:'13.5px'}}>Nothing yet.</div>
+                          ) : (
+                            <div style={{...card,padding:'4px 16px'}}>
+                              {adminContactTaps.slice(0, 25).map((t, i) => (
+                                <div key={t.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 0',borderTop:i?'1px solid var(--border-color)':'none'}}>
+                                  <div style={{width:'36px',height:'36px',flexShrink:0,borderRadius:'12px',background:t.channel==='call'?'#e0e7ff':'#dcfce7',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                    {t.channel === 'call' ? <span style={{fontSize:'16px'}}>📞</span> : <WhatsAppIcon size={18} color="#16a34a" />}
+                                  </div>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:'14px',fontWeight:'700',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.userName || 'A student'}</div>
+                                    <div style={{fontSize:'12px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.roomTitle || 'Room'}{t.landlordName ? ` · ${t.landlordName}` : ''}</div>
+                                  </div>
+                                  <div style={{fontSize:'11.5px',color:'var(--text-secondary)',flexShrink:0}}>{timeAgo(t.createdAt)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* ═══ VERIFY ═══ */}
+                      {adminTab === 'verify' && (
+                        <>
+                          <div style={{display:'flex',gap:'8px',margin:'4px 0 12px',overflowX:'auto'}}>
+                            {[
+                              {id:'pending',label:`Pending${pendingVerifs ? ` (${pendingVerifs})` : ''}`},
+                              {id:'approved',label:'Approved'},
+                              {id:'rejected',label:'Rejected'},
+                            ].map(f => (
+                              <button key={f.id} type="button" onClick={()=>setVerificationFilter(f.id)} style={{flexShrink:0,minHeight:'40px',padding:'8px 16px',background:verificationFilter===f.id?'var(--accent-navy, #0f1b2d)':'var(--surface-bg)',color:verificationFilter===f.id?'#fff':'var(--text-secondary)',border:'1px solid var(--border-color)',borderRadius:'999px',fontSize:'13.5px',fontWeight:'700',cursor:'pointer'}}>
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                            {/* Queue */}
+                            {(() => {
+                              const filtered = adminVerifications.filter(v => v.status === verificationFilter);
+                              if (filtered.length === 0) {
+                                return <div style={{textAlign:'center',padding:'24px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna {verificationFilter}</div>;
+                              }
+                              return (
+                                <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                                  {filtered.map(req => {
+                                    const isStudent = req.accountType !== "provider";
+                                    const idType = isStudent ? "🎓 Student ID" : "🪪 NIDA";
+                                    return (
+                                      <div key={req.id} style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'14px',border:'1px solid var(--border-color)'}}>
+                                        <div style={{display:'flex',gap:'10px',alignItems:'flex-start',marginBottom:'8px'}}>
+                                          {/* ID photo */}
+                                          {(req.idUrl || req.studentIdUrl) && (
+                                            <img
+                                              src={req.idUrl || req.studentIdUrl}
+                                              alt="ID"
+                                              onClick={() => setViewingIdPhoto(req.idUrl || req.studentIdUrl)}
+                                              style={{width:'80px',height:'80px',objectFit:'cover',borderRadius:'8px',flexShrink:0,cursor:'pointer',border:'1px solid var(--border-color)'}}
+                                            />
+                                          )}
+                                          <div style={{flex:1,minWidth:0}}>
+                                            <div style={{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}}>
+                                              <span style={{padding:'2px 8px',background:isStudent?'#dbeafe':'#ccfbf1',color:isStudent?'#1e40af':'#0f766e',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>{idType}</span>
+                                              <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{req.createdAt ? req.createdAt.toLocaleString() : '—'}</span>
+                                            </div>
+                                            <div style={{fontSize:'13px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'2px'}}>
+                                              {req.userName || 'Unknown'}
+                                            </div>
+                                            <div style={{fontSize:'11px',color:'var(--text-secondary)',lineHeight:1.5}}>
+                                              Account ID: {req.email}<br/>
+                                              {req.phone && <>Phone: {req.phone}<br/></>}
+                                              {req.nameOnId && <>Jina kwenye ID: <b>{req.nameOnId}</b><br/></>}
+                                              {req.nidaNumber && <>NIDA: <span style={{fontFamily:'monospace'}}>{req.nidaNumber}</span><br/></>}
+                                              {isStudent && req.universityName && <>Chuo: {req.universityName}<br/></>}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Status / Actions */}
+                                        {req.status === "pending" && (
+                                          rejectingId === req.id ? (
+                                            // Reject reason picker
+                                            <div style={{background:'#fef2f2',borderRadius:'10px',padding:'10px',marginTop:'8px'}}>
+                                              <div style={{fontSize:'11px',fontWeight:'600',color:'var(--danger-dark)',marginBottom:'8px'}}>Sababu ya kukataa:</div>
+                                              <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+                                                {[
+                                                  {id:'blurry',label:'Picha haijawa wazi'},
+                                                  {id:'mismatched_name',label:'Jina halilingani'},
+                                                  {id:'fake_id',label:'Kitambulisho si halisi'},
+                                                  {id:'wrong_type',label:'Aina mbaya ya ID'},
+                                                  {id:'expired',label:'Imeisha muda'},
+                                                ].map(r => (
+                                                  <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{minHeight:'44px',padding:'10px 12px',textAlign:'left',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'10px',fontSize:'14px',color:'var(--danger-dark)',cursor:'pointer',textAlign:'left'}}>
+                                                    {r.label}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                              <button onClick={()=>setRejectingId(null)} style={{marginTop:'8px',padding:'6px 12px',background:'transparent',border:'none',fontSize:'11px',color:'var(--text-secondary)',cursor:'pointer'}}>Ghairi</button>
+                                            </div>
+                                          ) : (
+                                            <div style={{display:'flex',gap:'8px',marginTop:'4px'}}>
+                                              <button onClick={()=>approveVerification(req)} style={{flex:1,minHeight:'46px',padding:'12px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>✓ Approve</button>
+                                              <button onClick={()=>setRejectingId(req.id)} style={{flex:1,minHeight:'46px',padding:'12px',background:'var(--surface-bg)',color:'#ef4444',border:'1px solid #fecaca',borderRadius:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer'}}>✗ Reject</button>
+                                            </div>
+                                          )
+                                        )}
+                                        {req.status === "approved" && (
+                                          <div style={{padding:'6px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✓ Approved {req.reviewedAt ? req.reviewedAt.toLocaleDateString() : ''}</div>
+                                        )}
+                                        {req.status === "rejected" && (
+                                          <div style={{padding:'6px 10px',background:'var(--danger-tint)',color:'var(--danger-dark)',fontSize:'11px',fontWeight:'700',borderRadius:'8px',display:'inline-block'}}>✗ Rejected ({req.rejectionReason || 'no reason'})</div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                        </>
+                      )}
+
+                      {/* ═══ DEMAND INBOX ═══ */}
+                      {adminTab === 'demand' && (
+                        <>
+                          <div style={{fontSize:'13px',color:'var(--text-secondary)',margin:'4px 4px 10px',lineHeight:1.5}}>Searches that found nothing. Broadcast them, mark <b>Routed</b>, then <b>Fulfilled</b> once matched.</div>
+                          <div style={{display:'flex',gap:'8px',marginBottom:'12px',overflowX:'auto'}}>
+                            {[
+                              {id:'inbox',label:`New${newDemand ? ` (${newDemand})` : ''}`},
+                              {id:'routed',label:'Routed'},
+                              {id:'fulfilled',label:'Fulfilled'},
+                              {id:'all',label:'All'},
+                            ].map(f => (
+                              <button key={f.id} type="button" onClick={()=>setAdminFilter(f.id)} style={{flexShrink:0,minHeight:'40px',padding:'8px 16px',background:adminFilter===f.id?'var(--accent-navy, #0f1b2d)':'var(--surface-bg)',color:adminFilter===f.id?'#fff':'var(--text-secondary)',border:'1px solid var(--border-color)',borderRadius:'999px',fontSize:'13.5px',fontWeight:'700',cursor:'pointer'}}>
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                            {/* Alerts list */}
+                            {(() => {
+                              const filtered = adminAlerts.filter(a => {
+                                if (adminFilter === 'inbox') return !a.routedAt && !a.fulfilledAt;
+                                if (adminFilter === 'routed') return a.routedAt && !a.fulfilledAt;
+                                if (adminFilter === 'fulfilled') return a.fulfilledAt;
+                                return true;
+                              });
+                              if (adminLoading) {
+                                return <div style={{textAlign:'center',padding:'40px',color:'var(--text-secondary)'}}>Inapakia...</div>;
+                              }
+                              if (filtered.length === 0) {
+                                return <div style={{textAlign:'center',padding:'30px',background:'var(--surface-bg)',borderRadius:'12px',color:'var(--text-secondary)',fontSize:'13px'}}>Hakuna alerts katika {adminFilter}</div>;
+                              }
+                              return (
+                                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                                  {filtered.map(alert => {
+                                    const kindColors = {
+                                      listing: {bg:'#ccfbf1',color:'var(--accent-teal-dark)'},
+                                      service: {bg:'#ede9fe',color:'#5b21b6'},
+                                      room: {bg:'#dbeafe',color:'#1e40af'},
+                                      collection: {bg:'#fce7f3',color:'#9f1239'},
+                                    };
+                                    const k = kindColors[alert.kind] || {bg:'#f3f4f6',color:'#374151'};
+                                    return (
+                                      <div key={alert.id} style={{background:'var(--surface-bg)',borderRadius:'16px',padding:'14px',border:'1px solid var(--border-color)'}}>
+                                        {/* Top row: kind badge + date */}
+                                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                                          <span style={{display:'inline-block',padding:'3px 10px',background:k.bg,color:k.color,fontSize:'10px',fontWeight:'700',borderRadius:'10px',textTransform:'uppercase',letterSpacing:'0.3px'}}>{alert.kind}</span>
+                                          <span style={{fontSize:'10px',color:'var(--text-secondary)'}}>{alert.createdAt ? alert.createdAt.toLocaleString() : '—'}</span>
+                                        </div>
+                                        {/* Query */}
+                                        <div style={{fontSize:'14px',fontWeight:'600',color:'var(--text-primary)',marginBottom:'6px',lineHeight:1.4}}>
+                                          "{alert.query}"
+                                        </div>
+                                        {/* User info */}
+                                        <div style={{fontSize:'11px',color:'var(--text-secondary)',marginBottom:'10px',lineHeight:1.5}}>
+                                          <div><b>{alert.userName || 'Unknown'}</b> · {alert.userEmail || 'no account ID'}</div>
+                                          {alert.userPhone && <div>📞 <a href={`tel:${alert.userPhone}`} style={{color:'#0d9488',textDecoration:'none'}}>{alert.userPhone}</a> · <a href={`https://wa.me/255${alert.userPhone.replace(/\D/g, '').replace(/^0/, '')}`} target="_blank" rel="noreferrer" style={{color:'#25d366',textDecoration:'none'}}>WhatsApp</a></div>}
+                                        </div>
+                                        {/* Status + actions */}
+                                        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
+                                          {alert.fulfilledAt ? (
+                                            <span style={{padding:'5px 10px',background:'#dcfce7',color:'var(--success-text)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>✓ Fulfilled</span>
+                                          ) : alert.routedAt ? (
+                                            <>
+                                              <span style={{padding:'5px 10px',background:'var(--accent-teal-tint)',color:'var(--accent-teal-dark)',fontSize:'10px',fontWeight:'700',borderRadius:'8px'}}>→ Routed</span>
+                                              <button onClick={()=>markAlertFulfilled(alert)} style={{minHeight:'42px',padding:'10px 16px',background:'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}}>Mark Fulfilled</button>
+                                            </>
+                                          ) : (
+                                            <button onClick={()=>markAlertRouted(alert)} style={{minHeight:'42px',padding:'10px 16px',background:'var(--accent-navy)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}}>Mark Routed →</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                        </>
+                      )}
+
+                      {/* ═══ SETTINGS ═══ */}
+                      {adminTab === 'settings' && (
+                        <>
+                          <div style={sectionTitle}>Features</div>
+                          <div style={{...card,padding:'2px 16px'}}>
+                            <div style={{marginTop:'-1px'}}>
+                              {settingRow({ title:'🏠 Rooms', desc:'Fixed on while Rooms is in active development.', on: true, onToggle: toggleRoomsFeature, locked: true })}
+                              {settingRow({ title:'Discover goods', desc:'Show goods listings in public Discover.', on: ENABLE_DISCOVER_GOODS, onToggle: toggleDiscoverGoodsFeature })}
+                              {settingRow({ title:'Discover services', desc:'Show services in public Discover.', on: ENABLE_DISCOVER_SERVICES, onToggle: toggleDiscoverServicesFeature })}
+                            </div>
+                          </div>
+
+                          <div style={sectionTitle}>Verification</div>
+                          <div style={{...card,padding:'2px 16px'}}>
+                            <div style={{marginTop:'-1px'}}>
+                              {settingRow({ title:'Identity verification', desc:'Require verified accounts before using main app features.', on: REQUIRE_IDENTITY_VERIFICATION, onToggle: toggleIdentityVerificationRequirement })}
+                              {settingRow({ title:'Room user verification', desc:'Require photo and ID before posting rooms, contacting landlords (chat, WhatsApp, call) and seeing maps.', on: REQUIRE_ROOM_USER_VERIFICATION, onToggle: toggleRoomUserVerificationRequirement })}
+                            </div>
+                          </div>
+
+                          <div style={sectionTitle}>Maintenance · one-time tools</div>
+                          <div style={card}>
+                            <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>Kampasika Assistant backfill</div>
+                            <div style={{fontSize:'12.5px',color:'var(--text-secondary)',lineHeight:1.45,margin:'2px 0 12px'}}>Creates the assistant chat for accounts that predate it. Safe to run more than once.</div>
+                            <button type="button" onClick={handleBackfillKampasikaWelcome} disabled={backfillingWelcome} style={bigBtn('var(--accent-navy, #0f1b2d)', '#fff', {opacity:backfillingWelcome?0.6:1,cursor:backfillingWelcome?'not-allowed':'pointer'})}>
+                              {backfillingWelcome ? 'Running…' : 'Run backfill'}
+                            </button>
+                            {backfillResult && (
+                              <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-secondary)'}}>
+                                {backfillResult.totalUsers} accounts checked · {backfillResult.alreadyHadWelcome} already had it · <strong style={{color:'#0d9488'}}>{backfillResult.created} created</strong>
+                              </div>
+                            )}
+                          </div>
+                          <div style={card}>
+                            <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)'}}>Make landlord phones private</div>
+                            <div style={{fontSize:'12.5px',color:'var(--text-secondary)',lineHeight:1.45,margin:'2px 0 12px'}}>Moves phone numbers off public rooms and properties into private contacts. Safe to run more than once.</div>
+                            <button type="button" onClick={handleMoveLandlordPhones} disabled={movingPhones} style={bigBtn('#0d9488', '#fff', {opacity:movingPhones?0.6:1,cursor:movingPhones?'not-allowed':'pointer'})}>
+                              {movingPhones ? 'Moving…' : 'Move phones'}
+                            </button>
+                            {movePhonesResult && (
+                              <div style={{marginTop:'10px',fontSize:'12.5px',color:'var(--text-secondary)'}}>
+                                <strong style={{color:'#0d9488'}}>{movePhonesResult.rooms} rooms</strong> · <strong style={{color:'#0d9488'}}>{movePhonesResult.properties} properties</strong> cleaned
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
           </div>
@@ -14340,4 +14499,4 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
 );
 }
 
-export default App;
+export default App;

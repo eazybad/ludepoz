@@ -335,6 +335,13 @@ service cloud.firestore {
     // Private landlord contact for a public room / property. Only the
     // listing's owner and the admin can read it; the owner creates it with
     // their own uid and can update it (never move it to someone else).
+    // WhatsApp / Call taps on rooms. Written only by the getRoomContact
+    // Cloud Function; the admin dashboard reads them to count contacts.
+    match /contactTaps/{tapId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /contacts/{contactId} {
       allow read: if isAdmin()
         || (request.auth != null && resource.data.ownerId == request.auth.uid);

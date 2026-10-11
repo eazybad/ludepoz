@@ -244,6 +244,7 @@ exports.bizRecordPayment = bizRent.bizRecordPayment;
 exports.bizWaiveCharge = bizRent.bizWaiveCharge;
 exports.bizRentReminders = bizRent.bizRentReminders;
 exports.adminMoveLandlordPhones = require('./roomContacts').adminMoveLandlordPhones;
+exports.getRoomContact = require('./roomContacts').getRoomContact;
 exports.bizPayInstructions = bizRent.bizPayInstructions;
 exports.bizReportPayment = bizRent.bizReportPayment;
 exports.bizReviewClaim = bizRent.bizReviewClaim;
