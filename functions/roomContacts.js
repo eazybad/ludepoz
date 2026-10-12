@@ -106,6 +106,15 @@ exports.getRoomContact = onCall(async (request) => {
   if (!phone) throw new HttpsError("not-found", "This landlord hasn't added a phone number.");
 
   const ownerId = room.userId || room.listedBy || (contact && contact.ownerId) || null;
+
+  // Numbers are only revealed after the student books a viewing, so every
+  // contact that leads to a rental is recorded on Kampasika.
+  if (uid !== ownerId && !ADMIN_UIDS.has(uid)) {
+    const viewing = await db.collection("viewings").doc(`${roomId}_${uid}`).get();
+    if (!viewing.exists || (viewing.data() || {}).status === "cancelled") {
+      throw new HttpsError("failed-precondition", "Book a viewing first to see the landlord's number.");
+    }
+  }
   // Don't count landlords tapping their own rooms.
   if (uid !== ownerId) {
     await db.collection("contactTaps").add({

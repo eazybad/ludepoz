@@ -357,6 +357,31 @@ function avatarInitials(name = "") {
   return initials.toUpperCase();
 }
 
+// Tells students up front whether a room comes straight from the landlord or
+// through a dalali, and what the dalali charges, so the fee is never a
+// surprise. Older rooms without listerType show nothing.
+function RoomListerBadge({ room, style }) {
+  const type = room && room.listerType;
+  if (type !== "landlord" && type !== "dalali") return null;
+  const isDalali = type === "dalali";
+  const fee = Number(room.dalaliFee) || 0;
+  const label = isDalali
+    ? `${room.landlordVerified ? "Verified dalali" : "Via dalali"}${fee > 0 ? ` · fee TSh ${fee.toLocaleString()}` : ""}`
+    : "Direct from landlord · no dalali fee";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "5px",
+      fontSize: "11.5px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px",
+      background: isDalali ? "rgba(245,158,11,0.14)" : "rgba(6,214,199,0.14)",
+      color: isDalali ? "#b45309" : "#0d9488",
+      border: `1px solid ${isDalali ? "rgba(245,158,11,0.35)" : "rgba(6,214,199,0.35)"}`,
+      whiteSpace: "nowrap", ...style,
+    }}>
+      {isDalali ? (room.landlordVerified ? "✔" : "🤝") : "🏠"} {label}
+    </span>
+  );
+}
+
 function makeInitialAvatarUrl(name, color = "#06d6c7") {
   const text = avatarInitials(name);
   const svg = `
@@ -1025,13 +1050,21 @@ useEffect(() => {
   const [viewingRoom, setViewingRoom] = useState(null);
   // Which contact button on the room page is fetching the landlord's number.
   const [roomContactLoading, setRoomContactLoading] = useState(null);
+  // A student's booked viewing for the open room (viewings/<roomId>_<uid>).
+  // The landlord's / dalali's number is only revealed once one exists.
+  const [myRoomViewing, setMyRoomViewing] = useState(null);
+  const [showBookViewing, setShowBookViewing] = useState(false);
+  const [viewingSlot, setViewingSlot] = useState({ date: "", time: "" });
+  const [bookingViewing, setBookingViewing] = useState(false);
+  // Viewing requests on rooms this user listed (My Rooms tab).
+  const [ownerViewings, setOwnerViewings] = useState([]);
   const viewingRoomRef = useRef(null);
   const showRoomIndoorRef = useRef(false);
   // eslint-disable-next-line no-unused-vars
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
   const [createRoomData, setCreateRoomData] = useState({
-    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null, propertyId: "", roomNumber: "", existingPhotoUrls: []
+    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null, propertyId: "", roomNumber: "", existingPhotoUrls: [], listerType: "landlord", dalaliFee: ""
   });
   // A "property" is a building/hostel that owns many individual rooms, so a
   // landlord with 80+ rooms can manage them as one unit instead of 80
@@ -2664,6 +2697,8 @@ useEffect(() => {
         listedByAvatar: userAvatar || null,
         propertyId: createRoomData.propertyId || null,
         roomNumber: createRoomData.roomNumber.trim(),
+        listerType: createRoomData.listerType === "dalali" ? "dalali" : "landlord",
+        dalaliFee: createRoomData.listerType === "dalali" ? (parsePrice(createRoomData.dalaliFee) || 0) : 0,
         createdAt: serverTimestamp()
       });
       setShowCreateRoomSuccess(true);
@@ -3413,6 +3448,8 @@ const requestNotificationPermission = async (currentUser) => {
       propertyId: room.propertyId || "",
       roomNumber: "",
       existingPhotoUrls: room.photos || [],
+      listerType: room.listerType || "landlord",
+      dalaliFee: room.dalaliFee ? String(room.dalaliFee) : "",
     });
     setPage("createRoom");
   };
@@ -3426,6 +3463,7 @@ const requestNotificationPermission = async (currentUser) => {
       lat: null, lng: null, nearUni: property?.nearUni || "ARU",
       desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null,
       propertyId: propertyId || "", roomNumber: "",
+      listerType: "landlord", dalaliFee: "",
     });
     setPage("createRoom");
   };
@@ -3686,6 +3724,77 @@ const requestNotificationPermission = async (currentUser) => {
     setShowRoomIndoor(false);
     // Each room has its own shareable link (kampasika.org/room/<id>).
     window.history.pushState({ page: "roomDetail" }, "", `/room/${room.id}`);
+  };
+
+  // Load this student's viewing for the room that's open, if any.
+  useEffect(() => {
+    const roomId = viewingRoom && viewingRoom.id;
+    if (!roomId || !user) { setMyRoomViewing(null); return; }
+    let cancelled = false;
+    getDoc(doc(db, "viewings", `${roomId}_${user.uid}`))
+      .then(snap => { if (!cancelled) setMyRoomViewing(snap.exists() ? { id: snap.id, ...snap.data() } : null); })
+      .catch(() => { if (!cancelled) setMyRoomViewing(null); });
+    return () => { cancelled = true; };
+  }, [viewingRoom, user]);
+
+  const loadOwnerViewings = useCallback(async () => {
+    if (!user) { setOwnerViewings([]); return; }
+    try {
+      const snap = await getDocs(query(collection(db, "viewings"), where("ownerId", "==", user.uid), limit(100)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setOwnerViewings(list);
+    } catch (err) {
+      console.error("Error loading viewing requests:", err);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (profileTab === "myRooms") loadOwnerViewings();
+  }, [profileTab, loadOwnerViewings]);
+
+  // Book a viewing: records that this student found the room on Kampasika
+  // and unlocks the landlord's / dalali's WhatsApp and Call buttons.
+  const bookRoomViewing = async () => {
+    if (!user || !viewingRoom) return;
+    if (!viewingSlot.date || !viewingSlot.time) { setError("Pick a day and time for the viewing."); return; }
+    if (bookingViewing) return;
+    setBookingViewing(true);
+    try {
+      const roomTypeName = ROOM_TYPES.find(t => t.id === viewingRoom.roomType)?.name || "Room";
+      const data = {
+        roomId: viewingRoom.id,
+        propertyId: viewingRoom.propertyId || null,
+        ownerId: viewingRoom.userId || viewingRoom.listedBy,
+        studentId: user.uid,
+        studentName: userName || "",
+        studentAvatar: userAvatar || null,
+        roomTitle: `${roomTypeName} — ${viewingRoom.location || ""}`,
+        date: viewingSlot.date,
+        time: viewingSlot.time,
+        status: "requested",
+        createdAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, "viewings", `${viewingRoom.id}_${user.uid}`), data);
+      setMyRoomViewing({ id: `${viewingRoom.id}_${user.uid}`, ...data });
+      setShowBookViewing(false);
+      setSuccess("Viewing booked! You can now WhatsApp or call to confirm.");
+    } catch (err) {
+      console.error("Booking viewing failed:", err);
+      setError("Couldn't book the viewing: " + err.message);
+    } finally {
+      setBookingViewing(false);
+    }
+  };
+
+  const updateViewingStatus = async (viewing, status) => {
+    try {
+      await updateDoc(doc(db, "viewings", viewing.id), { status, updatedAt: serverTimestamp() });
+      setOwnerViewings(list => list.map(v => v.id === viewing.id ? { ...v, status } : v));
+    } catch (err) {
+      console.error("Updating viewing failed:", err);
+      setError("Couldn't update the viewing: " + err.message);
+    }
   };
 
   // Share a room on WhatsApp with its own link (opens straight to the room,
@@ -7863,6 +7972,7 @@ return (
               <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginTop:'3px'}}>
                 📍 {room.location} · <span style={{color:'#f59e0b'}}>{room.price?.toLocaleString()}</span><span style={{fontSize:'12px',fontWeight:'500',color:'var(--text-secondary)'}}>/mo</span>
               </div>
+              <RoomListerBadge room={room} style={{marginTop:'5px'}} />
               <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.45,marginTop:'2px'}}>
                 <span style={{color:'var(--text-primary)',fontWeight:'700'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
                 {room.description ? ` — ${room.description.length > 120 ? room.description.substring(0,120) + "…" : room.description}` : ""}
@@ -10440,6 +10550,22 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                 </label>
 
 
+                <div style={{marginBottom:'14px'}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>{t("Who is listing this room? *","Nani anaweka chumba hiki? *")}</label>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                    {[["landlord",t("🏠 Landlord (direct)","🏠 Mwenye nyumba")],["dalali",t("🤝 Dalali / agent","🤝 Dalali")]].map(([id,label])=>(
+                      <button key={id} type="button" onClick={()=>setCreateRoomData({...createRoomData,listerType:id})} style={{padding:'11px 10px',borderRadius:'10px',border:createRoomData.listerType===id?'2px solid #06d6c7':'1.5px solid var(--border-color)',background:createRoomData.listerType===id?'rgba(6,214,199,0.12)':'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'700',cursor:'pointer'}}>{label}</button>
+                    ))}
+                  </div>
+                  {createRoomData.listerType==="dalali" && (
+                    <div style={{marginTop:'10px'}}>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Dalali fee the student pays (TSh)","Ada ya dalali kwa mwanafunzi (TSh)")}</label>
+                      <input type="text" inputMode="numeric" placeholder="e.g. 20,000" value={createRoomData.dalaliFee} onChange={e=>setCreateRoomData({...createRoomData,dalaliFee:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/>
+                      <div style={{fontSize:'11.5px',color:'var(--text-secondary)',marginTop:'5px'}}>{t("Shown openly on the listing. Students trust clear fees.","Inaonekana wazi kwenye tangazo. Wanafunzi huamini ada zilizo wazi.")}</div>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Landlord / Contact Name *","Jina la Mwenye Nyumba *")}</label><input type="text" placeholder={t("e.g. Bwana Juma","mfano: Bwana Juma")} value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
                 <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📱 Phone / WhatsApp *","📱 Simu / WhatsApp *")}</label><input type="tel" placeholder="0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
@@ -10907,6 +11033,14 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
             setRoomContactLoading(null);
           }
         };
+        const isRoomOwner = !!user && (viewingRoom.userId === user.uid || viewingRoom.listedBy === user.uid);
+        const openBookViewing = () => {
+          if (isGuest) { askToSignUp(); return; }
+          if (!roomUserCanAccessRooms) { openRoomUserVerification("roomContact"); return; }
+          if (guardOfflineDiscoverAction("Booking a viewing")) return;
+          setViewingSlot({ date: "", time: "" });
+          setShowBookViewing(true);
+        };
         const cardStyle = {background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'16px',padding:'16px',margin:'12px 16px 0'};
         return (
         <div style={{position:'fixed',inset:0,background:'var(--surface-bg-alt)',zIndex:300,overflowY:'auto'}}>
@@ -11028,7 +11162,8 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
             <div style={{width:'44px',height:'44px',borderRadius:'50%',flexShrink:0,backgroundImage:viewingRoom.listedByAvatar?`url(${viewingRoom.listedByAvatar})`:'none',backgroundColor:viewingRoom.listedByAvatar?'transparent':'#06d6c7',backgroundSize:'cover',backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'800',color:'#0f1b2d'}}>{!viewingRoom.listedByAvatar && String(landlordLabel).split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{landlordLabel}</div>
-              <div style={{fontSize:'12.5px',color:'var(--text-secondary)'}}>WhatsApp, call or chat. Chats inside Kampasika stay on record if anything goes wrong.</div>
+              <div style={{fontSize:'12.5px',color:'var(--text-secondary)'}}>Book a viewing to get their WhatsApp and number. Chats inside Kampasika stay on record if anything goes wrong.</div>
+              <RoomListerBadge room={viewingRoom} style={{marginTop:'6px'}} />
             </div>
           </div>
 
@@ -11057,6 +11192,14 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
               <div style={{fontSize:'16px',fontWeight:'800',color:'var(--text-primary)'}}>TSh {viewingRoom.price?.toLocaleString()} <span style={{fontSize:'12px',fontWeight:'600',color:'var(--text-secondary)'}}>/ month</span></div>
               {(isGuest || !roomUserCanAccessRooms) && <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{isGuest ? "Sign up free to contact" : "Verify to contact"}</div>}
             </div>
+            {isRoomOwner || myRoomViewing ? (
+            <>
+            {myRoomViewing && !isRoomOwner && (
+              <div style={{fontSize:'12.5px',color:'var(--text-secondary)',marginBottom:'8px'}}>
+                📅 Viewing {myRoomViewing.status === "confirmed" ? "confirmed" : myRoomViewing.status === "declined" ? "declined" : "booked"}: <b style={{color:'var(--text-primary)'}}>{myRoomViewing.date} · {myRoomViewing.time}</b>
+                {myRoomViewing.status === "declined" && <> · <button type="button" onClick={()=>{setViewingSlot({date:"",time:""});setShowBookViewing(true);}} style={{border:'none',background:'none',padding:0,color:'#0d9488',fontWeight:'800',cursor:'pointer'}}>Pick another time</button></>}
+              </div>
+            )}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(0, 1fr))',gap:'8px'}}>
               <button type="button" onClick={()=>contactLandlordDirect("whatsapp")} disabled={isOffline || !!roomContactLoading} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'#25D366',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer',opacity:roomContactLoading && roomContactLoading!=="whatsapp"?0.6:1}}>
                 <WhatsAppIcon size={18} />{roomContactLoading==="whatsapp" ? "Opening…" : "WhatsApp"}
@@ -11068,8 +11211,38 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                 💬 Chat
               </button>
             </div>
+            </>
+            ) : (
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:'8px'}}>
+              <button type="button" onClick={openBookViewing} disabled={isOffline} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'var(--accent-navy, #0f1b2d)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer'}}>
+                📅 Book a viewing
+              </button>
+              <button type="button" onClick={messageLandlord} disabled={isOffline} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',minHeight:'50px',padding:'10px 6px',background:isOffline?'var(--border-color)':'var(--accent-teal)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'800',cursor:isOffline?'not-allowed':'pointer'}}>
+                💬 Chat
+              </button>
+            </div>
+            )}
+            {!isRoomOwner && !myRoomViewing && <div style={{fontSize:'11.5px',color:'var(--text-secondary)',marginTop:'6px',textAlign:'center'}}>WhatsApp and phone number show after you book a viewing.</div>}
           </div>
           </div>
+
+          {showBookViewing && (
+            <div onClick={()=>!bookingViewing&&setShowBookViewing(false)} style={{position:'fixed',inset:0,background:'rgba(15,27,45,0.55)',zIndex:400,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+              <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:'520px',background:'var(--surface-bg)',borderRadius:'24px 24px 0 0',padding:'20px 16px',paddingBottom:'calc(20px + env(safe-area-inset-bottom, 0px))'}}>
+                <div style={{fontSize:'17px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'4px'}}>Book a viewing</div>
+                <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'14px'}}>Pick when you'd like to see the room. You'll get the WhatsApp and phone number right after.</div>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'var(--text-primary)'}}>Day</label>
+                <input type="date" min={new Date().toISOString().slice(0,10)} value={viewingSlot.date} onChange={e=>setViewingSlot(s=>({...s,date:e.target.value}))} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'12px'}}/>
+                <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px',color:'var(--text-primary)'}}>Time</label>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:'8px',marginBottom:'16px'}}>
+                  {["Morning","Afternoon","Evening"].map(slot=>(
+                    <button key={slot} type="button" onClick={()=>setViewingSlot(s=>({...s,time:slot}))} style={{padding:'11px 6px',borderRadius:'10px',border:viewingSlot.time===slot?'2px solid #06d6c7':'1.5px solid var(--border-color)',background:viewingSlot.time===slot?'rgba(6,214,199,0.12)':'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'700',cursor:'pointer'}}>{slot}</button>
+                  ))}
+                </div>
+                <button type="button" onClick={bookRoomViewing} disabled={bookingViewing} style={{width:'100%',padding:'14px',background:'#06d6c7',color:'#0f1b2d',border:'none',borderRadius:'12px',fontSize:'15px',fontWeight:'800',cursor:bookingViewing?'wait':'pointer'}}>{bookingViewing ? "Booking…" : "Confirm viewing"}</button>
+              </div>
+            </div>
+          )}
         </div>
         );
       })()}
@@ -12355,6 +12528,29 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
             return (
             <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
               {!scopedProperty && <BizEntryCard />}
+              {!scopedProperty && ownerViewings.length > 0 && (
+                <div style={{background:'var(--surface-bg)',border:'1px solid var(--border-color)',borderRadius:'14px',padding:'14px'}}>
+                  <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'10px'}}>📅 Viewing requests ({ownerViewings.filter(v=>v.status==="requested").length} new)</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                    {ownerViewings.slice(0,20).map(v=>(
+                      <div key={v.id} style={{display:'flex',alignItems:'center',gap:'10px',paddingTop:'10px',borderTop:'1px solid var(--border-color)'}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'14px',fontWeight:'700',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.studentName || "Student"}</div>
+                          <div style={{fontSize:'12px',color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.roomTitle} · {v.date} · {v.time}</div>
+                        </div>
+                        {v.status === "requested" ? (
+                          <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+                            <button type="button" onClick={()=>updateViewingStatus(v,"confirmed")} style={{padding:'7px 12px',border:'none',borderRadius:'8px',background:'#06d6c7',color:'#0f1b2d',fontSize:'12px',fontWeight:'800',cursor:'pointer'}}>Confirm</button>
+                            <button type="button" onClick={()=>updateViewingStatus(v,"declined")} style={{padding:'7px 10px',border:'1px solid var(--border-color)',borderRadius:'8px',background:'var(--surface-bg)',color:'var(--text-secondary)',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>Decline</button>
+                          </div>
+                        ) : (
+                          <span style={{fontSize:'12px',fontWeight:'800',color:v.status==="confirmed"?'#0d9488':'var(--text-secondary)',flexShrink:0,textTransform:'capitalize'}}>{v.status}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {scopedProperty && (
                 <button onClick={()=>{setViewingPropertyId(null);setProfileTab("myProperties");}} style={{alignSelf:'flex-start',padding:'6px 0',border:'none',background:'none',color:'#0d9488',fontSize:'12px',fontWeight:'700',cursor:'pointer'}}>← Back to properties</button>
               )}

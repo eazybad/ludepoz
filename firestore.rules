@@ -411,6 +411,31 @@ service cloud.firestore {
         || managesRoomProperty();
     }
 
+    // Room viewings. A student books one per room (id <roomId>_<uid>); that
+    // unlocks the landlord's number in getRoomContact. The room's owner can
+    // confirm or decline it.
+    match /viewings/{viewingId} {
+      function roomOwnerOf(roomId) {
+        return get(/databases/$(database)/documents/rooms/$(roomId)).data.userId;
+      }
+      allow read: if isAdmin()
+        || (signedIn() && (resource.data.studentId == request.auth.uid || resource.data.ownerId == request.auth.uid));
+      allow create, update: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && viewingId == request.resource.data.roomId + '_' + request.auth.uid
+        && exists(/databases/$(database)/documents/rooms/$(request.resource.data.roomId))
+        && request.resource.data.ownerId == roomOwnerOf(request.resource.data.roomId)
+        && request.resource.data.status == 'requested'
+        && request.resource.data.date is string && request.resource.data.date.size() <= 20
+        && request.resource.data.time is string && request.resource.data.time.size() <= 20;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['confirmed', 'declined'];
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.studentId == request.auth.uid);
+    }
+
     // A verified-student-only feature end to end: gated in the UI already,
     // now gated at the data layer too, so a landlord account (or an
     // unverified one) can't read or post roommate requests by calling
