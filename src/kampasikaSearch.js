@@ -174,7 +174,10 @@ export function filterRooms(rooms, parsed) {
     .map((item) => {
       if (filters.maxPrice != null && item.price > filters.maxPrice) return null;
       if (filters.minPrice != null && item.price < filters.minPrice) return null;
-      if (filters.roomType && item.type !== filters.roomType) return null;
+      // Rooms store their type as roomType ("single" | "master" | "apartment");
+      // item.type is only a fallback for older data.
+      const itemRoomType = item.roomType || item.type;
+      if (filters.roomType && itemRoomType !== filters.roomType) return null;
 
       // Amenity filter — require ALL requested amenities
       if (filters.amenities && filters.amenities.length > 0) {
@@ -183,7 +186,7 @@ export function filterRooms(rooms, parsed) {
         if (!hasAll) return null;
       }
 
-      const score = scoreMatch(item, keywords, ["title", "description", "location", "type"]);
+      const score = scoreMatch(item, keywords, ["title", "description", "location", "roomType", "type", "nearUni"]);
       let locationScore = 0;
       if (filters.location && item.location) {
         if (item.location.toLowerCase().includes(filters.location.toLowerCase())) locationScore = 5;

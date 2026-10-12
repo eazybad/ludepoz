@@ -7837,8 +7837,7 @@ return (
 
 {/* ===== SERVICES TAB CONTENT ===== */}
 <div style={{display: ENABLE_DISCOVER_SERVICES && homeTab==="services" ? "block" : "none"}}>
-  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setServiceSearchQ(""); setCommittedServiceSearchQ(""); }} />
-  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
+  {/* The AI badge + "AI is thinking" for this tab are shown once, above the tabs. */}
   <div style={{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px',margin:'0 16px 12px 16px'}}>
     {SERVICE_CATEGORIES.map(c=>(
       <button key={c.id} onClick={()=>setActiveServiceCat(c.id)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:activeServiceCat===c.id?'#0d9488':'var(--surface-bg)',color:activeServiceCat===c.id?'#fff':'var(--text-primary)',border:activeServiceCat===c.id?'1.5px solid #0d9488':'1.5px solid var(--border-color)',borderRadius:'20px',fontSize:'12px',fontWeight:'500',cursor:'pointer',whiteSpace:'nowrap'}}>{c.icon} {c.name}</button>
@@ -7911,8 +7910,7 @@ return (
 
 {/* ===== ROOMS TAB CONTENT ===== */}
 <div style={{display: ENABLE_ROOMS && homeTab==="rooms" ? "block" : "none"}}>
-  <AISearchBadge parsed={aiParsed} isAIActive={isAIActive} onClear={() => { clearAISearch(); setRoomSearchQ(""); setCommittedRoomSearchQ(""); }} />
-  {aiSearching && <div style={{padding:'6px 16px 8px',fontSize:'11px',color:'#0d9488'}}>✨ AI is thinking...</div>}
+  {/* The AI badge + "AI is thinking" for this tab are shown once, above the tabs. */}
   {/* Action row — two equal-width primary actions, then the price filter as a
       quiet chip on its own line so the three stop competing for attention. */}
   {/* One horizontal line: list, roommate, price filter. Each button sizes to
@@ -11863,7 +11861,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                                                   {id:'wrong_type',label:'Aina mbaya ya ID'},
                                                   {id:'expired',label:'Imeisha muda'},
                                                 ].map(r => (
-                                                  <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{minHeight:'44px',padding:'10px 12px',textAlign:'left',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'10px',fontSize:'14px',color:'var(--danger-dark)',cursor:'pointer',textAlign:'left'}}>
+                                                  <button key={r.id} onClick={() => rejectVerification(req, r.id)} style={{minHeight:'44px',padding:'10px 12px',textAlign:'left',background:'var(--surface-bg)',border:'1px solid #fecaca',borderRadius:'10px',fontSize:'14px',color:'var(--danger-dark)',cursor:'pointer'}}>
                                                     {r.label}
                                                   </button>
                                                 ))}
