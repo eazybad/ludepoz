@@ -1166,6 +1166,8 @@ useEffect(() => {
 
   // Saved search alerts — track which queries the user has already subscribed to in this session
   const [savedAlerts, setSavedAlerts] = useState(new Set());
+  // Searches where the user tapped "No" on "Tukujulishe?" (this session only).
+  const [declinedAlerts, setDeclinedAlerts] = useState(new Set());
   const [savingAlert, setSavingAlert] = useState(false);
 
   // Admin dashboard state
@@ -2080,28 +2082,52 @@ useEffect(() => {
             <div style={{fontSize:'15px',fontWeight:'700',color:'var(--text-primary)',marginBottom:'6px'}}>
               Hakuna matokeo sasa hivi katika {kind === "listing" ? "Goods" : kind === "service" ? "Services" : kind === "room" ? "Rooms" : "Collections"}
             </div>
+            {declinedAlerts.has(`${kind}:${query.toLowerCase().trim()}`) ? (
+              <div style={{fontSize:'13px',color:'#6b7280',lineHeight:1.5}}>
+                Sawa, hatutakutumia taarifa. Jaribu kutafuta kwa maneno mengine.
+              </div>
+            ) : (
+            <>
             <div style={{fontSize:'13px',color:'#6b7280',marginBottom:'4px',lineHeight:1.5}}>
-              Tutakutaarifu mtu akiiorodhesha "{query.length > 40 ? query.slice(0, 40) + '…' : query}"
+              Tukujulishe "{query.length > 40 ? query.slice(0, 40) + '…' : query}" ikiorodheshwa?
             </div>
             <div style={{fontSize:'11px',color:'#8a9bb0',marginBottom:'18px'}}>
-              (We'll notify you when something matching is listed)
+              (Should we notify you when "{query.length > 40 ? query.slice(0, 40) + '…' : query}" is listed?)
             </div>
-            <button
-              onClick={() => saveSearchAlert(kind, query, parsedFilters)}
-              disabled={savingAlert}
-              style={{
-                padding:'12px 24px',
-                background: 'linear-gradient(135deg,#0d9488,#0ea5a0)',
-                color: '#fff',
-                border:'none',
-                borderRadius:'24px',
-                fontSize:'14px',
-                fontWeight:'700',
-                cursor: savingAlert ? 'wait' : 'pointer',
-                boxShadow: '0 2px 10px rgba(13,148,136,0.2)',
-              }}>
-              {savingAlert ? '...' : '🔔 Niarifu kikipatikana'}
-            </button>
+            <div style={{display:'flex',gap:'10px',justifyContent:'center'}}>
+              <button
+                onClick={() => saveSearchAlert(kind, query, parsedFilters)}
+                disabled={savingAlert}
+                style={{
+                  padding:'12px 26px',
+                  background: '#06d6c7',
+                  color: '#0f1b2d',
+                  border:'none',
+                  borderRadius:'24px',
+                  fontSize:'14px',
+                  fontWeight:'800',
+                  cursor: savingAlert ? 'wait' : 'pointer',
+                }}>
+                {savingAlert ? '...' : '🔔 Ndiyo'}
+              </button>
+              <button
+                onClick={() => setDeclinedAlerts(prev => new Set([...prev, `${kind}:${query.toLowerCase().trim()}`]))}
+                disabled={savingAlert}
+                style={{
+                  padding:'12px 26px',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border:'1.5px solid var(--border-color)',
+                  borderRadius:'24px',
+                  fontSize:'14px',
+                  fontWeight:'700',
+                  cursor:'pointer',
+                }}>
+                Hapana
+              </button>
+            </div>
+            </>
+            )}
           </div>
         )}
       </>
@@ -3831,10 +3857,11 @@ const requestNotificationPermission = async (currentUser) => {
   const listLinkHandledRef = useRef(false);
   useEffect(() => {
     if (listLinkHandledRef.current || !user) return;
-    if (new URLSearchParams(window.location.search).get("list") !== "property") return;
+    const listParam = new URLSearchParams(window.location.search).get("list");
+    if (listParam !== "property" && listParam !== "room") return;
     listLinkHandledRef.current = true;
     window.history.replaceState({}, "", "/");
-    setPage("createProperty");
+    setPage(listParam === "room" ? "createRoom" : "createProperty");
   }, [user, setPage]);
 
   const handleRoomBack = () => {

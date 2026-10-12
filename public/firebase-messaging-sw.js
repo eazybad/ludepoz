@@ -24,7 +24,7 @@ messaging.onBackgroundMessage((payload) => {
     body: payload.notification?.body || 'You have a new notification',
     icon: '/logo192.png',
     badge: '/logo192.png',
-    tag: 'kampasika-notification',
+    tag: (payload.data && payload.data.roomId) ? 'kampasika-room-' + payload.data.roomId : 'kampasika-notification',
     data: payload.data || {},
     vibrate: [200, 100, 200],
     actions: [
@@ -46,14 +46,20 @@ self.addEventListener('notificationclick', (event) => {
     }).then(() => {
       return clients.matchAll({ type: 'window', includeUncontrolled: true });
     }).then((clientList) => {
-      // If app is already open, focus it
+      // Deep link (e.g. /room/<id>) when the notification carries one.
+      const link = (event.notification.data && event.notification.data.link) || '/';
+      const safeLink = link.startsWith('/') ? link : '/';
+      // If app is already open, focus it and go to the link
       for (const client of clientList) {
         if (client.url.includes('kampasika') && 'focus' in client) {
+          if (safeLink !== '/' && 'navigate' in client) {
+            return client.navigate(safeLink).then(c => (c || client).focus());
+          }
           return client.focus();
         }
       }
       // Otherwise open new window
-      return clients.openWindow('/');
+      return clients.openWindow(safeLink);
     })
   );
 });

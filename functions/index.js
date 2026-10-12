@@ -203,6 +203,8 @@ exports.sendInAppNotificationPush = onDocumentCreated(
           notificationId: event.params.notificationId,
           groupId: String(notification.groupId || ""),
           messageId: String(notification.messageId || ""),
+          roomId: String(notification.roomId || ""),
+          link: String(notification.link || ""),
         },
         token: fcmToken,
       };
@@ -245,6 +247,8 @@ exports.bizWaiveCharge = bizRent.bizWaiveCharge;
 exports.bizRentReminders = bizRent.bizRentReminders;
 exports.adminMoveLandlordPhones = require('./roomContacts').adminMoveLandlordPhones;
 exports.getRoomContact = require('./roomContacts').getRoomContact;
+exports.notifyRoomSearchAlerts = require('./searchAlertMatching').notifyRoomSearchAlerts;
+exports.sendRoomDemandDigest = require('./searchAlertMatching').sendRoomDemandDigest;
 exports.bizPayInstructions = bizRent.bizPayInstructions;
 exports.bizReportPayment = bizRent.bizReportPayment;
 exports.bizReviewClaim = bizRent.bizReviewClaim;
@@ -2016,4 +2020,4 @@ async function assertGroupManager(db, groupId, uid) {
     throw new HttpsError("permission-denied", "Only group leaders can prepare document previews.");
   }
   return group;
-}
+}
