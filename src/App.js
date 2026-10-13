@@ -1054,6 +1054,8 @@ useEffect(() => {
   const [viewingRoom, setViewingRoom] = useState(null);
   // Which contact button on the room page is fetching the landlord's number.
   const [roomContactLoading, setRoomContactLoading] = useState(null);
+  // Set after a List-a-Room submit is blocked, so the exact empty fields light up.
+  const [roomSubmitAttempted, setRoomSubmitAttempted] = useState(false);
   // A student's booked viewing for the open room (viewings/<roomId>_<uid>).
   // The landlord's / dalali's number is only revealed once one exists.
   const [myRoomViewing, setMyRoomViewing] = useState(null);
@@ -2680,6 +2682,41 @@ useEffect(() => {
     }
   }, []);
 
+  // Which List-a-Room fields are still empty, in the order they appear on the
+  // form, so the error can name exactly what to fill instead of listing all.
+  const getRoomMissingFields = () => {
+    const d = createRoomData;
+    const missing = [];
+    if (d.listingMode === "words") {
+      if (roomUserVerificationStatus === "approved" && d.desc.trim().length < 30) missing.push("words");
+    } else {
+      const hasMedia = (d.photoFiles || []).length > 0 || (d.existingPhotoUrls || []).length > 0 || !!d.videoFile;
+      if (!hasMedia) missing.push("media");
+    }
+    if (!d.landlordName.trim()) missing.push("name");
+    if (!d.landlordPhone.trim()) missing.push("phone");
+    if (!d.roomType) missing.push("roomType");
+    if (!d.price || parsePrice(d.price) === null) missing.push("price");
+    if (!d.location.trim()) missing.push("location");
+    return missing;
+  };
+  const ROOM_FIELD_LABELS = {
+    media: ["a photo or video", "picha au video"],
+    words: ["a description (30+ characters)", "maelezo (herufi 30+)"],
+    name: ["contact name", "jina la mwenye nyumba"],
+    phone: ["phone / WhatsApp", "simu / WhatsApp"],
+    roomType: ["room type", "aina ya chumba"],
+    price: ["monthly rent", "kodi ya mwezi"],
+    location: ["location / area", "eneo / mtaa"],
+  };
+  const roomFieldErr = (key) => roomSubmitAttempted && getRoomMissingFields().includes(key);
+  const roomErrBox = (key) => roomFieldErr(key)
+    ? { background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.5)', borderRadius:'12px', padding:'8px', margin:'0 -9px 14px' }
+    : {};
+  const roomRequiredTag = (key) => roomFieldErr(key)
+    ? <span style={{color:'#ef4444',fontWeight:700}}> · {t("required","inahitajika")}</span>
+    : null;
+
   const handleCreateRoom = async () => {
     if (!user) { requireAuth("list a room", () => setPage("createRoom")); return; }
     if (!roomUserCanAccessRooms) {
@@ -2687,30 +2724,29 @@ useEffect(() => {
       return;
     }
     const parsedRoomPrice = parsePrice(createRoomData.price);
-    if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || parsedRoomPrice === null || !createRoomData.location.trim()) {
-      setError("Please fill in name, phone, room type, price, and location"); return;
-    }
     // Words-only listings (no photo or video) are for verified listers, e.g.
     // hostels or dalalis whose policy is no photos. Everyone else needs at
     // least one photo or a video.
     const isWordsListing = createRoomData.listingMode === "words";
-    if (isWordsListing) {
-      if (roomUserVerificationStatus !== "approved") {
-        setError("Only verified listers can post without photos. Verify your account or add a photo.");
-        openRoomUserVerification("postRoom");
-        return;
-      }
-      if (createRoomData.desc.trim().length < 30) {
-        setError("Describe the room in a few sentences (at least 30 characters) so students know what they're getting.");
-        return;
-      }
-    } else {
-      const hasMedia = (createRoomData.photoFiles || []).length > 0 || (createRoomData.existingPhotoUrls || []).length > 0 || !!createRoomData.videoFile;
-      if (!hasMedia) {
-        setError("Add at least one photo or a video of the room.");
-        return;
-      }
+    if (isWordsListing && roomUserVerificationStatus !== "approved") {
+      setError(t("Only verified listers can post without photos. Verify your account or add a photo.","Waliothibitishwa tu ndio wanaweza kuweka bila picha. Thibitisha akaunti au weka picha."));
+      openRoomUserVerification("postRoom");
+      return;
     }
+    const missingFields = getRoomMissingFields();
+    if (missingFields.length > 0) {
+      setRoomSubmitAttempted(true);
+      const names = missingFields.map(k => t(ROOM_FIELD_LABELS[k][0], ROOM_FIELD_LABELS[k][1]));
+      const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} ${t("and","na")} ${names[names.length - 1]}`;
+      const priceUnreadable = missingFields.includes("price") && !!createRoomData.price;
+      setError(`${t("Please add","Tafadhali weka")} ${list}.${priceUnreadable ? " " + t("We couldn't read the rent. Try 80000 or 80k.","Bei haisomeki. Jaribu 80000 au 80k.") : ""}`);
+      setTimeout(() => {
+        const el = document.getElementById(`room-field-${missingFields[0]}`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+      return;
+    }
+    setRoomSubmitAttempted(false);
     try {
       setUploading(true);
       const uploadTs = Date.now();
@@ -3768,6 +3804,11 @@ const requestNotificationPermission = async (currentUser) => {
       setHomeTab(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
+
+  // Start the List-a-Room form clean each time it's opened.
+  useEffect(() => {
+    if (page !== "createRoom") setRoomSubmitAttempted(false);
+  }, [page]);
 
   // Collections hidden by admin: move anyone sitting on those screens to Rooms.
   useEffect(() => {
@@ -10612,7 +10653,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                       <button type="button" onClick={()=>openRoomUserVerification("postRoom")} style={{width:'100%',padding:'12px',background:'var(--accent-navy, #0f1b2d)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>{t("Verify my account","Thibitisha akaunti")}</button>
                     </div>
                   ) : (
-                    <div style={{marginBottom:'14px'}}>
+                    <div id="room-field-words" style={{marginBottom:'14px',...roomErrBox("words")}}>
                       <textarea
                         autoFocus
                         maxLength={1000}
@@ -10634,7 +10675,8 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                     </div>
                   )
                 ) : (
-                <>
+                <div id="room-field-media" style={roomErrBox("media")}>
+                {roomFieldErr("media") && <div style={{color:'#ef4444',fontSize:'12.5px',fontWeight:700,marginBottom:'8px'}}>⚠ {t("Add at least one photo or a video","Weka angalau picha moja au video")}</div>}
                 {/* Video walkthrough — the headline input. Listing a room should
                     feel like sending a WhatsApp video, so this sits first and
                     everything optional is pushed below "More options". */}
@@ -10671,7 +10713,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                     </div>
                   )}
                 </label>
-                </>
+                </div>
                 )}
 
 
@@ -10691,11 +10733,11 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                   )}
                 </div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Landlord / Contact Name *","Jina la Mwenye Nyumba *")}</label><input type="text" placeholder={t("e.g. Bwana Juma","mfano: Bwana Juma")} value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                <div id="room-field-name" style={{marginBottom:'14px',...roomErrBox("name")}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Landlord / Contact Name *","Jina la Mwenye Nyumba *")}{roomRequiredTag("name")}</label><input type="text" placeholder={t("e.g. Bwana Juma","mfano: Bwana Juma")} value={createRoomData.landlordName} onChange={e=>setCreateRoomData({...createRoomData,landlordName:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📱 Phone / WhatsApp *","📱 Simu / WhatsApp *")}</label><input type="tel" placeholder="0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
+                <div id="room-field-phone" style={{marginBottom:'14px',...roomErrBox("phone")}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📱 Phone / WhatsApp *","📱 Simu / WhatsApp *")}{roomRequiredTag("phone")}</label><input type="tel" placeholder="0712345678" value={createRoomData.landlordPhone} onChange={e=>setCreateRoomData({...createRoomData,landlordPhone:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)'}}/></div>
 
-                <div style={{marginBottom:'14px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>{t("Room Type *","Aina ya Chumba *")}</label>
+                <div id="room-field-roomType" style={{marginBottom:'14px',...roomErrBox("roomType")}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'8px'}}>{t("Room Type *","Aina ya Chumba *")}{roomRequiredTag("roomType")}</label>
                   <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
                     {ROOM_TYPES.filter(t=>t.id!=="all").map(t=>(
                       <button key={t.id} onClick={()=>setCreateRoomData({...createRoomData,roomType:t.id})} style={{padding:'10px 16px',borderRadius:'10px',border:createRoomData.roomType===t.id?'2px solid #06d6c7':'1.5px solid #e2e6ea',background:createRoomData.roomType===t.id?'#e0f2fe':'var(--surface-bg)',fontSize:'13px',fontWeight:'500',cursor:'pointer'}}>{t.icon} {t.name}{t.sw?' ('+t.sw+')':''}</button>
@@ -10703,8 +10745,8 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                   </div>
                 </div>
 
-                <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Monthly Rent (TSh) *","Kodi ya Mwezi (TSh) *")}</label>
+                <div id="room-field-price" style={{marginBottom:'14px',...roomErrBox("price")}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Monthly Rent (TSh) *","Kodi ya Mwezi (TSh) *")}{roomRequiredTag("price")}</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -10720,8 +10762,8 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                   )}
                 </div>
 
-                <div style={{marginBottom:'14px'}}>
-                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📍 Location / Area *","📍 Eneo / Mtaa *")}</label>
+                <div id="room-field-location" style={{marginBottom:'14px',...roomErrBox("location")}}>
+                  <label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("📍 Location / Area *","📍 Eneo / Mtaa *")}{roomRequiredTag("location")}</label>
                   <input type="text" placeholder={t("e.g. Sinza C, near Ardhi gate","mfano: Sinza C, karibu na geti la Ardhi")} value={createRoomData.location} onChange={e=>setCreateRoomData({...createRoomData,location:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',boxSizing:'border-box',background:'var(--surface-bg)',color:'var(--text-primary)',marginBottom:'8px'}}/>
                   <button type="button" onClick={()=>{
                     if (!navigator.geolocation) { setError("GPS not supported on this device"); return; }
