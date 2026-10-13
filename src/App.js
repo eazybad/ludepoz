@@ -693,6 +693,10 @@ function App() {
   const [ENABLE_ROOMS, setEnableRooms] = useState(true);
   const [ENABLE_DISCOVER_GOODS, setEnableDiscoverGoods] = useState(false);
   const [ENABLE_DISCOVER_SERVICES, setEnableDiscoverServices] = useState(false);
+  // Admin switch (system/features.collections). Hides the Collections tab and
+  // "My Collections" so the app stays focused on Rooms. Group chats keep
+  // working. Missing or true = shown.
+  const [SHOW_COLLECTIONS, setShowCollections] = useState(true);
   // Mirrors ENABLE_GROUP_FILES in GroupDetailPage.jsx — Files is hidden group-side, so hide this entry point too.
   const ENABLE_GROUP_FILES = false;
   const [REQUIRE_IDENTITY_VERIFICATION, setRequireIdentityVerification] = useState(false);
@@ -1064,7 +1068,7 @@ useEffect(() => {
   const [roommateSearchQ, setRoommateSearchQ] = useState("");
   const [roommatePosts, setRoommatePosts] = useState([]);
   const [createRoomData, setCreateRoomData] = useState({
-    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null, propertyId: "", roomNumber: "", existingPhotoUrls: [], listerType: "landlord", dalaliFee: ""
+    landlordName: "", landlordPhone: "", roomType: "", price: "", location: "", lat: null, lng: null, nearUni: "ARU", desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null, propertyId: "", roomNumber: "", existingPhotoUrls: [], listerType: "landlord", dalaliFee: "", listingMode: "media", noPhotoReason: ""
   });
   // A "property" is a building/hostel that owns many individual rooms, so a
   // landlord with 80+ rooms can manage them as one unit instead of 80
@@ -2240,6 +2244,19 @@ useEffect(() => {
       setError("Failed to update services visibility");
     }
   };
+  const toggleCollectionsFeature = async () => {
+    try {
+      const newValue = !SHOW_COLLECTIONS;
+      await setDoc(doc(db, "system", "features"), { collections: newValue }, { merge: true });
+      setShowCollections(newValue);
+      setSuccess(newValue ? "Collections are visible again" : "Collections hidden. Rooms only for now");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Toggle failed:", err);
+      setError("Failed to update Collections visibility");
+    }
+  };
+
   const toggleIdentityVerificationRequirement = async () => {
     try {
       const newValue = !REQUIRE_IDENTITY_VERIFICATION;
@@ -2611,6 +2628,7 @@ useEffect(() => {
       // see the useState above for why.
       setEnableDiscoverGoods(data.discoverGoods === true);
       setEnableDiscoverServices(data.discoverServices === true);
+      setShowCollections(data.collections !== false);
       // Only treat as ON when admin explicitly set true in Firestore
       setRequireIdentityVerification(data.requireIdentityVerification === true);
       setRequireRoomUserVerification(data.requireRoomUserVerification === true);
@@ -2672,10 +2690,31 @@ useEffect(() => {
     if (!createRoomData.landlordName.trim() || !createRoomData.landlordPhone.trim() || !createRoomData.roomType || parsedRoomPrice === null || !createRoomData.location.trim()) {
       setError("Please fill in name, phone, room type, price, and location"); return;
     }
+    // Words-only listings (no photo or video) are for verified listers, e.g.
+    // hostels or dalalis whose policy is no photos. Everyone else needs at
+    // least one photo or a video.
+    const isWordsListing = createRoomData.listingMode === "words";
+    if (isWordsListing) {
+      if (roomUserVerificationStatus !== "approved") {
+        setError("Only verified listers can post without photos. Verify your account or add a photo.");
+        openRoomUserVerification("postRoom");
+        return;
+      }
+      if (createRoomData.desc.trim().length < 30) {
+        setError("Describe the room in a few sentences (at least 30 characters) so students know what they're getting.");
+        return;
+      }
+    } else {
+      const hasMedia = (createRoomData.photoFiles || []).length > 0 || (createRoomData.existingPhotoUrls || []).length > 0 || !!createRoomData.videoFile;
+      if (!hasMedia) {
+        setError("Add at least one photo or a video of the room.");
+        return;
+      }
+    }
     try {
       setUploading(true);
       const uploadTs = Date.now();
-      const uploadedUrls = createRoomData.photoFiles.length > 0
+      const uploadedUrls = !isWordsListing && createRoomData.photoFiles.length > 0
         ? await Promise.all(createRoomData.photoFiles.map(async (original, i) => {
             const { file } = await safeCompress(original, COMPRESSION_PRESETS.room);
             const storageRef = ref(storage, `rooms/${uploadTs}_${i}.jpg`);
@@ -2683,9 +2722,9 @@ useEffect(() => {
             return getDownloadURL(snapshot.ref);
           }))
         : [];
-      const photoUrls = [...(createRoomData.existingPhotoUrls || []), ...uploadedUrls];
+      const photoUrls = isWordsListing ? [] : [...(createRoomData.existingPhotoUrls || []), ...uploadedUrls];
       let videoUrl = null;
-      if (createRoomData.videoFile) {
+      if (!isWordsListing && createRoomData.videoFile) {
         const videoRef = ref(storage, `rooms/${uploadTs}_walkthrough.mp4`);
         const videoSnap = await uploadBytes(videoRef, createRoomData.videoFile);
         videoUrl = await getDownloadURL(videoSnap.ref);
@@ -2725,6 +2764,8 @@ useEffect(() => {
         roomNumber: createRoomData.roomNumber.trim(),
         listerType: createRoomData.listerType === "dalali" ? "dalali" : "landlord",
         dalaliFee: createRoomData.listerType === "dalali" ? (parsePrice(createRoomData.dalaliFee) || 0) : 0,
+        textOnly: isWordsListing,
+        noPhotoReason: isWordsListing ? (createRoomData.noPhotoReason || "") : "",
         createdAt: serverTimestamp()
       });
       setShowCreateRoomSuccess(true);
@@ -2734,7 +2775,7 @@ useEffect(() => {
       // for every single room — only the room-specific fields reset.
       setCreateRoomData(prev => ({
         ...prev,
-        roomType: "", price: "", desc: "", amenities: [],
+        roomType: "", price: "", desc: "", amenities: [], noPhotoReason: "",
         photoFiles: [], photoPreviews: [], existingPhotoUrls: [],
         videoFile: null, videoPreview: null,
         roomNumber: "",
@@ -3476,6 +3517,8 @@ const requestNotificationPermission = async (currentUser) => {
       existingPhotoUrls: room.photos || [],
       listerType: room.listerType || "landlord",
       dalaliFee: room.dalaliFee ? String(room.dalaliFee) : "",
+      listingMode: room.textOnly ? "words" : "media",
+      noPhotoReason: room.noPhotoReason || "",
     });
     setPage("createRoom");
   };
@@ -3489,7 +3532,7 @@ const requestNotificationPermission = async (currentUser) => {
       lat: null, lng: null, nearUni: property?.nearUni || "ARU",
       desc: "", amenities: [], photoFiles: [], photoPreviews: [], videoFile: null, videoPreview: null,
       propertyId: propertyId || "", roomNumber: "",
-      listerType: "landlord", dalaliFee: "",
+      listerType: "landlord", dalaliFee: "", listingMode: "media", noPhotoReason: "",
     });
     setPage("createRoom");
   };
@@ -3725,6 +3768,13 @@ const requestNotificationPermission = async (currentUser) => {
       setHomeTab(ENABLE_DISCOVER_GOODS ? "goods" : ENABLE_DISCOVER_SERVICES ? "services" : ENABLE_ROOMS ? "rooms" : "goods");
     }
   }, [ENABLE_DISCOVER_GOODS, ENABLE_DISCOVER_SERVICES, ENABLE_ROOMS, homeTab]);
+
+  // Collections hidden by admin: move anyone sitting on those screens to Rooms.
+  useEffect(() => {
+    if (SHOW_COLLECTIONS) return;
+    if (profileTab === "collections") setProfileTab(ENABLE_ROOMS ? "myRooms" : "saved");
+    if (page === "collections") setPage("home");
+  }, [SHOW_COLLECTIONS, profileTab, page, ENABLE_ROOMS, setPage]);
 
   useEffect(() => {
     if ((profileTab === "listings" && !ENABLE_DISCOVER_GOODS) || (profileTab === "myServices" && !ENABLE_DISCOVER_SERVICES) || (profileTab === "myRooms" && !ENABLE_ROOMS)) {
@@ -8000,8 +8050,18 @@ return (
               <RoomListerBadge room={room} style={{marginTop:'5px'}} />
               <div style={{fontSize:'14px',color:'var(--text-secondary)',lineHeight:1.45,marginTop:'2px'}}>
                 <span style={{color:'var(--text-primary)',fontWeight:'700'}}>{ROOM_TYPES.find(t=>t.id===room.roomType)?.name || room.roomType}</span>
-                {room.description ? ` — ${room.description.length > 120 ? room.description.substring(0,120) + "…" : room.description}` : ""}
+                {!room.textOnly && room.description ? ` — ${room.description.length > 120 ? room.description.substring(0,120) + "…" : room.description}` : ""}
               </div>
+              {room.textOnly && room.description && (
+                <div style={{fontSize:'15px',color:'var(--text-primary)',lineHeight:1.5,marginTop:'6px',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                  {room.description.length > 400 ? room.description.substring(0,400) + "…" : room.description}
+                </div>
+              )}
+              {room.textOnly && (
+                <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'6px'}}>
+                  ✍️ No photos{room.noPhotoReason === "hostel_policy" ? " · hostel policy" : room.noPhotoReason === "dalali_policy" ? " · dalali policy" : room.noPhotoReason === "coming_soon" ? " · coming soon" : ""} · verified lister
+                </div>
+              )}
 
               <RoomMediaCarousel room={room} />
 
@@ -10537,6 +10597,44 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
               </div>
             ) : (
               <>
+                {/* How to list: photos/video, or words only (verified listers). */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'14px'}}>
+                  {[["media",t("📸 Photos / video","📸 Picha / video")],["words",t("✍️ Words only","✍️ Maneno tu")]].map(([id,label])=>(
+                    <button key={id} type="button" onClick={()=>setCreateRoomData({...createRoomData,listingMode:id})} style={{padding:'11px 8px',borderRadius:'12px',border:createRoomData.listingMode===id?'2px solid #06d6c7':'1.5px solid var(--border-color)',background:createRoomData.listingMode===id?'rgba(6,214,199,0.12)':'var(--surface-bg)',color:'var(--text-primary)',fontSize:'13px',fontWeight:'800',cursor:'pointer'}}>{label}</button>
+                  ))}
+                </div>
+
+                {createRoomData.listingMode === "words" ? (
+                  roomUserVerificationStatus !== "approved" ? (
+                    <div style={{border:'1.5px solid var(--border-color)',borderRadius:'14px',padding:'16px',marginBottom:'14px',background:'var(--surface-bg-alt)'}}>
+                      <div style={{fontSize:'15px',fontWeight:'800',color:'var(--text-primary)',marginBottom:'4px'}}>{t("For verified listers","Kwa waliothibitishwa")}</div>
+                      <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'12px'}}>{t("Listing without photos is for verified hostels, landlords and dalalis, for example when the place has a no-photo policy. Verify your account, or switch back and add a photo.","Kuweka bila picha ni kwa hosteli, wenye nyumba na madalali waliothibitishwa, mfano pale panapokataza picha. Thibitisha akaunti yako, au rudi uweke picha.")}</div>
+                      <button type="button" onClick={()=>openRoomUserVerification("postRoom")} style={{width:'100%',padding:'12px',background:'var(--accent-navy, #0f1b2d)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:'800',cursor:'pointer'}}>{t("Verify my account","Thibitisha akaunti")}</button>
+                    </div>
+                  ) : (
+                    <div style={{marginBottom:'14px'}}>
+                      <textarea
+                        autoFocus
+                        maxLength={1000}
+                        placeholder={t("Describe the room in your own words, like a post: size, what's inside, rules, who it suits, when it's free...","Elezea chumba kwa maneno yako, kama post: ukubwa, kilichomo ndani, masharti, kinamfaa nani, kinapatikana lini...")}
+                        value={createRoomData.desc}
+                        onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})}
+                        style={{width:'100%',minHeight:'150px',padding:'14px',border:'1.5px solid var(--border-color)',borderRadius:'14px',fontSize:'17px',lineHeight:1.5,outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}
+                      />
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:'11.5px',color:createRoomData.desc.trim().length<30?'#b45309':'var(--text-secondary)',marginTop:'4px'}}>
+                        <span>{createRoomData.desc.trim().length<30 ? t("At least 30 characters","Angalau herufi 30") : t("Looks good","Safi")}</span>
+                        <span>{createRoomData.desc.length}/1000</span>
+                      </div>
+                      <label style={{display:'block',fontSize:'12px',fontWeight:'600',margin:'12px 0 6px'}}>{t("Why no photos? (optional)","Kwa nini hakuna picha? (si lazima)")}</label>
+                      <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                        {[["hostel_policy",t("Hostel policy","Sera ya hosteli")],["dalali_policy",t("Dalali policy","Sera ya dalali")],["coming_soon",t("Photos coming soon","Picha zinakuja")]].map(([id,label])=>(
+                          <button key={id} type="button" onClick={()=>setCreateRoomData({...createRoomData,noPhotoReason:createRoomData.noPhotoReason===id?"":id})} style={{padding:'7px 12px',borderRadius:'999px',border:createRoomData.noPhotoReason===id?'1.5px solid #06d6c7':'1px solid var(--border-color)',background:createRoomData.noPhotoReason===id?'rgba(6,214,199,0.12)':'transparent',color:'var(--text-primary)',fontSize:'12.5px',fontWeight:'700',cursor:'pointer'}}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                <>
                 {/* Video walkthrough — the headline input. Listing a room should
                     feel like sending a WhatsApp video, so this sits first and
                     everything optional is pushed below "More options". */}
@@ -10573,6 +10671,8 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                     </div>
                   )}
                 </label>
+                </>
+                )}
 
 
                 <div style={{marginBottom:'14px'}}>
@@ -10650,7 +10750,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                   {!createRoomData.lat && <div style={{fontSize:'11px',color:'var(--text-secondary)',marginTop:'4px',lineHeight:1.5}}>⚠ Hakikisha upo eneo halisi la chumba unapobonyeza kitufe hiki — maana inapakia eneo uliopo saizi.</div>}
                 </div>
 
-                <div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Description (optional)","Maelezo (si lazima)")}</label><textarea placeholder={t("Any extra details — available date, rules, what's nearby...","Maelezo mengine — tarehe ya kuingia, masharti, kilicho karibu...")} value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+                {createRoomData.listingMode !== "words" && (<div style={{marginBottom:'16px'}}><label style={{display:'block',fontSize:'12px',fontWeight:'600',marginBottom:'6px'}}>{t("Description (optional)","Maelezo (si lazima)")}</label><textarea placeholder={t("Any extra details — available date, rules, what's nearby...","Maelezo mengine — tarehe ya kuingia, masharti, kilicho karibu...")} value={createRoomData.desc} onChange={e=>setCreateRoomData({...createRoomData,desc:e.target.value})} style={{width:'100%',padding:'12px',border:'1.5px solid var(--border-color)',borderRadius:'10px',fontSize:'16px',outline:'none',background:'var(--surface-bg)',color:'var(--text-primary)',minHeight:'80px',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}/></div>)}
 
                 <div style={{marginBottom:'16px'}}>
                   <button type="button" onClick={()=>setRoomCreateShowMore(v=>!v)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 14px',background:'var(--surface-bg-alt)',border:'1.5px solid var(--border-color)',borderRadius:'12px',fontSize:'14px',fontWeight:'800',color:'var(--text-primary)',cursor:'pointer'}}>
@@ -11103,6 +11203,10 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                   <div style={{position:'absolute',bottom:'10px',right:'10px',background:'rgba(15,27,45,0.72)',color:'#fff',borderRadius:'999px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}}>{photoIndex + 1} / {photos.length}</div>
                 </>
               )}
+            </div>
+          ) : viewingRoom.textOnly ? (
+            <div style={{padding:'14px 16px',background:'var(--surface-bg)',borderBottom:'1px solid var(--border-color)',fontSize:'13px',color:'var(--text-secondary)'}}>
+              ✍️ Listed without photos{viewingRoom.noPhotoReason === "hostel_policy" ? " (hostel policy)" : viewingRoom.noPhotoReason === "dalali_policy" ? " (dalali policy)" : viewingRoom.noPhotoReason === "coming_soon" ? " (photos coming soon)" : ""} by a verified lister. Book a viewing to see it in person.
             </div>
           ) : (
             <div style={{width:'100%',height:'200px',background:'linear-gradient(135deg,#06d6c7,#38bdf8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'64px'}}>🏠</div>
@@ -11977,6 +12081,7 @@ const showDay = msgDate && (!prevDate || chatDayKey(prevDate) !== chatDayKey(msg
                               {settingRow({ title:'🏠 Rooms', desc:'Fixed on while Rooms is in active development.', on: true, onToggle: toggleRoomsFeature, locked: true })}
                               {settingRow({ title:'Discover goods', desc:'Show goods listings in public Discover.', on: ENABLE_DISCOVER_GOODS, onToggle: toggleDiscoverGoodsFeature })}
                               {settingRow({ title:'Discover services', desc:'Show services in public Discover.', on: ENABLE_DISCOVER_SERVICES, onToggle: toggleDiscoverServicesFeature })}
+                              {settingRow({ title:'📋 Collections', desc:'Show the Collections tab and My Collections. Turn off to keep everyone focused on Rooms. Group chats keep working.', on: SHOW_COLLECTIONS, onToggle: toggleCollectionsFeature })}
                             </div>
                           </div>
 
@@ -12339,7 +12444,7 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           )}
           
           <div style={{display:'flex',gap:'4px',background:'var(--surface-bg)',borderRadius:'10px',padding:'4px',marginBottom:'16px',overflowX:'auto'}}>
-            <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>
+            {SHOW_COLLECTIONS && <button onClick={()=>setProfileTab("collections")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="collections"?'#0d9488':'none',color:profileTab==="collections"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Collections</button>}
             {showProfileListings && <button onClick={()=>setProfileTab("listings")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="listings"?'#0f1b2d':'none',color:profileTab==="listings"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Listings</button>}
             {showProfileServices && <button onClick={()=>setProfileTab("myServices")} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myServices"?'#0d9488':'none',color:profileTab==="myServices"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Services</button>}
             {ENABLE_ROOMS && <button onClick={()=>{setProfileTab("myRooms");setViewingPropertyId(null);}} style={{flex:'1 0 auto',padding:'8px 10px',border:'none',background:profileTab==="myRooms"?'#06d6c7':'none',color:profileTab==="myRooms"?'#fff':'var(--text-secondary)',fontSize:'12px',fontWeight:'500',cursor:'pointer',borderRadius:'8px',whiteSpace:'nowrap'}}>My Rooms</button>}
@@ -14681,10 +14786,10 @@ backgroundPosition:'center',display:'flex',alignItems:'center',justifyContent:'c
           <span style={{fontSize:'10px',color:page==="communities"?'#06d6c7':'#8a9bb0',fontWeight:page==="communities"?'700':'500',transition:'all 0.2s ease'}}>Chats</span>
           {(groupUnreadCount+dmUnreadCount)>0&&<span style={{position:'absolute',top:'2px',right:'2px',background:'#22c55e',color:'#fff',fontSize:'8px',fontWeight:'700',padding:'2px 5px',borderRadius:'10px',minWidth:'16px',textAlign:'center',boxShadow:'0 2px 7px rgba(34,197,94,0.28)'}}>{groupUnreadCount+dmUnreadCount}</span>}
         </button>
-        <button onClick={()=>setPage("collections")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
+        {SHOW_COLLECTIONS && (<button onClick={()=>setPage("collections")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none',position:'relative'}}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={page==="collections"?'#06d6c7':'#8a9bb0'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:'all 0.2s ease'}}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v3"/><path d="M16 4v3"/></svg>
           <span style={{fontSize:'10px',color:page==="collections"?'#06d6c7':'#8a9bb0',fontWeight:page==="collections"?'700':'500',transition:'all 0.2s ease'}}>Collections</span>
-        </button>
+        </button>)}
         <button onClick={()=>setPage("profile")} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',cursor:'pointer',padding:'8px',border:'none',background:'none'}}>
   <span style={{
     width:'24px',

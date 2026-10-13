@@ -390,15 +390,22 @@ service cloud.firestore {
       }
 
       allow read: if true;
+      // Rooms listed with words only (no photo or video) are for verified
+      // listers, e.g. hostels or dalalis with a no-photo policy.
+      function textOnlyAllowed() {
+        return request.resource.data.get('textOnly', false) != true || posterIsVerifiedLandlord();
+      }
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid
-        && landlordVerifiedMatchesProfile();
+        && landlordVerifiedMatchesProfile()
+        && textOnlyAllowed();
       allow update: if isAdmin()
         || (
           signedIn()
           && resource.data.userId == request.auth.uid
           && request.resource.data.userId == resource.data.userId
           && landlordVerifiedUnchangedOrValid()
+          && (request.resource.data.get('textOnly', false) == resource.data.get('textOnly', false) || textOnlyAllowed())
         )
         // Property owners/managers can mark rooms available / taken
         // (toggleRoomAvailability in App.js).
